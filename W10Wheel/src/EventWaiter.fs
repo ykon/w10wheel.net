@@ -69,7 +69,7 @@ let start (we: MouseEvent) = async {
 
     Volatile.Write(waiting, true)
     let res: MouseEvent ref = ref NoneEvent
-    let timeout = not (sync.TryTake(res, new TimeSpan(0, 0, 0, 0, 300)))
+    let timeout = not (sync.TryTake(res, new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())))
     Volatile.Write(waiting, false)
 
     if timeout then

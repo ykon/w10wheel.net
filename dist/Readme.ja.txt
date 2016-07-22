@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.1.1
+        0.1.2
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-23: Version 0.1.2: 修正: pollTimeoutの設定が使われていない
         2016-07-23: Version 0.1.1: EventWaiterを修正
         2016-07-22: Version 0.1.0: 初公開
         
