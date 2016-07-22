@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.1
+        0.1.1
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-23: Version 0.1.1: EventWaiterを修正
         2016-07-22: Version 0.1.0: 初公開
         
 移植:
@@ -192,8 +193,8 @@ URL:
         2ch の該当スレッドに書き込んでください。
         http://echo.2ch.net/test/read.cgi/hard/1468152050/
         
-        GitHub から連絡する場合はIssuesなどにどうぞ。
-        メールを送ってきてもOKですが、答えられるとは限りません。
+        GitHub から連絡する場合は Issues などにどうぞ。
+        メールを送ってきても OK ですが、答えられるとは限りません。
         
 製作者:
         Yuki Ono <ykon0x1@gmail.com>

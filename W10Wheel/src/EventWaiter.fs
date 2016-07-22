@@ -58,6 +58,8 @@ let private fromUp (we:MouseEvent) (res:MouseEvent) =
 
 let private fromDown (we:MouseEvent) (res:MouseEvent) =
     Ctx.LastFlags.SetSuppressed we
+    Ctx.LastFlags.SetSuppressed res
+
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" we.Name res.Name)
     Ctx.startScrollMode res.Info
 
