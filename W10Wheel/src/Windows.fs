@@ -31,7 +31,7 @@ Async.Start inputSender
 
 let private rand = Random()
 
-let private createRandomNumber: uint32 =    
+let private createRandomNumber (): uint32 =    
     let mutable res = 0u
 
     while res = 0u do
@@ -39,7 +39,7 @@ let private createRandomNumber: uint32 =
 
     res
 
-let private resendTag = createRandomNumber
+let private resendTag = createRandomNumber()
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag

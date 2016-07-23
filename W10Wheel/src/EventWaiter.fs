@@ -19,52 +19,52 @@ let private sync = new BlockingCollection<MouseEvent>(1)
 let offer e =
     if Volatile.Read(waiting) then sync.TryAdd e else false
 
-let private fromTimeout we =
-    Ctx.LastFlags.SetResent we
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" we.Name we.Name)
-    Windows.resendDown we
+let private fromTimeout down =
+    Ctx.LastFlags.SetResent down
+    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
+    Windows.resendDown down
 
-let private fromMove we =
-    Ctx.LastFlags.SetResent we
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" we.Name we.Name)
-    Windows.resendDown we
+let private fromMove down =
+    Ctx.LastFlags.SetResent down
+    Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)
+    Windows.resendDown down
 
-let private fromUp (we:MouseEvent) (res:MouseEvent) =
-    Ctx.LastFlags.SetSuppressed we
+let private fromUp (down:MouseEvent) (up:MouseEvent) =
+    Ctx.LastFlags.SetResent down
 
     let resendC (mc: MouseClick) =
-        Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s" we.Name res.Name mc.Name)
+        Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s" down.Name up.Name mc.Name)
         Windows.resendClick mc
 
     let resendUD () =
-        let wn = we.Name
-        let rn = res.Name
+        let wn = down.Name
+        let rn = up.Name
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s, %s" wn rn wn rn)
-        Windows.resendDown we
-        Windows.resendUp res
+        Windows.resendDown down
+        Windows.resendUp up
 
-    match we with
+    match down with
     | LeftDown(_) ->
-        match res with
-        | LeftUp(_)  -> resendC(LeftClick(we.Info))
+        match up with
+        | LeftUp(_)  -> resendC(LeftClick(down.Info))
         | RightUp(_) -> resendUD()
         | _ -> raise (InvalidOperationException())
     | RightDown(_) ->
-        match res with
-        | RightUp(_) -> resendC(RightClick(we.Info))
+        match up with
+        | RightUp(_) -> resendC(RightClick(down.Info))
         | LeftUp(_) -> resendUD()
         | _ -> raise (InvalidOperationException())
     | _ -> raise (InvalidOperationException())
 
-let private fromDown (we:MouseEvent) (res:MouseEvent) =
-    Ctx.LastFlags.SetSuppressed we
-    Ctx.LastFlags.SetSuppressed res
+let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
+    Ctx.LastFlags.SetSuppressed d1
+    Ctx.LastFlags.SetSuppressed d2
 
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" we.Name res.Name)
-    Ctx.startScrollMode res.Info
+    Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
+    Ctx.startScrollMode d2.Info
 
-let start (we: MouseEvent) = async {
-    if not (we.IsDown) then
+let start (down: MouseEvent) = async {
+    if not (down.IsDown) then
         raise (ArgumentException())
 
     Volatile.Write(waiting, true)
@@ -73,11 +73,11 @@ let start (we: MouseEvent) = async {
     Volatile.Write(waiting, false)
 
     if timeout then
-        fromTimeout we
+        fromTimeout down
     else
         match res.Value with
-        | Move(_) -> fromMove(we)
-        | LeftUp(_) | RightUp(_) -> fromUp we res.Value
-        | LeftDown(_) | RightDown(_) -> fromDown we res.Value
+        | Move(_) -> fromMove(down)
+        | LeftUp(_) | RightUp(_) -> fromUp down res.Value
+        | LeftDown(_) | RightDown(_) -> fromDown down res.Value
         | _ -> raise (InvalidOperationException())
 }
