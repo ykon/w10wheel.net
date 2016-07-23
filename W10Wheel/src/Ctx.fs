@@ -23,45 +23,27 @@ let private pollTimeout = ref 300
 let private passMode = ref false
 let private processPriority = ref ProcessPriority.AboveNormal
 
-(*
-[<AbstractClass>]
-type AccelMultiplier(name: string, dArray: double array) =
-    member self.Name with get() = name
-    member self.DArray with get() = dArray
-*)
-
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
 
-type AccelMultiplier =
-    | M5
-    | M6
-    | M7
-    | M8
-    | M9
+[<AbstractClass>]
+type AccelMultiplier(name: string, dArray: double array) =
+    member self.Name = name
+    member self.DArray = dArray
 
-    member self.Name =
-        match self with
-        | M5 -> "M5"
-        | M6 -> "M6"
-        | M7 -> "M7"
-        | M8 -> "M8"
-        | M9 -> "M9"
+type M5() = inherit AccelMultiplier("M5", [|1.0; 1.3; 1.7; 2.0; 2.4; 2.7; 3.1; 3.4; 3.8; 4.1; 4.5; 4.8|])
+type M6() = inherit AccelMultiplier("M6", [|1.2; 1.6; 2.0; 2.4; 2.8; 3.3; 3.7; 4.1; 4.5; 4.9; 5.4; 5.8|])
+type M7() = inherit AccelMultiplier("M7", [|1.4; 1.8; 2.3; 2.8; 3.3; 3.8; 4.3; 4.8; 5.3; 5.8; 6.3; 6.7|])
+type M8() = inherit AccelMultiplier("M8", [|1.6; 2.1; 2.7; 3.2; 3.8; 4.4; 4.9; 5.5; 6.0; 6.6; 7.2; 7.7|])
+type M9() = inherit AccelMultiplier("M9", [|1.8; 2.4; 3.0; 3.6; 4.3; 4.9; 5.5; 6.2; 6.8; 7.4; 8.1; 8.7|])
 
-    member self.DArray =
-        match self with
-        | M5 -> [|1.0; 1.3; 1.7; 2.0; 2.4; 2.7; 3.1; 3.4; 3.8; 4.1; 4.5; 4.8|]
-        | M6 -> [|1.2; 1.6; 2.0; 2.4; 2.8; 3.3; 3.7; 4.1; 4.5; 4.9; 5.4; 5.8|]
-        | M7 -> [|1.4; 1.8; 2.3; 2.8; 3.3; 3.8; 4.3; 4.8; 5.3; 5.8; 6.3; 6.7|]
-        | M8 -> [|1.6; 2.1; 2.7; 3.2; 3.8; 4.4; 4.9; 5.5; 6.0; 6.6; 7.2; 7.7|]
-        | M9 -> [|1.8; 2.4; 3.0; 3.6; 4.3; 4.9; 5.5; 6.2; 6.8; 7.4; 8.1; 8.7|]
-
-let private getAccelMultiplierOfName = function
-    | "M5" -> M5
-    | "M6" -> M6
-    | "M7" -> M7
-    | "M8" -> M8
-    | "M9" -> M9
+let private getAccelMultiplierOfName name: AccelMultiplier =
+    match name with
+    | "M5" -> (M5() :> AccelMultiplier)
+    | "M6" -> (M6() :> AccelMultiplier)
+    | "M7" -> (M7() :> AccelMultiplier)
+    | "M8" -> (M8() :> AccelMultiplier)
+    | "M9" -> (M9() :> AccelMultiplier)
     | e -> raise (ArgumentException(e))
 
 let private DefaultAccelThreshold = [|1; 2; 3; 5; 7; 10; 14; 20; 30; 43; 63; 91|]
@@ -69,7 +51,7 @@ let private DefaultAccelThreshold = [|1; 2; 3; 5; 7; 10; 14; 20; 30; 43; 63; 91|
 type private Accel() =
     [<VolatileField>] static let mutable table = false
     [<VolatileField>] static let mutable threshold: int array = DefaultAccelThreshold
-    [<VolatileField>] static let mutable multiplier: AccelMultiplier = M5
+    [<VolatileField>] static let mutable multiplier: AccelMultiplier = M5() :> AccelMultiplier
 
     [<VolatileField>] static let mutable customDisabled = true
     [<VolatileField>] static let mutable customTable = false

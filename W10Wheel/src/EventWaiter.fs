@@ -12,12 +12,15 @@ open System.Threading
 
 open Mouse
 
-
 let private waiting = ref false
 let private sync = new BlockingCollection<MouseEvent>(1)
 
 let offer e =
-    if Volatile.Read(waiting) then sync.TryAdd e else false
+    sync.TryAdd(e)
+
+//let add e = sync.Add(e)
+
+let isWaiting () = Volatile.Read(waiting)
 
 let private fromTimeout down =
     Ctx.LastFlags.SetResent down
@@ -63,21 +66,35 @@ let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
     Ctx.startScrollMode d2.Info
 
-let start (down: MouseEvent) = async {
+let private waiterQueue = new BlockingCollection<MouseEvent>(1)
+
+let private waiter () =
+    let res: MouseEvent ref = ref NoneEvent
+    while true do
+        let down = waiterQueue.Take()
+            
+        Debug.WriteLine("EventWaiter: TryTake")
+        let ts = new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())
+        let timeout = not (sync.TryTake(res, ts))
+        Volatile.Write(waiting, false)
+
+        if timeout then
+            fromTimeout down
+        else
+            match res.Value with
+            | Move(_) -> fromMove down
+            | LeftUp(_) | RightUp(_) -> fromUp down res.Value
+            | LeftDown(_) | RightDown(_) -> fromDown down res.Value
+            | _ -> raise (InvalidOperationException())
+        
+let private waiterThread = new Thread(waiter)
+waiterThread.IsBackground <- true
+waiterThread.Start()
+
+let start (down: MouseEvent) =
     if not (down.IsDown) then
         raise (ArgumentException())
 
     Volatile.Write(waiting, true)
-    let res: MouseEvent ref = ref NoneEvent
-    let timeout = not (sync.TryTake(res, new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())))
-    Volatile.Write(waiting, false)
+    waiterQueue.Add(down)
 
-    if timeout then
-        fromTimeout down
-    else
-        match res.Value with
-        | Move(_) -> fromMove(down)
-        | LeftUp(_) | RightUp(_) -> fromUp down res.Value
-        | LeftDown(_) | RightDown(_) -> fromDown down res.Value
-        | _ -> raise (InvalidOperationException())
-}

@@ -29,8 +29,7 @@ type MouseEvent =
     | Move of HookInfo
     | NoneEvent
 
-    member self.Name =
-        getUnionCaseName(self)
+    member self.Name = getUnionCaseName(self)
 
     member self.Info =
         match self with
@@ -60,10 +59,18 @@ type MouseEvent =
         | _ -> false
 
     member self.Same me2 =
-        if (self <> NoneEvent) && (me2 <> NoneEvent) then
-            self.GetType() = me2.GetType()
-        else
-            false
+        match self, me2 with
+        | LeftDown(_), LeftDown(_) -> true
+        | LeftUp(_), LeftUp(_) -> true
+        | RightDown(_), RightDown(_) -> true
+        | RightUp(_), RightUp(_) -> true
+        | MiddleDown(_), MiddleDown(_) -> true
+        | MiddleUp(_), MiddleUp(_) -> true
+        | X1Down(_), X1Down(_) -> true
+        | X1Up(_), X1Up(_) -> true
+        | X2Down(_), X2Down(_) -> true
+        | X2Up(_), X2Up(_) -> true
+        | _ -> false
 
 type MouseClick =
     | LeftClick of HookInfo
@@ -72,8 +79,7 @@ type MouseClick =
     | X1Click of HookInfo
     | X2Click of HookInfo
 
-    member self.Name =
-        getUnionCaseName(self)
+    member self.Name = getUnionCaseName(self)
 
     member self.Info =
         match self with
@@ -94,8 +100,7 @@ type Trigger =
     | X1DragTrigger
     | X2DragTrigger
 
-    member self.Name =
-        getUnionCaseName(self)
+    member self.Name = getUnionCaseName(self)
 
     member self.IsSingle =
         match self with
@@ -134,8 +139,4 @@ let getTriggerOfStr = function
     | "X1Drag" | "X1DragTrigger" -> X1DragTrigger
     | "X2Drag" | "X2DragTrigger" -> X2DragTrigger
     | e -> raise (ArgumentException(e))
-
-
-
-
 

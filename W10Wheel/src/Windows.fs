@@ -12,6 +12,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Diagnostics
 open System.Runtime.InteropServices
+open System.Threading
 open Microsoft.FSharp.NativeInterop
 
 open Mouse
@@ -21,13 +22,14 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 let private MINPUT_SIZE = Marshal.SizeOf(typedefof<WinAPI.MINPUT>)
 let private inputQueue = new BlockingCollection<WinAPI.MINPUT array>(128)
 
-let private inputSender = async {
+let private sender () =
     while true do
         let msgs = inputQueue.Take()
         WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE) |> ignore
-}
         
-Async.Start inputSender
+let private senderThread = new Thread(sender)
+senderThread.IsBackground <- true
+senderThread.Start()
 
 let private rand = Random()
 
@@ -171,7 +173,7 @@ let sendWheel (pt: WinAPI.POINT) =
         if Math.Abs(dx) > Ctx.getHorizontalThreshold() then
             sendHorizontalWheel spt dx |> ignore
 
-let createClick (mc:MouseClick) (extra:uint32) =
+let private createClick (mc:MouseClick) (extra:uint32) =
     let create mouseData es = Array.map (fun e -> createInput mc.Info.pt mouseData e 0u extra) es
     match mc with
     | LeftClick(_) -> create 0 [|MOUSEEVENTF_LEFTDOWN; MOUSEEVENTF_LEFTUP|]

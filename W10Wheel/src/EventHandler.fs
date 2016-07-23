@@ -100,10 +100,28 @@ let private passSingleTrigger (me: MouseEvent): nativeint option =
     else
         None
 
+let private retryOffer (me: MouseEvent): bool =
+    let rec loop b i =
+        if b then
+            Debug.WriteLine(sprintf "retryOffer: %d" i)
+            true
+        elif i = 0 then
+            Debug.WriteLine("retryOffer failed")
+            false
+        else
+            loop (EventWaiter.offer me) (i - 1)
+
+    loop false 3
+
+
 let private offerEventWaiter (me: MouseEvent): nativeint option =
-    if EventWaiter.offer me then
-        Debug.WriteLine(sprintf "success to offer: %s" me.Name)
-        suppress()
+    if EventWaiter.isWaiting() then
+        if retryOffer me then
+            Debug.WriteLine(sprintf "success to offer: %s" me.Name)
+            suppress()
+        else
+            Debug.WriteLine(sprintf "fail to offer: %s" me.Name)
+            None
     else
         None
 
@@ -121,6 +139,7 @@ let private checkDownResent (up: MouseEvent): nativeint option =
 
     if resent then
         Debug.WriteLine(sprintf "forced to resendUp: %s" up.Name)
+        // waiter thread timing issue
         Windows.resendUp up
         suppress()
     else
@@ -129,7 +148,8 @@ let private checkDownResent (up: MouseEvent): nativeint option =
 let private checkTriggerWaitStart (me: MouseEvent): nativeint option =
     if Ctx.isLRTrigger() || Ctx.isTriggerEvent me then
         Debug.WriteLine(sprintf "start wait trigger: %s" me.Name)
-        Async.Start (EventWaiter.start me)
+        //Async.Start (EventWaiter.start me)
+        EventWaiter.start me
         suppress()
     else
         None
@@ -196,7 +216,7 @@ let private passNotTrigger (me: MouseEvent): nativeint option =
         None
 
 let private passNotTriggerLR (me: MouseEvent): nativeint option =
-    if (not (Ctx.isLRTrigger()) && not (Ctx.isTriggerEvent me)) then
+    if not (Ctx.isLRTrigger()) && not (Ctx.isTriggerEvent me) then
         Debug.WriteLine(sprintf "pass not trigger: %s" me.Name)
         callNextHook()
     else
@@ -293,29 +313,6 @@ let private lrUp (me: MouseEvent): nativeint =
 
     (getResultL checkers me).Value
 
-(*
-let private lrOnlyDown (me: MouseEvent): nativeint =
-    let checkers = [
-        skipResendEvent
-        checkSameLastEvent
-        passNotTriggerLROnly
-        startScrollLROnly
-    ]
-
-    getResult me checkers
-
-let private lrOnlyUp (me: MouseEvent): nativeint =
-    let checkers = [
-        skipResendEvent
-        skipFirstUpOrSingle
-        checkSameLastEvent
-        passNotTriggerLROnly
-        exitAndResendLROnly
-    ]
-
-    getResult me checkers
-*)
-
 let leftDown (info: HookInfo) =
     //Debug.WriteLine("LeftDown")
     lrDown(LeftDown(info))
@@ -381,7 +378,8 @@ let move (info: HookInfo) =
         drag info
         Windows.sendWheel info.pt
         suppress().Value
-    elif EventWaiter.offer(Move(info)) then
+    elif EventWaiter.isWaiting() && EventWaiter.offer (Move(info)) then
+        Debug.WriteLine("success to offer: Move")
         suppress().Value
     else
         callNextHook().Value

@@ -51,7 +51,9 @@ let main argv =
 
     Application.Run()
     Debug.WriteLine("exit message loop")
+
     WinHook.unhook()
+
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
     0

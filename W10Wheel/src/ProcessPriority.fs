@@ -13,8 +13,7 @@ type Priority =
     | AboveNormal
     | High
 
-    member self.Name =
-        Mouse.getUnionCaseName(self)
+    member self.Name = Mouse.getUnionCaseName(self)
 
 let getPriority = function
     | "High" -> High

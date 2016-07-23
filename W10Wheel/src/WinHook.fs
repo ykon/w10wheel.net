@@ -18,7 +18,7 @@ let unhook () =
     WinAPI.UnhookWindowsHookEx(hhook) |> ignore
 
 let setHook (proc: WinAPI.LowLevelMouseProc) =
-    let handle = WinAPI.GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName)
+    let handle = WinAPI.GetModuleHandle(null)
     hhook <- WinAPI.SetWindowsHookEx(WinAPI.WH_MOUSE_LL, proc, handle, 0u)
 
 let callNextHook (nCode:int) (wParam:nativeint) (info:HookInfo): nativeint =
