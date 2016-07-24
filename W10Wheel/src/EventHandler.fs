@@ -19,6 +19,7 @@ let private callNextHook () = Some(__callNextHook.Value())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NoneEvent
+let mutable private lastResendEvent: MouseEvent = NoneEvent
 let mutable private dragged = false
 
 (*
@@ -37,6 +38,7 @@ let private resetLastFlags (me: MouseEvent): nativeint option =
 let private skipResendEvent (me: MouseEvent): nativeint option =
     if Windows.isResendEvent me then
         Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
+        lastResendEvent <- me
         callNextHook()
     else
         None
@@ -138,10 +140,13 @@ let private checkDownResent (up: MouseEvent): nativeint option =
     let resent = Ctx.LastFlags.IsDownResent up
 
     if resent then
-        Debug.WriteLine(sprintf "forced to resendUp: %s" up.Name)
-        // waiter thread timing issue
-        Windows.resendUp up
-        suppress()
+        if up.SameButton lastResendEvent then
+            Debug.WriteLine(sprintf "pass (checkDownResent): %s" up.Name)
+            callNextHook()
+        else
+            Debug.WriteLine(sprintf "resend (checkDownResent): %s" up.Name)
+            Windows.resendUp up
+            suppress()
     else
         None
 
@@ -190,6 +195,12 @@ let private startScrollDrag (me: MouseEvent): nativeint option =
 
     suppress()
 
+let private continueScrollDrag (me: MouseEvent): nativeint option =
+    if Ctx.isDraggedLock() && dragged then
+        Debug.WriteLine(sprintf "continueScrollDrag: %s" me.Name)
+        suppress()
+    else
+        None
 
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
     Debug.WriteLine(sprintf "exit scroll mode: %s" me.Name)
@@ -270,14 +281,22 @@ let getResultBranch (cs:Checkers) (me:MouseEvent) =
 let private branchDragDown (me: MouseEvent): nativeint option =
     if Ctx.isDragTrigger() then
         Debug.WriteLine(sprintf "branch LR only down: %s" me.Name)
-        getResultL [passNotDragTrigger; startScrollDrag] me
+        let cs = [passNotDragTrigger
+                  startScrollDrag]
+        
+        getResultL cs me
     else
         None
 
 let private branchDragUp (me: MouseEvent): nativeint option =
     if Ctx.isDragTrigger() then
         Debug.WriteLine(sprintf "branch LR only up: %s" me.Name)
-        getResultL [passNotDragTrigger; exitAndResendDrag] me
+        let cs = [checkDownSuppressed
+                  passNotDragTrigger
+                  continueScrollDrag
+                  exitAndResendDrag]
+
+        getResultL cs me
     else
         None
 
@@ -285,9 +304,9 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEvent
         checkSameLastEvent
-        branchDragDown
         resetLastFlags
         checkExitScrollDown
+        branchDragDown
         passSingleTrigger
         offerEventWaiter
         checkTriggerWaitStart
@@ -305,8 +324,8 @@ let private lrUp (me: MouseEvent): nativeint =
         passSingleTrigger
         checkExitScrollUp
         passNotTriggerLR
-        offerEventWaiter
         checkDownResent
+        offerEventWaiter
         checkDownSuppressed
         endUnknownEvent
     ]
@@ -333,9 +352,9 @@ let private singleDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEvent
         checkSameLastEvent
-        branchDragDown
         resetLastFlags
         checkExitScrollDown
+        branchDragDown
         passNotTrigger
         checkKeySendMiddle
         checkTriggerScrollStart

@@ -72,6 +72,20 @@ type MouseEvent =
         | X2Up(_), X2Up(_) -> true
         | _ -> false
 
+    member self.SameButton me2 =
+        match self, me2 with
+        | LeftDown(_), LeftUp(_) -> true
+        | LeftUp(_), LeftDown(_) -> true
+        | RightDown(_), RightUp(_) -> true
+        | RightUp(_), RightDown(_) -> true
+        | MiddleDown(_), MiddleUp(_) -> true
+        | MiddleUp(_), MiddleDown(_) -> true
+        | X1Down(_), X1Up(_) -> true
+        | X1Up(_), X1Down(_) -> true
+        | X2Down(_), X2Up(_) -> true
+        | X2Up(_), X2Down(_) -> true
+        | _ -> false
+
 type MouseClick =
     | LeftClick of HookInfo
     | RightClick of HookInfo
@@ -139,4 +153,3 @@ let getTriggerOfStr = function
     | "X1Drag" | "X1DragTrigger" -> X1DragTrigger
     | "X2Drag" | "X2DragTrigger" -> X2DragTrigger
     | e -> raise (ArgumentException(e))
-

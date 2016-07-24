@@ -154,6 +154,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable cursorChange = true
     [<VolatileField>] static let mutable reverse = false
     [<VolatileField>] static let mutable horizontal = true
+    [<VolatileField>] static let mutable draggedLock = false
 
     static member Start (info: HookInfo) =
         stime <- info.time
@@ -190,6 +191,9 @@ type private Scroll() =
     static member Horizontal
         with get() = horizontal
         and set b = horizontal <- b
+    static member DraggedLock
+        with get() = draggedLock
+        and set b = draggedLock <- b
 
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
@@ -200,6 +204,7 @@ let getScrollLockTime () = Scroll.LockTime
 let isCursorChange () = Scroll.CursorChange
 let isReverseScroll () = Scroll.Reverse
 let isHorizontalScroll () = Scroll.Horizontal
+let isDraggedLock () = Scroll.DraggedLock
 
 type private RealWheel() =
     [<VolatileField>] static let mutable mode = false
@@ -355,6 +360,7 @@ let private getBooleanOfName (name: string): bool =
     | "quickTurn" -> RealWheel.QuickTurn
     | "accelTable" -> Accel.Table
     | "customAccelTable" -> Accel.CustomTable
+    | "draggedLock" -> Scroll.DraggedLock
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -369,6 +375,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "quickTurn" -> RealWheel.QuickTurn <- b
     | "accelTable" -> Accel.Table <- b
     | "customAccelTable" -> Accel.CustomTable <- b
+    | "draggedLock" -> Scroll.DraggedLock <- b
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -378,14 +385,15 @@ let private makeSetBooleanEvent (name: String) =
         let b = item.Checked
         setBooleanOfName name b
 
-let private createBoolMenuItem vName mName =
+let private createBoolMenuItem vName mName enabled =
     let item = new ToolStripMenuItem(mName, null, makeSetBooleanEvent(vName))
     item.CheckOnClick <- true
+    item.Enabled <- enabled
     boolMenuDict.[vName] <- item
     item
 
 let private createBoolMenuItemS vName =
-    createBoolMenuItem vName vName
+    createBoolMenuItem vName vName true
 
 let private textToName (s: string): string =
     s.Split([|' '|]).[0]
@@ -397,7 +405,11 @@ let private uncheckAllItems (dict: Dictionary<string, ToolStripMenuItem>) =
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine(sprintf "setTrigger: %s" res.Name)
-    Volatile.Write(firstTrigger, res)     
+    Volatile.Write(firstTrigger, res)
+
+    let dlkey = "draggedLock"
+    if boolMenuDict.ContainsKey(dlkey) then
+        boolMenuDict.[dlkey].Enabled <- res.IsDrag
 
 let private createTriggerMenuItem text =
     let item = new ToolStripMenuItem(text, null)
@@ -418,7 +430,8 @@ let private addSeparator (col: ToolStripItemCollection) =
 
 let private createTriggerMenu () =
     let menu = new ToolStripMenuItem("Tigger")
-    let add name = menu.DropDownItems.Add(createTriggerMenuItem name) |> ignore
+    let items = menu.DropDownItems
+    let add name = items.Add(createTriggerMenuItem name) |> ignore
 
     add "LR (Left <<-->> Right)"
     add "Left (Left -->> Right)"
@@ -426,13 +439,16 @@ let private createTriggerMenu () =
     add "Middle"
     add "X1"
     add "X2"
-    addSeparator menu.DropDownItems
+    addSeparator items
 
     add "LeftDrag"
     add "RightDrag"
     add "MiddleDrag"
     add "X1Drag"
     add "X2Drag"
+    addSeparator items
+
+    items.Add(createBoolMenuItem "draggedLock" "Dragged Lock" (isDragTrigger())) |> ignore
 
     menu
 
@@ -482,9 +498,7 @@ let private createAccelTableMenu () =
     add "M9 (1.8 ... 8.7)"
     addSeparator items
 
-    let vName = "customAccelTable"
-    items.Add(createBoolMenuItem vName "Custom Table") |> ignore
-    boolMenuDict.[vName].Enabled <- not Accel.CustomDisabled
+    items.Add(createBoolMenuItem "customAccelTable" "Custom Table" (not Accel.CustomDisabled)) |> ignore
     
     menu
 
@@ -605,13 +619,13 @@ let private createRealWheelModeMenu () =
     menu
 
 let private createCursorChangeMenuItem () =
-    createBoolMenuItem "cursorChange" "Cursor Change"
+    createBoolMenuItem "cursorChange" "Cursor Change" true
 
 let private createHorizontalScrollMenuItem () =
-    createBoolMenuItem "horizontalScroll" "Horizontal Scroll"
+    createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
 
 let private createReverseScrollMenuItem () =
-    createBoolMenuItem "reverseScroll" "Reverse Scroll"
+    createBoolMenuItem "reverseScroll" "Reverse Scroll" true
 
 let private createPassModeMenuItem () =
     let event = makeSetBooleanEvent "passMode"
@@ -651,7 +665,8 @@ let private BooleanNames: string array =
     [|"realWheelMode"; "cursorChange";
      "horizontalScroll"; "reverseScroll";
      "quickFirst"; "quickTurn";
-     "accelTable"; "customAccelTable"|]
+     "accelTable"; "customAccelTable";
+     "draggedLock"|]
 
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
