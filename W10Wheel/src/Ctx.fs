@@ -155,6 +155,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable reverse = false
     [<VolatileField>] static let mutable horizontal = true
     [<VolatileField>] static let mutable draggedLock = false
+    [<VolatileField>] static let mutable swap = false
 
     static member Start (info: HookInfo) =
         stime <- info.time
@@ -194,6 +195,9 @@ type private Scroll() =
     static member DraggedLock
         with get() = draggedLock
         and set b = draggedLock <- b
+    static member Swap
+        with get() = swap
+        and set b = swap <- b
 
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
@@ -205,6 +209,7 @@ let isCursorChange () = Scroll.CursorChange
 let isReverseScroll () = Scroll.Reverse
 let isHorizontalScroll () = Scroll.Horizontal
 let isDraggedLock () = Scroll.DraggedLock
+let isSwapScroll () = Scroll.Swap
 
 type private RealWheel() =
     [<VolatileField>] static let mutable mode = false
@@ -361,6 +366,7 @@ let private getBooleanOfName (name: string): bool =
     | "accelTable" -> Accel.Table
     | "customAccelTable" -> Accel.CustomTable
     | "draggedLock" -> Scroll.DraggedLock
+    | "swapScroll" -> Scroll.Swap
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -376,6 +382,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "accelTable" -> Accel.Table <- b
     | "customAccelTable" -> Accel.CustomTable <- b
     | "draggedLock" -> Scroll.DraggedLock <- b
+    | "swapScroll" -> Scroll.Swap <- b
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -625,7 +632,10 @@ let private createHorizontalScrollMenuItem () =
     createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
 
 let private createReverseScrollMenuItem () =
-    createBoolMenuItem "reverseScroll" "Reverse Scroll" true
+    createBoolMenuItem "reverseScroll" "Reverse Scroll (Flip)" true
+
+let private createSwapScrollMenuItem () =
+    createBoolMenuItem "swapScroll" "Swap Scroll (V.H)" true
 
 let private createPassModeMenuItem () =
     let event = makeSetBooleanEvent "passMode"
@@ -666,7 +676,7 @@ let private BooleanNames: string array =
      "horizontalScroll"; "reverseScroll";
      "quickFirst"; "quickTurn";
      "accelTable"; "customAccelTable";
-     "draggedLock"|]
+     "draggedLock"; "swapScroll"|]
 
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
@@ -871,6 +881,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createCursorChangeMenuItem())
     add (createHorizontalScrollMenuItem())
     add (createReverseScrollMenuItem())
+    add (createSwapScrollMenuItem())
     add (createPassModeMenuItem())
     add (createInfoMenuItem())
     add (createExitMenuItem())

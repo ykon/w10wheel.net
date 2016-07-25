@@ -61,6 +61,7 @@ let private checkSameLastEvent (me: MouseEvent): nativeint option =
     if me.Same lastEvent then
         Debug.WriteLine(sprintf "same last event: %s" me.Name)
         callNextHook()
+        //suppress()
     else
         lastEvent <- me
         None
@@ -280,7 +281,7 @@ let getResultBranch (cs:Checkers) (me:MouseEvent) =
 
 let private branchDragDown (me: MouseEvent): nativeint option =
     if Ctx.isDragTrigger() then
-        Debug.WriteLine(sprintf "branch LR only down: %s" me.Name)
+        Debug.WriteLine(sprintf "branch drag down: %s" me.Name)
         let cs = [passNotDragTrigger
                   startScrollDrag]
         
@@ -290,7 +291,7 @@ let private branchDragDown (me: MouseEvent): nativeint option =
 
 let private branchDragUp (me: MouseEvent): nativeint option =
     if Ctx.isDragTrigger() then
-        Debug.WriteLine(sprintf "branch LR only up: %s" me.Name)
+        Debug.WriteLine(sprintf "branch drag up: %s" me.Name)
         let cs = [checkDownSuppressed
                   passNotDragTrigger
                   continueScrollDrag
@@ -388,7 +389,7 @@ let xDown (info: HookInfo) =
     singleDown(me)
 
 let xUp (info: HookInfo) =
-    let me = if Mouse.isXButton1(info.mouseData) then X1Down(info) else X2Down(info)
+    let me = if Mouse.isXButton1(info.mouseData) then X1Up(info) else X2Up(info)
     singleUp(me)
 
 let move (info: HookInfo) =

@@ -161,8 +161,11 @@ let private sendHorizontalWheel (pt:WinAPI.POINT) (d:int) =
 
 let sendWheel (pt: WinAPI.POINT) =
     let sx, sy = Ctx.getScrollStartPoint()
-    let dx = pt.x - sx
-    let dy = pt.y - sy
+    let tx = pt.x - sx
+    let ty = pt.y - sy
+
+    let dx = if Ctx.isSwapScroll() then ty else tx
+    let dy = if Ctx.isSwapScroll() then tx else ty
 
     let spt = WinAPI.POINT(sx, sy)
 
