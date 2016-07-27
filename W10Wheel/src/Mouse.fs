@@ -58,6 +58,16 @@ type MouseEvent =
         | X2Down(_) | X2Up(_) -> true
         | _ -> false
 
+    member self.IsLR =
+        match self with 
+        | LeftDown(_) | LeftUp(_) | RightDown(_) | RightUp(_) -> true
+        | _ -> false
+
+    member self.IsNone =
+        match self with
+        | NoneEvent -> true
+        | _ -> false
+
     member self.Same me2 =
         match self, me2 with
         | LeftDown(_), LeftDown(_) -> true

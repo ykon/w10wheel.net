@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.4
+        0.5
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-27: Version 0.5.0: イベントの順序、同期の改良
         2016-07-25: Version 0.4.0: SwapScrollの追加、X1,X2のUp修正
         2016-07-25: Version 0.3.0: DraggedLockの追加、再送イベントの改良
         2016-07-23: Version 0.2.0: スレッド周辺とイベント受け渡しの改良

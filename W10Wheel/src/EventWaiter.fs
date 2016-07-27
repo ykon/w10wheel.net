@@ -12,28 +12,36 @@ open System.Threading
 
 open Mouse
 
-let private waiting = ref false
+let private waitingEvent = ref NoneEvent
 let private sync = new BlockingCollection<MouseEvent>(1)
 
-let offer e =
-    sync.TryAdd(e)
+let private getWatingEvent () =
+    Volatile.Read(waitingEvent)
 
-//let add e = sync.Add(e)
+let private setFlagsOffer me =
+    match me with
+    | Move(_) | LeftUp(_) | RightUp(_) -> Ctx.LastFlags.SetResent (getWatingEvent())
+    | LeftDown(_) | RightDown(_) ->
+        Ctx.LastFlags.SetSuppressed (getWatingEvent())
+        Ctx.LastFlags.SetSuppressed me
+    | _ -> raise (InvalidOperationException())
 
-let isWaiting () = Volatile.Read(waiting)
+let private isWaiting () = Volatile.Read(waitingEvent) <> NoneEvent
 
-let private fromTimeout down =
-    Ctx.LastFlags.SetResent down
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-    Windows.resendDown down
+let offer me: bool =
+    if isWaiting() && sync.TryAdd(me) then
+        setFlagsOffer me
+        true 
+    else
+        false
 
-let private fromMove down =
-    Ctx.LastFlags.SetResent down
+let private fromMove (down: MouseEvent) =
+    //Ctx.LastFlags.SetResent down
     Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)
     Windows.resendDown down
 
 let private fromUp (down:MouseEvent) (up:MouseEvent) =
-    Ctx.LastFlags.SetResent down
+    //Ctx.LastFlags.SetResent down
 
     let resendC (mc: MouseClick) =
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s" down.Name up.Name mc.Name)
@@ -60,11 +68,28 @@ let private fromUp (down:MouseEvent) (up:MouseEvent) =
     | _ -> raise (InvalidOperationException())
 
 let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
-    Ctx.LastFlags.SetSuppressed d1
-    Ctx.LastFlags.SetSuppressed d2
+    //Ctx.LastFlags.SetSuppressed d1
+    //Ctx.LastFlags.SetSuppressed d2
 
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
     Ctx.startScrollMode d2.Info
+
+let private dispatchEvent down res =
+    match res with
+    | Move(_) -> fromMove down
+    | LeftUp(_) | RightUp(_) -> fromUp down res
+    | LeftDown(_) | RightDown(_) -> fromDown down res
+    | _ -> raise (InvalidOperationException())
+
+let private fromTimeout down =
+    Thread.Sleep(0)
+    let res: MouseEvent ref = ref NoneEvent
+    if sync.TryTake(res) then
+        dispatchEvent down res.Value
+    else
+        Ctx.LastFlags.SetResent down
+        Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
+        Windows.resendDown down
 
 let private waiterQueue = new BlockingCollection<MouseEvent>(1)
 
@@ -73,19 +98,14 @@ let private waiter () =
     while true do
         let down = waiterQueue.Take()
             
-        Debug.WriteLine("EventWaiter: TryTake")
         let ts = new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())
         let timeout = not (sync.TryTake(res, ts))
-        Volatile.Write(waiting, false)
+        Volatile.Write(waitingEvent, NoneEvent)
 
         if timeout then
             fromTimeout down
         else
-            match res.Value with
-            | Move(_) -> fromMove down
-            | LeftUp(_) | RightUp(_) -> fromUp down res.Value
-            | LeftDown(_) | RightDown(_) -> fromDown down res.Value
-            | _ -> raise (InvalidOperationException())
+            dispatchEvent down res.Value
         
 let private waiterThread = new Thread(waiter)
 waiterThread.IsBackground <- true
@@ -95,6 +115,6 @@ let start (down: MouseEvent) =
     if not (down.IsDown) then
         raise (ArgumentException())
 
-    Volatile.Write(waiting, true)
+    Volatile.Write(waitingEvent, down)
     waiterQueue.Add(down)
 

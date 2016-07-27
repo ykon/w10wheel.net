@@ -37,22 +37,28 @@ let private resetLastFlags (me: MouseEvent): nativeint option =
 
 let private skipResendEvent (me: MouseEvent): nativeint option =
     if Windows.isResendEvent me then
-        Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
-        lastResendEvent <- me
-        callNextHook()
+        match lastResendEvent, me with
+        | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
+            Debug.WriteLine(sprintf "re-resend event: %s" me.Name)
+            Windows.resendUp(me)
+            suppress()
+        | _ ->
+            Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
+            lastResendEvent <- me
+            callNextHook()
     else
         None
 
 let private skipFirstUpOrSingle (me: MouseEvent): nativeint option =
-    if lastEvent = NoneEvent || lastEvent.IsSingle then
-        Debug.WriteLine(sprintf "skip first up event: %s" me.Name)
+    if lastEvent.IsNone || lastEvent.IsSingle then
+        Debug.WriteLine(sprintf "skip first Up or Single: %s" me.Name)
         callNextHook()
     else
         None
 
 let private skipFirstUpOrLR (me: MouseEvent): nativeint option =
-    if lastEvent = NoneEvent || not (lastEvent.IsSingle) then
-        Debug.WriteLine(sprintf "skip first single event: %s" me.Name)
+    if lastEvent.IsNone || lastEvent.IsLR then
+        Debug.WriteLine(sprintf "skip first Up or LR: %s" me.Name)
         callNextHook()
     else
         None
@@ -103,6 +109,7 @@ let private passSingleTrigger (me: MouseEvent): nativeint option =
     else
         None
 
+(*
 let private retryOffer (me: MouseEvent): bool =
     let rec loop b i =
         if b then
@@ -115,16 +122,12 @@ let private retryOffer (me: MouseEvent): bool =
             loop (EventWaiter.offer me) (i - 1)
 
     loop false 3
-
+*)
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
-    if EventWaiter.isWaiting() then
-        if retryOffer me then
-            Debug.WriteLine(sprintf "success to offer: %s" me.Name)
-            suppress()
-        else
-            Debug.WriteLine(sprintf "fail to offer: %s" me.Name)
-            None
+    if EventWaiter.offer me then
+        Debug.WriteLine(sprintf "success to offer: %s" me.Name)
+        suppress()
     else
         None
 
@@ -141,20 +144,15 @@ let private checkDownResent (up: MouseEvent): nativeint option =
     let resent = Ctx.LastFlags.IsDownResent up
 
     if resent then
-        if up.SameButton lastResendEvent then
-            Debug.WriteLine(sprintf "pass (checkDownResent): %s" up.Name)
-            callNextHook()
-        else
-            Debug.WriteLine(sprintf "resend (checkDownResent): %s" up.Name)
-            Windows.resendUp up
-            suppress()
+        Debug.WriteLine(sprintf "resend up (checkDownResent): %s" up.Name)
+        Windows.resendUp up
+        suppress()
     else
         None
 
 let private checkTriggerWaitStart (me: MouseEvent): nativeint option =
     if Ctx.isLRTrigger() || Ctx.isTriggerEvent me then
         Debug.WriteLine(sprintf "start wait trigger: %s" me.Name)
-        //Async.Start (EventWaiter.start me)
         EventWaiter.start me
         suppress()
     else
@@ -398,7 +396,7 @@ let move (info: HookInfo) =
         drag info
         Windows.sendWheel info.pt
         suppress().Value
-    elif EventWaiter.isWaiting() && EventWaiter.offer (Move(info)) then
+    elif EventWaiter.offer (Move(info)) then
         Debug.WriteLine("success to offer: Move")
         suppress().Value
     else
