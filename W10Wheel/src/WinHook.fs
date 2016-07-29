@@ -15,7 +15,9 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 let mutable private hhook: nativeint = IntPtr.Zero
 
 let unhook () =
-    WinAPI.UnhookWindowsHookEx(hhook) |> ignore
+    if hhook <> IntPtr.Zero then
+        WinAPI.UnhookWindowsHookEx(hhook) |> ignore
+        hhook <- IntPtr.Zero
 
 let setHook (proc: WinAPI.LowLevelMouseProc) =
     let handle = WinAPI.GetModuleHandle(null)

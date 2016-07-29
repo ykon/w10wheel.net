@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.5
+        0.6
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-29: Version 0.6.0: OSの終了時などに設定を保存、他
         2016-07-27: Version 0.5.0: イベントの順序、同期の改良
         2016-07-25: Version 0.4.0: SwapScrollの追加、X1,X2のUp修正
         2016-07-25: Version 0.3.0: DraggedLockの追加、再送イベントの改良
@@ -76,11 +77,8 @@ URL:
         トリガーを押したままスクロールして、離したら止めることもできます。
         同時押しでは、両方を押さえたままにするのではなく、片方を先に離すと使いやすくなります。
         
-        Middle, X1, X2 のトリガーでは Shift か Ctrl か Alt の
-        キーを押しながらトリガーを押すとミドル(中)クリックを送ります。
-        
         *Dragのトリガーではドラッグしている間だけスクロールします。
-        スクロールモードに固定されません。
+        スクロールモードに固定されません。(Dragged Lock が無効の場合)
         
         終了するには、タスクトレイのアイコンをダブルクリックか
         右クリックメニューから Exit を選択してください。
@@ -160,6 +158,10 @@ URL:
                 スクロールの方向を逆にする (反転する)
         swapScroll: bool (default: false)
                 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
+                
+        sendMiddleClick: bool (default: false) # Middle, X1, X2
+                Shift または Ctrl または Alt キーを押しながら
+                トリガーを押すとミドル(中)クリックを送ります。
         
         draggedLock: bool (default: false) # *DragTrigger
                 *DragTriggerでドラッグ後、スクロールモードに固定します。

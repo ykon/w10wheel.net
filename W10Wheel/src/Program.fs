@@ -10,6 +10,7 @@ open System.Diagnostics
 open System.Runtime.InteropServices
 open System.Windows.Forms
 open Microsoft.FSharp.NativeInterop
+open Microsoft.Win32
 
 open WinAPI.Message
 
@@ -37,6 +38,11 @@ let private eventDispatcher = new WinAPI.LowLevelMouseProc(mouseProc)
 let private messageDoubleLaunch () =
     MessageBox.Show("Double Launch?", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
+let private procExit () =
+    WinHook.unhook()
+    Ctx.storeProperties()
+    PreventMultiInstance.unlock()
+
 [<STAThread>]
 [<EntryPoint>]
 let main argv =
@@ -44,17 +50,15 @@ let main argv =
         messageDoubleLaunch()
         Environment.Exit(0)
 
+    SystemEvents.SessionEnding.Add (fun _ -> procExit())
+
     Ctx.loadProperties()
     Ctx.setSystemTray()
     
     WinHook.setHook(eventDispatcher)
-
     Application.Run()
+
     Debug.WriteLine("exit message loop")
-
-    WinHook.unhook()
-
-    Ctx.storeProperties()
-    PreventMultiInstance.unlock()
+    procExit()
     0
         

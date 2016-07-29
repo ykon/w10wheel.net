@@ -22,6 +22,11 @@ let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 300
 let private passMode = ref false
 let private processPriority = ref ProcessPriority.AboveNormal
+let private sendMiddleClick = ref false
+
+let isSendMiddleClick () =
+    Volatile.Read(sendMiddleClick)
+
 
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
@@ -367,6 +372,7 @@ let private getBooleanOfName (name: string): bool =
     | "customAccelTable" -> Accel.CustomTable
     | "draggedLock" -> Scroll.DraggedLock
     | "swapScroll" -> Scroll.Swap
+    | "sendMiddleClick" -> Volatile.Read(sendMiddleClick)
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -383,6 +389,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "customAccelTable" -> Accel.CustomTable <- b
     | "draggedLock" -> Scroll.DraggedLock <- b
     | "swapScroll" -> Scroll.Swap <- b
+    | "sendMiddleClick" -> Volatile.Write(sendMiddleClick, b)
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -409,14 +416,17 @@ let private uncheckAllItems (dict: Dictionary<string, ToolStripMenuItem>) =
     for KeyValue(name, item) in dict do
         item.CheckState <- CheckState.Unchecked
 
+let private setMenuEnabled (dict:Dictionary<string, ToolStripMenuItem>) key enabled =
+    if dict.ContainsKey(key) then
+        dict.[key].Enabled <- enabled
+
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine(sprintf "setTrigger: %s" res.Name)
     Volatile.Write(firstTrigger, res)
 
-    let dlkey = "draggedLock"
-    if boolMenuDict.ContainsKey(dlkey) then
-        boolMenuDict.[dlkey].Enabled <- res.IsDrag
+    setMenuEnabled boolMenuDict "sendMiddleClick" res.IsSingle
+    setMenuEnabled boolMenuDict "draggedLock" res.IsDrag
 
 let private createTriggerMenuItem text =
     let item = new ToolStripMenuItem(text, null)
@@ -455,6 +465,7 @@ let private createTriggerMenu () =
     add "X2Drag"
     addSeparator items
 
+    items.Add(createBoolMenuItem "sendMiddleClick" "Send MiddleClick" (isSingleTrigger())) |> ignore
     items.Add(createBoolMenuItem "draggedLock" "Dragged Lock" (isDragTrigger())) |> ignore
 
     menu
@@ -676,7 +687,8 @@ let private BooleanNames: string array =
      "horizontalScroll"; "reverseScroll";
      "quickFirst"; "quickTurn";
      "accelTable"; "customAccelTable";
-     "draggedLock"; "swapScroll"|]
+     "draggedLock"; "swapScroll";
+     "sendMiddleClick"|]
 
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
@@ -784,7 +796,10 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         | :? FormatException -> Debug.WriteLine(sprintf "Parse error: %s" name)
         | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
 
+let mutable private loaded = false
+
 let loadProperties (): unit =
+    loaded <- true
     try
         prop.Load(PROP_NAME)
 
@@ -836,7 +851,7 @@ let private isChangedProperties () =
 
 let storeProperties () =
     try
-        if not (isChangedProperties()) then
+        if not (loaded) || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
             Debug.WriteLine("saveConfig start")
@@ -865,6 +880,11 @@ let private createReloadPropertiesMenuItem () =
 
     item
 
+let private createSavePropertiesMenuItem () =
+    let item = new ToolStripMenuItem("Save Properties")
+    item.Click.Add (fun _ -> storeProperties())
+    item
+
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
     let add (item: ToolStripMenuItem) = menu.Items.Add(item) |> ignore
@@ -876,6 +896,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     addSeparator menu.Items
 
     add (createReloadPropertiesMenuItem())
+    add (createSavePropertiesMenuItem())
     addSeparator menu.Items
     
     add (createCursorChangeMenuItem())

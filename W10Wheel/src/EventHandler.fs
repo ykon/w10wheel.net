@@ -35,7 +35,7 @@ let private resetLastFlags (me: MouseEvent): nativeint option =
     Ctx.LastFlags.Reset me
     None
 
-let private skipResendEvent (me: MouseEvent): nativeint option =
+let private skipResendEventLR (me: MouseEvent): nativeint option =
     if Windows.isResendEvent me then
         match lastResendEvent, me with
         | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
@@ -46,6 +46,13 @@ let private skipResendEvent (me: MouseEvent): nativeint option =
             Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
             lastResendEvent <- me
             callNextHook()
+    else
+        None
+
+let private skipResendEventSingle (me: MouseEvent): nativeint option =
+    if Windows.isResendEvent me then
+        Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
+        callNextHook()
     else
         None
 
@@ -159,7 +166,7 @@ let private checkTriggerWaitStart (me: MouseEvent): nativeint option =
         None
 
 let private checkKeySendMiddle (me: MouseEvent): nativeint option =
-    if Windows.getAsyncShiftState() || Windows.getAsyncCtrlState() || Windows.getAsyncAltState() then
+    if Ctx.isSendMiddleClick() && (Windows.getAsyncShiftState() || Windows.getAsyncCtrlState() || Windows.getAsyncAltState()) then
         Debug.WriteLine(sprintf "send middle click: %s" me.Name)
         Windows.resendClick(MiddleClick(me.Info))
         Ctx.LastFlags.SetSuppressed(me)
@@ -301,7 +308,7 @@ let private branchDragUp (me: MouseEvent): nativeint option =
 
 let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
-        skipResendEvent
+        skipResendEventLR
         checkSameLastEvent
         resetLastFlags
         checkExitScrollDown
@@ -316,7 +323,7 @@ let private lrDown (me: MouseEvent): nativeint =
 
 let private lrUp (me: MouseEvent): nativeint =
     let checkers = [
-        skipResendEvent
+        skipResendEventLR
         skipFirstUpOrSingle
         checkSameLastEvent
         branchDragUp
@@ -349,7 +356,7 @@ let rightUp (info: HookInfo) =
 
 let private singleDown (me: MouseEvent): nativeint =
     let checkers = [
-        skipResendEvent
+        skipResendEventSingle
         checkSameLastEvent
         resetLastFlags
         checkExitScrollDown
@@ -364,7 +371,7 @@ let private singleDown (me: MouseEvent): nativeint =
 
 let private singleUp (me: MouseEvent): nativeint =
     let checkers = [
-        skipResendEvent
+        skipResendEventSingle
         skipFirstUpOrLR
         checkSameLastEvent
         branchDragUp

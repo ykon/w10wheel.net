@@ -7,6 +7,6 @@
 
 let PROGRAM_NAME = "W10Wheel"
 let PROGRAM_NAME_NET = "W10Wheel.NET"
-let PROGRAM_VERSION = "0.5.0"
+let PROGRAM_VERSION = "0.6.0"
 
 
