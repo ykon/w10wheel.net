@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.6
+        0.7
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-31: Version 0.7.0: キーボード(トリガー)対応
         2016-07-29: Version 0.6.0: OSの終了時などに設定を保存、他
         2016-07-27: Version 0.5.0: イベントの順序、同期の改良
         2016-07-25: Version 0.4.0: SwapScrollの追加、X1,X2のUp修正
@@ -89,6 +90,7 @@ URL:
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
+        Keyboard: キーボードをトリガーとする
         Reload Properties: 設定ファイルを再読込
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -185,12 +187,18 @@ URL:
                 AccelTableを有効にするか
         customAccelTable: bool (default: false) # AccelTable
                 CustomTableを有効にするか
-        accelMultiplier: bool (default: M5) # AccelTable
+        accelMultiplier: string (default: M5) # AccelTable
                 選択されている乗数テーブル
         customAccelThreshold: Int Array # AccelTable
                 CustomTableで使われるThreshold
         customAccelMultiplier: Double Array # AccelTable
                 CustomTableで使われるMultiplier
+                
+        keyboardHook: bool (default: false) # Keyboard
+                キーボードのトリガーを有効にする
+        targetVKCode: string (default: VK_NONCONVERT) # Keyboard
+                トリガーに使うキー 
+                
 ライセンス:
         The MIT License
         詳しくは License.txt を参照

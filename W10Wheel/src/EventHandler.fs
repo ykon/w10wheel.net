@@ -12,10 +12,10 @@ open Microsoft.FSharp.NativeInterop
 
 open Mouse
 
-let private __callNextHook: (unit -> nativeint) ref = ref (fun () -> IntPtr(0))
-let setCallNextHook (f: unit -> nativeint): unit = __callNextHook := f
+let mutable private __callNextHook: (unit -> nativeint) = fun _ -> IntPtr(0)
+let setCallNextHook (f: unit -> nativeint): unit = __callNextHook <- f
 
-let private callNextHook () = Some(__callNextHook.Value())
+let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NoneEvent
@@ -71,7 +71,7 @@ let private skipFirstUpOrLR (me: MouseEvent): nativeint option =
         None
 
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
-    if me.Same lastEvent then
+    if me.SameEvent lastEvent then
         Debug.WriteLine(sprintf "same last event: %s" me.Name)
         callNextHook()
         //suppress()
@@ -269,11 +269,11 @@ let private endIllegalState (me: MouseEvent): nativeint option =
 
 type Checkers = (MouseEvent -> nativeint option) list
 
-let rec private getResultL (cs:Checkers) (me:MouseEvent) =
+let rec private getResult (cs:Checkers) (me:MouseEvent) =
     match cs with
     | f :: fs ->
         let res = f me
-        if res.IsSome then res else getResultL fs me
+        if res.IsSome then res else getResult fs me
     | _ -> raise (ArgumentException())
 
 (*
@@ -290,7 +290,7 @@ let private branchDragDown (me: MouseEvent): nativeint option =
         let cs = [passNotDragTrigger
                   startScrollDrag]
         
-        getResultL cs me
+        getResult cs me
     else
         None
 
@@ -302,7 +302,7 @@ let private branchDragUp (me: MouseEvent): nativeint option =
                   continueScrollDrag
                   exitAndResendDrag]
 
-        getResultL cs me
+        getResult cs me
     else
         None
 
@@ -319,7 +319,7 @@ let private lrDown (me: MouseEvent): nativeint =
         endNotTrigger
     ]
 
-    (getResultL checkers me).Value
+    (getResult checkers me).Value
 
 let private lrUp (me: MouseEvent): nativeint =
     let checkers = [
@@ -336,7 +336,7 @@ let private lrUp (me: MouseEvent): nativeint =
         endUnknownEvent
     ]
 
-    (getResultL checkers me).Value
+    (getResult checkers me).Value
 
 let leftDown (info: HookInfo) =
     //Debug.WriteLine("LeftDown")
@@ -367,7 +367,7 @@ let private singleDown (me: MouseEvent): nativeint =
         endIllegalState
     ]
 
-    (getResultL checkers me).Value
+    (getResult checkers me).Value
 
 let private singleUp (me: MouseEvent): nativeint =
     let checkers = [
@@ -381,7 +381,7 @@ let private singleUp (me: MouseEvent): nativeint =
         endIllegalState
     ]
 
-    (getResultL checkers me).Value
+    (getResult checkers me).Value
 
 let middleDown (info: HookInfo) =
     singleDown (MiddleDown(info))

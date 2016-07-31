@@ -17,12 +17,25 @@ open Microsoft.VisualBasic
 open System.Collections.Generic
 
 open Mouse
+open Keyboard
 
 let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 300
 let private passMode = ref false
 let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
+
+let private keyboardHook = ref false
+let private targetVKCode = ref (Keyboard.getVKCode("VK_NONCONVERT"))
+
+let isKeyboardHook () =
+    Volatile.Read(keyboardHook)
+
+let getTargetVKCode () =
+    Volatile.Read(targetVKCode)
+
+let isTriggerKey (ke: KeyboardEvent) =
+    ke.VKCode = getTargetVKCode()
 
 let isSendMiddleClick () =
     Volatile.Read(sendMiddleClick)
@@ -150,72 +163,6 @@ let private skip_left_down = ref false
 let private skip_left_up = ref false
 *)
 
-type private Scroll() =
-    [<VolatileField>] static let mutable mode = false
-    [<VolatileField>] static let mutable stime = 0u
-    [<VolatileField>] static let mutable sx = 0
-    [<VolatileField>] static let mutable sy = 0
-    [<VolatileField>] static let mutable locktime = 300
-    [<VolatileField>] static let mutable cursorChange = true
-    [<VolatileField>] static let mutable reverse = false
-    [<VolatileField>] static let mutable horizontal = true
-    [<VolatileField>] static let mutable draggedLock = false
-    [<VolatileField>] static let mutable swap = false
-
-    static member Start (info: HookInfo) =
-        stime <- info.time
-        sx <- info.pt.x
-        sy <- info.pt.y
-        mode <- true
-
-        if cursorChange && not (isDragTrigger()) then
-            WinCursor.change()
-
-    static member Exit () =
-        mode <- false
-
-        if cursorChange then
-            WinCursor.restore() |> ignore
-
-    static member CheckExit (time: uint32) =
-        let dt = time - stime
-        Debug.WriteLine(sprintf "scroll time: %d ms" dt)
-        dt > (uint32 locktime)
-
-    static member IsMode with get() = mode
-    static member StartTime with get() = stime
-    static member StartPoint with get() = (sx, sy)
-    static member LockTime
-        with get() = locktime
-        and set n = locktime <- n
-    static member CursorChange
-        with get() = cursorChange
-        and set b = cursorChange <- b
-    static member Reverse
-        with get() = reverse
-        and set b = reverse <- b
-    static member Horizontal
-        with get() = horizontal
-        and set b = horizontal <- b
-    static member DraggedLock
-        with get() = draggedLock
-        and set b = draggedLock <- b
-    static member Swap
-        with get() = swap
-        and set b = swap <- b
-
-let isScrollMode () = Scroll.IsMode
-let startScrollMode (info: HookInfo): unit = Scroll.Start info
-let exitScrollMode (): unit = Scroll.Exit()
-let checkExitScroll (time: uint32) = Scroll.CheckExit time
-let getScrollStartPoint () = Scroll.StartPoint
-let getScrollLockTime () = Scroll.LockTime
-let isCursorChange () = Scroll.CursorChange
-let isReverseScroll () = Scroll.Reverse
-let isHorizontalScroll () = Scroll.Horizontal
-let isDraggedLock () = Scroll.DraggedLock
-let isSwapScroll () = Scroll.Swap
-
 type private RealWheel() =
     [<VolatileField>] static let mutable mode = false
     [<VolatileField>] static let mutable wheelDelta = 120
@@ -261,6 +208,83 @@ let isQuickFirst () =
 let isQuickTurn () =
     RealWheel.QuickTurn
 
+type private Scroll() =
+    [<VolatileField>] static let mutable mode = false
+    [<VolatileField>] static let mutable stime = 0u
+    [<VolatileField>] static let mutable sx = 0
+    [<VolatileField>] static let mutable sy = 0
+    [<VolatileField>] static let mutable locktime = 300
+    [<VolatileField>] static let mutable cursorChange = true
+    [<VolatileField>] static let mutable reverse = false
+    [<VolatileField>] static let mutable horizontal = true
+    [<VolatileField>] static let mutable draggedLock = false
+    [<VolatileField>] static let mutable swap = false
+
+    static member Start (info: HookInfo) =
+        stime <- info.time
+        sx <- info.pt.x
+        sy <- info.pt.y
+        mode <- true
+
+        if cursorChange && not (isDragTrigger()) then
+            WinCursor.change()
+
+    static member Start (info: KHookInfo) =
+        stime <- info.time
+        sx <- Cursor.Position.X
+        sy <- Cursor.Position.Y
+        mode <- true
+
+        if cursorChange then
+            WinCursor.change()
+
+    static member Exit () =
+        mode <- false
+
+        if cursorChange then
+            WinCursor.restore() |> ignore
+
+    static member CheckExit (time: uint32) =
+        let dt = time - stime
+        Debug.WriteLine(sprintf "scroll time: %d ms" dt)
+        dt > (uint32 locktime)
+
+    static member IsMode with get() = mode
+    static member StartTime with get() = stime
+    static member StartPoint with get() = (sx, sy)
+    static member LockTime
+        with get() = locktime
+        and set n = locktime <- n
+    static member CursorChange
+        with get() = cursorChange
+        and set b = cursorChange <- b
+    static member Reverse
+        with get() = reverse
+        and set b = reverse <- b
+    static member Horizontal
+        with get() = horizontal
+        and set b = horizontal <- b
+    static member DraggedLock
+        with get() = draggedLock
+        and set b = draggedLock <- b
+    static member Swap
+        with get() = swap
+        and set b = swap <- b
+
+let isScrollMode () = Scroll.IsMode
+let startScrollMode (info: HookInfo): unit = Scroll.Start info
+let startScrollModeK (info: KHookInfo) = Scroll.Start info
+
+let exitScrollMode (): unit = Scroll.Exit()
+let checkExitScroll (time: uint32) = Scroll.CheckExit time
+let getScrollStartPoint () = Scroll.StartPoint
+let getScrollLockTime () = Scroll.LockTime
+let isCursorChange () = Scroll.CursorChange
+let isReverseScroll () = Scroll.Reverse
+let isHorizontalScroll () = Scroll.Horizontal
+let isDraggedLock () = Scroll.DraggedLock
+let isSwapScroll () = Scroll.Swap
+
 type LastFlags() =
     // R = Resent
     [<VolatileField>] static let mutable ldR = false
@@ -271,37 +295,56 @@ type LastFlags() =
     [<VolatileField>] static let mutable rdS = false
     [<VolatileField>] static let mutable sdS = false
 
-    static member SetResent (down:MouseEvent): unit =
+    [<VolatileField>] static let mutable kdSDict = new Dictionary<int, bool>()
+
+    static member SetResent (down: MouseEvent): unit =
         match down with
         | LeftDown(_) -> ldR <- true
         | RightDown(_) -> rdR <- true
         | _ -> ()
 
-    static member IsDownResent (up:MouseEvent) =
+    static member IsDownResent (up: MouseEvent) =
         match up with
         | LeftUp(_) -> ldR
         | RightUp(_) -> rdR
         | _ -> raise (ArgumentException())
 
-    static member SetSuppressed (down:MouseEvent): unit =
+    static member SetSuppressed (down: MouseEvent): unit =
         match down with
         | LeftDown(_) -> ldS <- true 
         | RightDown(_) -> rdS <- true
         | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- true
         | _ -> ()
 
-    static member IsDownSuppressed (up:MouseEvent) =
+    static member SetSuppressed (down: KeyboardEvent) =
+        match down with
+        | KeyDown(_) -> kdSDict.[down.VKCode] <- true
+        | _ -> ()
+
+    static member IsDownSuppressed (up: MouseEvent) =
         match up with
         | LeftUp(_) -> ldS
         | RightUp(_) -> rdS
         | MiddleUp(_) | X1Up(_) | X2Up(_) -> sdS
         | _ -> raise (ArgumentException())
 
-    static member Reset (down:MouseEvent) =
+    static member IsDownSuppressed (up: KeyboardEvent) =
+        match up with
+        | KeyUp(_) ->
+            let (ok, b) = kdSDict.TryGetValue(up.VKCode)
+            if ok then b else false
+        | _ -> raise (ArgumentException())
+
+    static member Reset (down: MouseEvent) =
         match down with
         | LeftDown(_) -> ldR <- false; ldS <- false
         | RightDown(_) -> rdR <- false; rdS <- false
         | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
+        | _ -> raise (ArgumentException())
+
+    static member Reset (down: KeyboardEvent) =
+        match down with
+        | KeyDown(_) -> kdSDict.[down.VKCode] <- false
         | _ -> raise (ArgumentException())
 
 let getPollTimeout () =
@@ -311,6 +354,7 @@ let isPassMode () =
     Volatile.Read(passMode)
 
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
+type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 (*
 let setSkip (me:MouseEvent) (enabled:bool) =
@@ -359,6 +403,7 @@ let private triggerMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private accelMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private priorityMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private numberMenuDict = new Dictionary<string, ToolStripMenuItem>()
+let private keyboardMenuDict = new Dictionary<string, ToolStripMenuItem>()
 
 let private getBooleanOfName (name: string): bool =
     match name with
@@ -373,6 +418,7 @@ let private getBooleanOfName (name: string): bool =
     | "draggedLock" -> Scroll.DraggedLock
     | "swapScroll" -> Scroll.Swap
     | "sendMiddleClick" -> Volatile.Read(sendMiddleClick)
+    | "keyboardHook" -> Volatile.Read(keyboardHook)
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -390,6 +436,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "draggedLock" -> Scroll.DraggedLock <- b
     | "swapScroll" -> Scroll.Swap <- b
     | "sendMiddleClick" -> Volatile.Write(sendMiddleClick, b)
+    | "keyboardHook" -> Volatile.Write(keyboardHook, b)
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -470,7 +517,7 @@ let private createTriggerMenu () =
 
     menu
 
-let private createOnOffMenuItem (vname: string) =
+let private createOnOffMenuItem (vname:string) (action: bool -> unit) =
     let getOnOff (b: bool) = if b then "ON" else "OFF"
     let item = new ToolStripMenuItem(getOnOff(getBooleanOfName vname))
     item.CheckOnClick <- true
@@ -480,8 +527,12 @@ let private createOnOffMenuItem (vname: string) =
         let b  = item.Checked
         item.Text <- getOnOff b
         setBooleanOfName vname b
+        action(b)
     )
     item
+
+let private createOnOffMenuItemNA (vname:string) =
+    createOnOffMenuItem vname (fun _ -> ())
 
 let private setAccelMultiplier name =
     Debug.WriteLine(sprintf "setAccelMultiplier %s" name)
@@ -506,7 +557,7 @@ let private createAccelTableMenu () =
     let items = menu.DropDownItems
     let add name = items.Add(createAccelMenuItem name) |> ignore
 
-    items.Add(createOnOffMenuItem "accelTable") |> ignore
+    items.Add(createOnOffMenuItemNA "accelTable") |> ignore
     addSeparator items
 
     add "M5 (1.0 ... 4.8)"
@@ -623,7 +674,7 @@ let private createRealWheelModeMenu () =
     let addNum name low up = items.Add(createNumberMenuItem name low up) |> ignore
     let addBool name = items.Add(createBoolMenuItemS name) |> ignore
 
-    items.Add(createOnOffMenuItem "realWheelMode") |> ignore
+    items.Add(createOnOffMenuItemNA "realWheelMode") |> ignore
     addSeparator items
 
     addNum "wheelDelta" 10 500
@@ -634,6 +685,51 @@ let private createRealWheelModeMenu () =
     addBool "quickFirst"
     addBool "quickTurn"
         
+    menu
+
+let setTargetVKCode name =
+    Debug.WriteLine(sprintf "setTargetVKCode: %s" name)
+    Volatile.Write(targetVKCode, Keyboard.getVKCode name)
+
+let private createKeyboardMenuItem text =
+    let item = new ToolStripMenuItem(text, null)
+    let name = textToName text
+    keyboardMenuDict.[name] <- item
+
+    item.Click.Add (fun _ ->
+        if item.CheckState = CheckState.Unchecked then
+            uncheckAllItems keyboardMenuDict
+            item.CheckState <- CheckState.Indeterminate
+            setTargetVKCode name
+    )
+
+    item
+
+let private createKeyboardMenu () =
+    let menu = new ToolStripMenuItem("Keyboard")
+    let items = menu.DropDownItems
+    let add text = items.Add(createKeyboardMenuItem text) |> ignore
+
+    items.Add(createOnOffMenuItem "keyboardHook" WinHook.setOrUnsetKeyboardHook) |> ignore
+    addSeparator items
+
+    add "VK_PAUSE (Pause)"
+    add "VK_CAPITAL (Caps Lock)"
+    add "VK_CONVERT (Henkan)"
+    add "VK_NONCONVERT (Muhenkan)"
+    add "VK_SNAPSHOT (Print Screen)"
+    add "VK_LWIN (Left Windows)"
+    add "VK_RWIN (Right Windows)"
+    add "VK_APPS (Application)"
+    add "VK_NUMLOCK (Number Lock)"
+    add "VK_SCROLL (Scroll Lock)"
+    add "VK_LSHIFT (Left Shift)"
+    add "VK_RSHIFT (Right Shift)"
+    add "VK_LCONTROL (Left Ctrl)"
+    add "VK_RCONTROL (Right Ctrl)"
+    add "VK_LMENU (Left Alt)"
+    add "VK_RMENU (Right Alt)"
+
     menu
 
 let private createCursorChangeMenuItem () =
@@ -688,7 +784,7 @@ let private BooleanNames: string array =
      "quickFirst"; "quickTurn";
      "accelTable"; "customAccelTable";
      "draggedLock"; "swapScroll";
-     "sendMiddleClick"|]
+     "sendMiddleClick"; "keyboardHook"|]
 
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
@@ -723,12 +819,21 @@ let private resetBoolNumberMenuItems () =
     for KeyValue(name, item) in boolMenuDict do
         item.Checked <- getBooleanOfName name
 
+let private resetKeyboardMenuItems () =
+    for KeyValue(name, item) in keyboardMenuDict do
+        item.CheckState <-
+            if Keyboard.getVKCode name = getTargetVKCode() then
+                CheckState.Indeterminate
+            else
+                CheckState.Unchecked
+
 let private resetMenuItems () =
     resetTriggerMenuItems()
     resetAccelMenuItems()
     resetPriorityMenuItems()
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
+    resetKeyboardMenuItems()
 
 let PROP_NAME = sprintf ".%s.properties" AppDef.PROGRAM_NAME
 
@@ -776,6 +881,13 @@ let private setPriorityOfProperty (): unit =
             Debug.WriteLine(sprintf "Match error: %s" e.Message)
             setDefaultPriority()
 
+let private setVKCodeOfProperty (): unit =
+    try
+        setTargetVKCode (prop.GetString "targetVKCode")
+    with
+        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message)
+
 let private setBooleanOfProperty (name: string): unit =
     try
         setBooleanOfName name (prop.GetBool name)
@@ -809,8 +921,10 @@ let loadProperties (): unit =
         setAccelOfProperty()
         setCustomAccelOfProperty()
         setPriorityOfProperty()
+        setVKCodeOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
+        WinHook.setOrUnsetKeyboardHook (Volatile.Read(keyboardHook))
 
         let setNum = setNumberOfProperty
         setNum "pollTimeout" 50 500
@@ -843,6 +957,7 @@ let private isChangedProperties () =
         (prop.GetString "firstTrigger") <> getFirstTrigger().Name ||
         (prop.GetString "accelMultiplier") <> Accel.Multiplier.Name ||
         (prop.GetString "processPriority") <> getProcessPriority().Name ||
+        (prop.GetString "targetVKCode") <> Keyboard.getName(getTargetVKCode()) ||
         isChangedBoolean() || isChangedNumber() 
     with
         | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
@@ -856,10 +971,11 @@ let storeProperties () =
         else
             Debug.WriteLine("saveConfig start")
 
-            let add key value = prop.[key] <- value
-            add "firstTrigger" (getFirstTrigger().Name)
-            add "accelMultiplier" (Accel.Multiplier.Name)
-            add "processPriority" (getProcessPriority().Name)
+            let set key value = prop.[key] <- value
+            set "firstTrigger" (getFirstTrigger().Name)
+            set "accelMultiplier" (Accel.Multiplier.Name)
+            set "processPriority" (getProcessPriority().Name)
+            set "targetVKCode" (Keyboard.getName (getTargetVKCode()))
 
             BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
             NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
@@ -893,6 +1009,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createPriorityMenu())
     add (createSetNumberMenu())
     add (createRealWheelModeMenu())
+    add (createKeyboardMenu())
     addSeparator menu.Items
 
     add (createReloadPropertiesMenuItem())

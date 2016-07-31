@@ -18,6 +18,7 @@ open Microsoft.FSharp.NativeInterop
 open Mouse
 
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
+type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typedefof<WinAPI.MINPUT>)
 let private inputQueue = new BlockingCollection<WinAPI.MINPUT array>(128)
@@ -159,22 +160,32 @@ let private sendHorizontalWheel (pt:WinAPI.POINT) (d:int) =
     else
         sendInput pt (setHDirection (addAccel d)) MOUSEEVENTF_HWHEEL 0u 0u
 
-let sendWheel (pt: WinAPI.POINT) =
-    let sx, sy = Ctx.getScrollStartPoint()
-    let tx = pt.x - sx
-    let ty = pt.y - sy
+let mutable private lastSPoint = (0, 0)
+
+let sendWheel (dpt: WinAPI.POINT) =
+    let spt = Ctx.getScrollStartPoint()
+
+    let sx = (fst spt)
+    let sy = (snd spt)
+
+    if Ctx.isRealWheelMode() && (spt <> lastSPoint) then
+        startWheelCount()
+        lastSPoint <- spt
+        
+    let tx = dpt.x - sx
+    let ty = dpt.y - sy
 
     let dx = if Ctx.isSwapScroll() then ty else tx
     let dy = if Ctx.isSwapScroll() then tx else ty
 
-    let spt = WinAPI.POINT(sx, sy)
+    let wspt = WinAPI.POINT(sx, sy)
 
     if Math.Abs(dy) > Ctx.getVerticalThreshold() then
-        sendVerticalWheel spt dy |> ignore
+        sendVerticalWheel wspt dy |> ignore
 
     if Ctx.isHorizontalScroll() then
         if Math.Abs(dx) > Ctx.getHorizontalThreshold() then
-            sendHorizontalWheel spt dx |> ignore
+            sendHorizontalWheel wspt dx |> ignore
 
 let private createClick (mc:MouseClick) (extra:uint32) =
     let create mouseData es = Array.map (fun e -> createInput mc.Info.pt mouseData e 0u extra) es

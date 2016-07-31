@@ -29,6 +29,17 @@ type MSLLHOOKSTRUCT =
     val time        : uint32
     val dwExtraInfo : unativeint
 
+
+// https://msdn.microsoft.com/library/windows/desktop/ms644967.aspx
+// http://pinvoke.net/default.aspx/Structures/KBDLLHOOKSTRUCT.html
+[<StructLayout(LayoutKind.Sequential)>]
+type KBDLLHOOKSTRUCT =
+    val vkCode      : uint32
+    val scanCode    : uint32
+    val flags       : uint32
+    val time        : uint32
+    val dwExtraInfo : unativeint
+
 // http://stackoverflow.com/questions/4177850/how-to-simulate-mouse-clicks-and-keypresses-in-f
 // https://msdn.microsoft.com/library/windows/desktop/ms646273.aspx
 // http://pinvoke.net/default.aspx/Structures/MOUSEINPUT.html
@@ -67,6 +78,10 @@ type MINPUT =
     new (_mi) = {``type`` = 0u; mi = _mi}
 
 module Message =
+    let WM_KEYDOWN = 0x0100
+    let WM_KEYUP = 0x0101
+    let WM_SYSKEYDOWN = 0x0104
+    let WM_SYSKEYUP = 0x0105
     let WM_MOUSEMOVE = 0x0200
     let WM_LBUTTONDOWN = 0x0201
     let WM_LBUTTONUP = 0x0202
@@ -83,6 +98,7 @@ module Message =
     let WM_XBUTTONDBLCLK = 0x020D
     let WM_MOUSEHWHEEL = 0x020E
 
+let WH_KEYBOARD_LL = 13
 let WH_MOUSE_LL = 14
 let WHEEL_DELTA = 120
 
@@ -104,9 +120,13 @@ module Event =
     let MOUSEEVENTF_XDOWN = 0x0080
     let MOUSEEVENTF_XUP = 0x0100
 
-// http://www.pinvoke.net/default.aspx/Delegates/LowLevelMouseProc.html
 // https://msdn.microsoft.com/library/windows/desktop/ms644986.aspx
+// http://www.pinvoke.net/default.aspx/Delegates/LowLevelMouseProc.html
 type LowLevelMouseProc = delegate of nCode: int * wParam: nativeint * [<In>]lParam: MSLLHOOKSTRUCT -> nativeint
+
+// https://msdn.microsoft.com/library/windows/desktop/ms644985.aspx
+// http://pinvoke.net/default.aspx/Delegates/LowLevelKeyboardProc.html
+type LowLevelKeyboardProc = delegate of nCode: int * wParam: nativeint * [<In>]lParam: KBDLLHOOKSTRUCT -> nativeint
 
 [<DllImport("kernel32.dll")>]
 extern uint32 GetCurrentThreadId()
@@ -120,15 +140,22 @@ extern nativeint GetModuleHandle(string lpModuleName)
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool UnhookWindowsHookEx(nativeint hhk)
 
-// http://www.pinvoke.net/default.aspx/user32.callnexthookex
 // https://msdn.microsoft.com/library/windows/desktop/ms644974.aspx
-[<DllImport("user32.dll", SetLastError = true)>]
-extern nativeint CallNextHookEx(nativeint hhk, int32 nCode, nativeint wParam, [<In>]MSLLHOOKSTRUCT lParam)
+// http://www.pinvoke.net/default.aspx/user32.callnexthookex
+[<DllImport("user32.dll", EntryPoint = "CallNextHookEx", SetLastError = true)>]
+extern nativeint CallNextHookExM(nativeint hhk, int32 nCode, nativeint wParam, [<In>]MSLLHOOKSTRUCT lParam)
+
+[<DllImport("user32.dll", EntryPoint = "CallNextHookEx", SetLastError = true)>]
+extern nativeint CallNextHookExK(nativeint hhk, int32 nCode, nativeint wParam, [<In>]KBDLLHOOKSTRUCT lParam)
 
 // http://pinvoke.net/default.aspx/user32/SetWindowsHookEx.html
 // https://msdn.microsoft.com/library/windows/desktop/ms644990.aspx
-[<DllImport("user32.dll", SetLastError = true)>]
-extern nativeint SetWindowsHookEx(int idHook, LowLevelMouseProc proc, nativeint hMod, uint32 dwThreadId)
+[<DllImport("user32.dll", EntryPoint = "SetWindowsHookEx", SetLastError = true)>]
+extern nativeint SetWindowsHookExM(int idHook, LowLevelMouseProc proc, nativeint hMod, uint32 dwThreadId)
+
+[<DllImport("user32.dll", EntryPoint = "SetWindowsHookEx", SetLastError = true)>]
+extern nativeint SetWindowsHookExK(int idHook, LowLevelKeyboardProc proc, nativeint hMod, uint32 dwThreadId)
+
 
 // https://msdn.microsoft.com/library/windows/desktop/ms646310.aspx
 // http://pinvoke.net/default.aspx/user32/SendInput.html

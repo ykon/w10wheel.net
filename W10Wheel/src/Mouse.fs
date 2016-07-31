@@ -68,7 +68,7 @@ type MouseEvent =
         | NoneEvent -> true
         | _ -> false
 
-    member self.Same me2 =
+    member self.SameEvent me2 =
         match self, me2 with
         | LeftDown(_), LeftDown(_) -> true
         | LeftUp(_), LeftUp(_) -> true
