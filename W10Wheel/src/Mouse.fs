@@ -123,6 +123,7 @@ type Trigger =
     | MiddleDragTrigger
     | X1DragTrigger
     | X2DragTrigger
+    | NoneTrigger
 
     member self.Name = getUnionCaseName(self)
 
@@ -130,11 +131,18 @@ type Trigger =
         match self with
         | MiddleTrigger | X1Trigger | X2Trigger -> true
         | _ -> false
+
+    member self.IsDouble =
+        match self with
+        | LRTrigger | LeftTrigger | RightTrigger -> true
+        | _ -> false
         
     member self.IsDrag =
         match self with
         | LeftDragTrigger | RightDragTrigger | MiddleDragTrigger | X1DragTrigger | X2DragTrigger -> true
         | _ -> false
+
+    member self.IsNone = self = NoneTrigger
 
 let isXButton1 (mouseData: uint32) =
     (mouseData >>> 16) = (uint32 WinAPI.XBUTTON1)
@@ -162,4 +170,5 @@ let getTriggerOfStr = function
     | "MiddleDrag" | "MiddleDragTrigger" -> MiddleDragTrigger
     | "X1Drag" | "X1DragTrigger" -> X1DragTrigger
     | "X2Drag" | "X2DragTrigger" -> X2DragTrigger
+    | "None" | "NoneTrigger" -> NoneTrigger
     | e -> raise (ArgumentException(e))

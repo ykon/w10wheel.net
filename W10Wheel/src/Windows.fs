@@ -165,15 +165,12 @@ let mutable private lastSPoint = (0, 0)
 let sendWheel (dpt: WinAPI.POINT) =
     let spt = Ctx.getScrollStartPoint()
 
-    let sx = (fst spt)
-    let sy = (snd spt)
-
     if Ctx.isRealWheelMode() && (spt <> lastSPoint) then
         startWheelCount()
         lastSPoint <- spt
-        
-    let tx = dpt.x - sx
-    let ty = dpt.y - sy
+
+    let sx, sy = Ctx.getScrollStartPoint()
+    let tx, ty = (dpt.x - sx), (dpt.y - sy)
 
     let dx = if Ctx.isSwapScroll() then ty else tx
     let dy = if Ctx.isSwapScroll() then tx else ty

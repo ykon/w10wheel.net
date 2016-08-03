@@ -37,9 +37,11 @@ let getTargetVKCode () =
 let isTriggerKey (ke: KeyboardEvent) =
     ke.VKCode = getTargetVKCode()
 
+let isNoneTriggerKey () =
+    getTargetVKCode() = 0
+
 let isSendMiddleClick () =
     Volatile.Read(sendMiddleClick)
-
 
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
@@ -138,9 +140,14 @@ let isDragTriggerEvent = function
 let isSingleTrigger () =
     getFirstTrigger().IsSingle
 
+let isDoubleTrigger () =
+    getFirstTrigger().IsDouble
+
 let isDragTrigger () =
     getFirstTrigger().IsDrag
 
+let isNoneTrigger () =
+    getFirstTrigger().IsNone
 
 type private Threshold() =
     [<VolatileField>] static let mutable vertical = 0
@@ -307,7 +314,7 @@ type LastFlags() =
         match up with
         | LeftUp(_) -> ldR
         | RightUp(_) -> rdR
-        | _ -> raise (ArgumentException())
+        | _ -> false
 
     static member SetSuppressed (down: MouseEvent): unit =
         match down with
@@ -326,26 +333,26 @@ type LastFlags() =
         | LeftUp(_) -> ldS
         | RightUp(_) -> rdS
         | MiddleUp(_) | X1Up(_) | X2Up(_) -> sdS
-        | _ -> raise (ArgumentException())
+        | _ -> false
 
     static member IsDownSuppressed (up: KeyboardEvent) =
         match up with
         | KeyUp(_) ->
             let (ok, b) = kdSDict.TryGetValue(up.VKCode)
             if ok then b else false
-        | _ -> raise (ArgumentException())
+        | _ -> false
 
     static member Reset (down: MouseEvent) =
         match down with
         | LeftDown(_) -> ldR <- false; ldS <- false
         | RightDown(_) -> rdR <- false; rdS <- false
         | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
-        | _ -> raise (ArgumentException())
+        | _ -> ()
 
     static member Reset (down: KeyboardEvent) =
         match down with
         | KeyDown(_) -> kdSDict.[down.VKCode] <- false
-        | _ -> raise (ArgumentException())
+        | _ -> ()
 
 let getPollTimeout () =
     Volatile.Read(pollTimeout)
@@ -500,6 +507,8 @@ let private createTriggerMenu () =
     add "LR (Left <<-->> Right)"
     add "Left (Left -->> Right)"
     add "Right (Right -->> Left)"
+    addSeparator items
+
     add "Middle"
     add "X1"
     add "X2"
@@ -510,6 +519,9 @@ let private createTriggerMenu () =
     add "MiddleDrag"
     add "X1Drag"
     add "X2Drag"
+    addSeparator items
+
+    add "None"
     addSeparator items
 
     items.Add(createBoolMenuItem "sendMiddleClick" "Send MiddleClick" (isSingleTrigger())) |> ignore
@@ -713,11 +725,18 @@ let private createKeyboardMenu () =
     items.Add(createOnOffMenuItem "keyboardHook" WinHook.setOrUnsetKeyboardHook) |> ignore
     addSeparator items
 
+    add "VK_TAB (Tab)"
     add "VK_PAUSE (Pause)"
     add "VK_CAPITAL (Caps Lock)"
     add "VK_CONVERT (Henkan)"
     add "VK_NONCONVERT (Muhenkan)"
+    add "VK_PRIOR (Page Up)"
+    add "VK_NEXT (Page Down)"
+    add "VK_END (End)"
+    add "VK_HOME (Home)"
     add "VK_SNAPSHOT (Print Screen)"
+    add "VK_INSERT (Insert)"
+    add "VK_DELETE (Delete)"
     add "VK_LWIN (Left Windows)"
     add "VK_RWIN (Right Windows)"
     add "VK_APPS (Application)"
@@ -729,6 +748,9 @@ let private createKeyboardMenu () =
     add "VK_RCONTROL (Right Ctrl)"
     add "VK_LMENU (Left Alt)"
     add "VK_RMENU (Right Alt)"
+    addSeparator items
+
+    add "None"
 
     menu
 

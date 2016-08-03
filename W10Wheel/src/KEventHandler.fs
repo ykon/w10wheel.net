@@ -81,6 +81,13 @@ let private checkDownSuppressed (up: KeyboardEvent): nativeint option =
     else
         None
 
+let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
+    Debug.WriteLine(msg)
+    callNextHook()
+
+let private endPass (ke: KeyboardEvent): nativeint option =
+    endCallNextHook ke (sprintf "endPass: %s" ke.Name)
+
 let private endIllegalState (ke: KeyboardEvent): nativeint option =
     Debug.WriteLine(sprintf "illegal state: %s" ke.Name)
     suppress()
@@ -94,9 +101,7 @@ let rec private getResult (cs:Checkers) (ke:KeyboardEvent) =
         if res.IsSome then res.Value else getResult fs ke
     | _ -> raise (ArgumentException())
 
-let keyDown (info: KHookInfo) =
-    Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
-
+let private singleDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkSameLastEvent
         resetLastFlags
@@ -106,11 +111,9 @@ let keyDown (info: KHookInfo) =
         endIllegalState
     ]
 
-    getResult checkers (KeyDown(info))
+    getResult checkers ke
 
-let keyUp (info: KHookInfo) =
-    Debug.WriteLine(sprintf "keyUp: %d" info.vkCode)
-
+let private singleUp (ke: KeyboardEvent) =
     let checkers = [
         skipFirstUp
         checkSameLastEvent
@@ -120,5 +123,36 @@ let keyUp (info: KHookInfo) =
         endIllegalState
     ]
 
-    getResult checkers (KeyUp(info))
+    getResult checkers ke
+
+(*
+let private noneDown (ke: KeyboardEvent): nativeint =
+    let checkers = [
+        resetLastFlags
+        checkExitScrollDown
+        endPass
+    ]
+
+    getResult checkers ke
+
+let private noneUp (ke: KeyboardEvent): nativeint =
+    let checkers = [
+        checkDownSuppressed
+        endPass
+    ]
+
+    getResult checkers ke
+*)
+
+let keyDown (info: KHookInfo) =
+    //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
+
+    let kd = KeyDown(info)
+    singleDown kd
+
+let keyUp (info: KHookInfo) =
+    //Debug.WriteLine(sprintf "keyUp: %d" info.vkCode)
+
+    let ku = KeyUp(info)
+    singleUp ku
 

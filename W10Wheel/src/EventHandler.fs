@@ -56,6 +56,14 @@ let private skipResendEventSingle (me: MouseEvent): nativeint option =
     else
         None
 
+let private skipFirstUp (me: MouseEvent): nativeint option =
+    if lastEvent.IsNone then
+        Debug.WriteLine(sprintf "skip first Up: %s" me.Name)
+        callNextHook()
+    else
+        None
+
+(*
 let private skipFirstUpOrSingle (me: MouseEvent): nativeint option =
     if lastEvent.IsNone || lastEvent.IsSingle then
         Debug.WriteLine(sprintf "skip first Up or Single: %s" me.Name)
@@ -69,6 +77,7 @@ let private skipFirstUpOrLR (me: MouseEvent): nativeint option =
         callNextHook()
     else
         None
+*)
 
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
     if me.SameEvent lastEvent then
@@ -116,21 +125,6 @@ let private passSingleTrigger (me: MouseEvent): nativeint option =
     else
         None
 
-(*
-let private retryOffer (me: MouseEvent): bool =
-    let rec loop b i =
-        if b then
-            Debug.WriteLine(sprintf "retryOffer: %d" i)
-            true
-        elif i = 0 then
-            Debug.WriteLine("retryOffer failed")
-            false
-        else
-            loop (EventWaiter.offer me) (i - 1)
-
-    loop false 3
-*)
-
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     if EventWaiter.offer me then
         Debug.WriteLine(sprintf "success to offer: %s" me.Name)
@@ -142,7 +136,7 @@ let private checkDownSuppressed (up: MouseEvent): nativeint option =
     let suppressed = Ctx.LastFlags.IsDownSuppressed up
 
     if suppressed then
-        Debug.WriteLine(sprintf "after suppressed down event: %s" up.Name)
+        Debug.WriteLine(sprintf "suppress (checkDownSuppressed): %s" up.Name)
         suppress()
     else
         None
@@ -151,7 +145,7 @@ let private checkDownResent (up: MouseEvent): nativeint option =
     let resent = Ctx.LastFlags.IsDownResent up
 
     if resent then
-        Debug.WriteLine(sprintf "resend up (checkDownResent): %s" up.Name)
+        Debug.WriteLine(sprintf "resendUp and suppress (checkDownResent): %s" up.Name)
         Windows.resendUp up
         suppress()
     else
@@ -246,18 +240,21 @@ let private passNotDragTrigger (me: MouseEvent): nativeint option =
     else
         None 
 
-let private endCallNextHook (me:MouseEvent) (msg:string option): nativeint option =
-    Option.iter (fun s -> Debug.WriteLine(s)) msg
+let private endCallNextHook (me:MouseEvent) (msg:string): nativeint option =
+    Debug.WriteLine(msg)
     callNextHook()
 
 let private endNotTrigger (me: MouseEvent): nativeint option =
-    endCallNextHook me (Some(sprintf "pass not trigger: %s" me.Name))
+    endCallNextHook me (sprintf "endNotTrigger: %s" me.Name)
+
+let private endPass (me: MouseEvent): nativeint option =
+    endCallNextHook me (sprintf "endPass: %s" me.Name)
 
 let private endUnknownEvent (me: MouseEvent): nativeint option =
-    endCallNextHook me (Some(sprintf "unknown event: %s" me.Name))
+    endCallNextHook me (sprintf "unknown event: %s" me.Name)
 
 let private endAfterTimeoutOrMove (me: MouseEvent): nativeint option =
-    endCallNextHook me (Some(sprintf "pass after timeout or move?: %s" me.Name))
+    endCallNextHook me (sprintf "pass after timeout or move?: %s" me.Name)
 
 let private endSuppress (me:MouseEvent) (msg:string option): nativeint option =
     Option.iter (fun s -> Debug.WriteLine(s)) msg
@@ -273,86 +270,35 @@ let rec private getResult (cs:Checkers) (me:MouseEvent) =
     match cs with
     | f :: fs ->
         let res = f me
-        if res.IsSome then res else getResult fs me
+        if res.IsSome then res.Value else getResult fs me
     | _ -> raise (ArgumentException())
 
-(*
-let getResult (cs:Checkers) (me:MouseEvent) =
-    List.toSeq cs |> Seq.choose (fun f -> f me) |> Seq.head
-
-let getResultBranch (cs:Checkers) (me:MouseEvent) =
-    List.toSeq cs |> Seq.map (fun f -> f me) |> Seq.find (fun o -> o.IsSome)
-*)
-
-let private branchDragDown (me: MouseEvent): nativeint option =
-    if Ctx.isDragTrigger() then
-        Debug.WriteLine(sprintf "branch drag down: %s" me.Name)
-        let cs = [passNotDragTrigger
-                  startScrollDrag]
-        
-        getResult cs me
-    else
-        None
-
-let private branchDragUp (me: MouseEvent): nativeint option =
-    if Ctx.isDragTrigger() then
-        Debug.WriteLine(sprintf "branch drag up: %s" me.Name)
-        let cs = [checkDownSuppressed
-                  passNotDragTrigger
-                  continueScrollDrag
-                  exitAndResendDrag]
-
-        getResult cs me
-    else
-        None
-
-let private lrDown (me: MouseEvent): nativeint =
+let private doubleDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
         resetLastFlags
         checkExitScrollDown
-        branchDragDown
-        passSingleTrigger
         offerEventWaiter
         checkTriggerWaitStart
         endNotTrigger
     ]
 
-    (getResult checkers me).Value
+    getResult checkers me
 
-let private lrUp (me: MouseEvent): nativeint =
+let private doubleUp (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
-        skipFirstUpOrSingle
+        skipFirstUp
         checkSameLastEvent
-        branchDragUp
-        passSingleTrigger
         checkExitScrollUp
-        passNotTriggerLR
         checkDownResent
         offerEventWaiter
         checkDownSuppressed
-        endUnknownEvent
+        endNotTrigger
     ]
 
-    (getResult checkers me).Value
-
-let leftDown (info: HookInfo) =
-    //Debug.WriteLine("LeftDown")
-    lrDown(LeftDown(info))
-
-let rightDown(info: HookInfo) =
-    //Debug.WriteLine("RightDown")
-    lrDown(RightDown(info))
-
-let leftUp (info: HookInfo) =
-    //Debug.WriteLine("LeftUp")
-    lrUp(LeftUp(info))
-
-let rightUp (info: HookInfo) =
-    //Debug.WriteLine("RightUp")
-    lrUp(RightUp(info))
+    getResult checkers me
 
 let private singleDown (me: MouseEvent): nativeint =
     let checkers = [
@@ -360,42 +306,126 @@ let private singleDown (me: MouseEvent): nativeint =
         checkSameLastEvent
         resetLastFlags
         checkExitScrollDown
-        branchDragDown
         passNotTrigger
         checkKeySendMiddle
         checkTriggerScrollStart
         endIllegalState
     ]
 
-    (getResult checkers me).Value
+    getResult checkers me
 
 let private singleUp (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventSingle
-        skipFirstUpOrLR
+        skipFirstUp
         checkSameLastEvent
-        branchDragUp
+        checkDownSuppressed
         passNotTrigger
         checkExitScrollUp
-        checkDownSuppressed
         endIllegalState
     ]
 
-    (getResult checkers me).Value
+    getResult checkers me
+
+let private dragDown (me: MouseEvent): nativeint =
+    let checkers = [
+        skipResendEventSingle
+        checkSameLastEvent
+        resetLastFlags
+        checkExitScrollDown
+        passNotDragTrigger
+        startScrollDrag
+    ]
+
+    getResult checkers me
+
+let private dragUp (me: MouseEvent): nativeint =
+    let checkers = [
+        skipResendEventSingle
+        skipFirstUp
+        checkSameLastEvent
+        checkDownSuppressed
+        passNotDragTrigger
+        continueScrollDrag
+        exitAndResendDrag
+    ]
+
+    getResult checkers me
+
+let private noneDown (me: MouseEvent): nativeint =
+    let checkers = [
+        resetLastFlags
+        checkExitScrollDown
+        endPass
+    ]
+
+    getResult checkers me
+
+let private noneUp (me: MouseEvent): nativeint =
+    let checkers = [
+        checkDownSuppressed
+        endPass
+    ]
+
+    getResult checkers me
+
+let private dispatchDown (d: MouseEvent): nativeint = 
+    if Ctx.isDoubleTrigger() then doubleDown d
+    elif Ctx.isSingleTrigger() then singleDown d
+    elif Ctx.isDragTrigger() then dragDown d
+    else noneDown d
+
+let private dispatchUp (u: MouseEvent): nativeint =
+    if Ctx.isDoubleTrigger() then doubleUp u
+    elif Ctx.isSingleTrigger() then singleUp u
+    elif Ctx.isDragTrigger() then dragUp u
+    else noneUp u
+
+let private dispatchDownS (d: MouseEvent): nativeint = 
+    if Ctx.isSingleTrigger() then singleDown d
+    elif Ctx.isDragTrigger() then dragDown d
+    else noneDown d
+
+let private dispatchUpS (u: MouseEvent): nativeint =
+    if Ctx.isSingleTrigger() then singleUp u
+    elif Ctx.isDragTrigger() then dragUp u
+    else noneUp u
+
+let leftDown (info: HookInfo) =
+    //Debug.WriteLine("LeftDown")
+    let ld = LeftDown(info)
+    dispatchDown ld
+
+let leftUp (info: HookInfo) =
+    //Debug.WriteLine("LeftUp")
+    let lu = LeftUp(info)
+    dispatchUp lu
+    
+let rightDown(info: HookInfo) =
+    //Debug.WriteLine("RightDown")
+    let rd = RightDown(info)
+    dispatchDown rd
+
+let rightUp (info: HookInfo) =
+    //Debug.WriteLine("RightUp")
+    let ru = RightUp(info)
+    dispatchUp ru
 
 let middleDown (info: HookInfo) =
-    singleDown (MiddleDown(info))
+    let md = MiddleDown(info)
+    dispatchDownS md
 
 let middleUp (info: HookInfo) =
-    singleUp (MiddleUp(info))
+    let mu = MiddleUp(info)
+    dispatchUpS mu
 
 let xDown (info: HookInfo) =
-    let me = if Mouse.isXButton1(info.mouseData) then X1Down(info) else X2Down(info)
-    singleDown(me)
+    let xd = if Mouse.isXButton1(info.mouseData) then X1Down(info) else X2Down(info)
+    dispatchDownS xd
 
 let xUp (info: HookInfo) =
-    let me = if Mouse.isXButton1(info.mouseData) then X1Up(info) else X2Up(info)
-    singleUp(me)
+    let xu = if Mouse.isXButton1(info.mouseData) then X1Up(info) else X2Up(info)
+    dispatchUpS xu
 
 let move (info: HookInfo) =
     //Debug.WriteLine "Move: test"
