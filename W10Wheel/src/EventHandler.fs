@@ -7,6 +7,7 @@
 
 open System
 open System.Diagnostics
+open System.Threading
 open System.Runtime.InteropServices
 open Microsoft.FSharp.NativeInterop
 
@@ -118,10 +119,21 @@ let private checkExitScrollUp (me: MouseEvent): nativeint option =
     else
         None
 
-let private passSingleTrigger (me: MouseEvent): nativeint option =
-    if Ctx.isSingleTrigger() then
-        Debug.WriteLine(sprintf "pass: single trigger: %s" me.Name)
+let private passSingleEvent (me: MouseEvent): nativeint option =
+    if me.IsSingle then
+        Debug.WriteLine(sprintf "pass single event: %s" me.Name)
         callNextHook()
+    else
+        None
+
+let private checkSingleSuppressed (up: MouseEvent): nativeint option =
+    if up.IsSingle then
+        if Ctx.LastFlags.IsDownSuppressed(up) then
+            Debug.WriteLine(sprintf "suppress (checkSingleSuppressed): %s" up.Name)
+            suppress()
+        else
+            Debug.WriteLine(sprintf "pass (checkSingleSuppressed): %s" up.Name)
+            callNextHook()
     else
         None
 
@@ -273,12 +285,14 @@ let rec private getResult (cs:Checkers) (me:MouseEvent) =
         if res.IsSome then res.Value else getResult fs me
     | _ -> raise (ArgumentException())
 
-let private doubleDown (me: MouseEvent): nativeint =
+let private lrDown (me: MouseEvent): nativeint =
+    //Debug.WriteLine("lrDown")
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
         resetLastFlags
         checkExitScrollDown
+        //passSingleEvent
         offerEventWaiter
         checkTriggerWaitStart
         endNotTrigger
@@ -286,11 +300,13 @@ let private doubleDown (me: MouseEvent): nativeint =
 
     getResult checkers me
 
-let private doubleUp (me: MouseEvent): nativeint =
+let private lrUp (me: MouseEvent): nativeint =
+    //Debug.WriteLine("lrUp")
     let checkers = [
         skipResendEventLR
         skipFirstUp
         checkSameLastEvent
+        //checkSingleSuppressed
         checkExitScrollUp
         checkDownResent
         offerEventWaiter
@@ -301,6 +317,7 @@ let private doubleUp (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private singleDown (me: MouseEvent): nativeint =
+    //Debug.WriteLine("singleDown")
     let checkers = [
         skipResendEventSingle
         checkSameLastEvent
@@ -315,6 +332,7 @@ let private singleDown (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private singleUp (me: MouseEvent): nativeint =
+    //Debug.WriteLine("singleUp")
     let checkers = [
         skipResendEventSingle
         skipFirstUp
@@ -328,6 +346,7 @@ let private singleUp (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private dragDown (me: MouseEvent): nativeint =
+    //Debug.WriteLine("dragDown")
     let checkers = [
         skipResendEventSingle
         checkSameLastEvent
@@ -340,6 +359,7 @@ let private dragDown (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private dragUp (me: MouseEvent): nativeint =
+    //Debug.WriteLine("dragUp")
     let checkers = [
         skipResendEventSingle
         skipFirstUp
@@ -353,6 +373,7 @@ let private dragUp (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private noneDown (me: MouseEvent): nativeint =
+    //Debug.WriteLine("noneDown")
     let checkers = [
         resetLastFlags
         checkExitScrollDown
@@ -362,6 +383,7 @@ let private noneDown (me: MouseEvent): nativeint =
     getResult checkers me
 
 let private noneUp (me: MouseEvent): nativeint =
+    //Debug.WriteLine("noneUp")
     let checkers = [
         checkDownSuppressed
         endPass
@@ -369,63 +391,58 @@ let private noneUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
-let private dispatchDown (d: MouseEvent): nativeint = 
-    if Ctx.isDoubleTrigger() then doubleDown d
-    elif Ctx.isSingleTrigger() then singleDown d
-    elif Ctx.isDragTrigger() then dragDown d
-    else noneDown d
+let private __procDownLR: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
+let private __procUpLR: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
+let private __procDownS: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
+let private __procUpS: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
 
-let private dispatchUp (u: MouseEvent): nativeint =
-    if Ctx.isDoubleTrigger() then doubleUp u
-    elif Ctx.isSingleTrigger() then singleUp u
-    elif Ctx.isDragTrigger() then dragUp u
-    else noneUp u
+let private procDownLR (d: MouseEvent): nativeint =
+    Volatile.Read(__procDownLR)(d)
 
-let private dispatchDownS (d: MouseEvent): nativeint = 
-    if Ctx.isSingleTrigger() then singleDown d
-    elif Ctx.isDragTrigger() then dragDown d
-    else noneDown d
+let private procUpLR (d: MouseEvent): nativeint =
+    Volatile.Read(__procUpLR)(d)
 
-let private dispatchUpS (u: MouseEvent): nativeint =
-    if Ctx.isSingleTrigger() then singleUp u
-    elif Ctx.isDragTrigger() then dragUp u
-    else noneUp u
+let private procDownS (d: MouseEvent): nativeint =
+    Volatile.Read(__procDownS)(d)
+
+let private procUpS (d: MouseEvent): nativeint =
+    Volatile.Read(__procUpS)(d)
 
 let leftDown (info: HookInfo) =
     //Debug.WriteLine("LeftDown")
     let ld = LeftDown(info)
-    dispatchDown ld
+    procDownLR ld
 
 let leftUp (info: HookInfo) =
     //Debug.WriteLine("LeftUp")
     let lu = LeftUp(info)
-    dispatchUp lu
+    procUpLR lu
     
 let rightDown(info: HookInfo) =
     //Debug.WriteLine("RightDown")
     let rd = RightDown(info)
-    dispatchDown rd
+    procDownLR rd
 
 let rightUp (info: HookInfo) =
     //Debug.WriteLine("RightUp")
     let ru = RightUp(info)
-    dispatchUp ru
+    procUpLR ru
 
 let middleDown (info: HookInfo) =
     let md = MiddleDown(info)
-    dispatchDownS md
+    procDownS md
 
 let middleUp (info: HookInfo) =
     let mu = MiddleUp(info)
-    dispatchUpS mu
+    procUpS mu
 
 let xDown (info: HookInfo) =
     let xd = if Mouse.isXButton1(info.mouseData) then X1Down(info) else X2Down(info)
-    dispatchDownS xd
+    procDownS xd
 
 let xUp (info: HookInfo) =
     let xu = if Mouse.isXButton1(info.mouseData) then X1Up(info) else X2Up(info)
-    dispatchUpS xu
+    procUpS xu
 
 let move (info: HookInfo) =
     //Debug.WriteLine "Move: test"
@@ -438,6 +455,32 @@ let move (info: HookInfo) =
         suppress().Value
     else
         callNextHook().Value
+
+let changeTrigger (): unit =
+    Debug.WriteLine("changeTrigger: EventHandler")
+
+    let downLR, upLR, downS, upS =
+        if Ctx.isDoubleTrigger() then
+            Debug.WriteLine("set double down/up")
+            lrDown, lrUp, noneDown, noneUp
+        elif Ctx.isSingleTrigger() then
+            Debug.WriteLine("set single down/up")
+            noneDown, noneUp, singleDown, singleUp
+        elif Ctx.isDragTrigger() then
+            Debug.WriteLine("set drag down/up")
+            dragDown, dragUp, dragDown, dragUp
+        else
+            Debug.WriteLine("set none down/up")
+            noneDown, noneUp, noneDown, noneUp
+
+    Volatile.Write(__procDownLR, downLR)
+    Volatile.Write(__procUpLR, upLR)
+    Volatile.Write(__procDownS, downS)
+    Volatile.Write(__procUpS, upS)
+
+let setChangeTrigger () =
+    Ctx.setChangeTrigger changeTrigger
+
 
 
 

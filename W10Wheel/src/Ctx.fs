@@ -215,6 +215,11 @@ let isQuickFirst () =
 let isQuickTurn () =
     RealWheel.QuickTurn
 
+let mutable private startWheelCount: (unit -> unit) = (fun () -> ())
+
+let setStartWheelCount (f: unit -> unit) =
+    startWheelCount <- f
+
 type private Scroll() =
     [<VolatileField>] static let mutable mode = false
     [<VolatileField>] static let mutable stime = 0u
@@ -228,6 +233,9 @@ type private Scroll() =
     [<VolatileField>] static let mutable swap = false
 
     static member Start (info: HookInfo) =
+        if RealWheel.Mode then
+            startWheelCount()
+
         stime <- info.time
         sx <- info.pt.x
         sy <- info.pt.y
@@ -237,6 +245,9 @@ type private Scroll() =
             WinCursor.change()
 
     static member Start (info: KHookInfo) =
+        if RealWheel.Mode then
+            startWheelCount()
+
         stime <- info.time
         sx <- Cursor.Position.X
         sy <- Cursor.Position.Y
@@ -474,6 +485,11 @@ let private setMenuEnabled (dict:Dictionary<string, ToolStripMenuItem>) key enab
     if dict.ContainsKey(key) then
         dict.[key].Enabled <- enabled
 
+let mutable private changeTrigger: (unit -> unit) = (fun () -> ())
+
+let setChangeTrigger (f: unit -> unit) =
+    changeTrigger <- f
+
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine(sprintf "setTrigger: %s" res.Name)
@@ -481,6 +497,8 @@ let private setTrigger (text: string) =
 
     setMenuEnabled boolMenuDict "sendMiddleClick" res.IsSingle
     setMenuEnabled boolMenuDict "draggedLock" res.IsDrag
+
+    changeTrigger()
 
 let private createTriggerMenuItem text =
     let item = new ToolStripMenuItem(text, null)

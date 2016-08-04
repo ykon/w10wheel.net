@@ -96,10 +96,14 @@ let mutable private vLastMove: MoveDirection = Zero
 let mutable private hLastMove: MoveDirection = Zero
 
 let startWheelCount () =
+    Debug.WriteLine("startWheelCount")
     vwCount <- if Ctx.isQuickFirst() then Ctx.getVWheelMove() else Ctx.getVWheelMove() / 2
     hwCount <- if Ctx.isQuickFirst() then Ctx.getHWheelMove() else Ctx.getHWheelMove() / 2
     vLastMove <- Zero
     hLastMove <- Zero
+
+let setStartWheelCount () =
+    Ctx.setStartWheelCount startWheelCount
 
 let private getVWheelDelta input =
     let delta = Ctx.getWheelDelta()
@@ -160,15 +164,7 @@ let private sendHorizontalWheel (pt:WinAPI.POINT) (d:int) =
     else
         sendInput pt (setHDirection (addAccel d)) MOUSEEVENTF_HWHEEL 0u 0u
 
-let mutable private lastSPoint = (0, 0)
-
 let sendWheel (dpt: WinAPI.POINT) =
-    let spt = Ctx.getScrollStartPoint()
-
-    if Ctx.isRealWheelMode() && (spt <> lastSPoint) then
-        startWheelCount()
-        lastSPoint <- spt
-
     let sx, sy = Ctx.getScrollStartPoint()
     let tx, ty = (dpt.x - sx), (dpt.y - sy)
 

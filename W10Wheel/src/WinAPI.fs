@@ -29,7 +29,6 @@ type MSLLHOOKSTRUCT =
     val time        : uint32
     val dwExtraInfo : unativeint
 
-
 // https://msdn.microsoft.com/library/windows/desktop/ms644967.aspx
 // http://pinvoke.net/default.aspx/Structures/KBDLLHOOKSTRUCT.html
 [<StructLayout(LayoutKind.Sequential)>]
