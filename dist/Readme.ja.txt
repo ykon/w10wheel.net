@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.8.1
+        0.8.2
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-05: Version 0.8.2: キーボードのフラグ変更
         2016-08-04: Version 0.8.1: EventHandlerの最適化
         2016-08-03: Version 0.8.0: トリガーにNoneを追加、他
         2016-07-31: Version 0.7.0: キーボード(トリガー)対応

@@ -76,7 +76,7 @@ let private checkDownSuppressed (up: KeyboardEvent): nativeint option =
     let suppressed = Ctx.LastFlags.IsDownSuppressed up
 
     if suppressed then
-        Debug.WriteLine(sprintf "after suppressed down event: %s" up.Name)
+        Debug.WriteLine(sprintf "suppress (checkDownSuppressed): %s" up.Name)
         suppress()
     else
         None

@@ -313,7 +313,7 @@ type LastFlags() =
     [<VolatileField>] static let mutable rdS = false
     [<VolatileField>] static let mutable sdS = false
 
-    [<VolatileField>] static let mutable kdSDict = new Dictionary<int, bool>()
+    static let kdSArray = Array.create 256 false
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -336,7 +336,7 @@ type LastFlags() =
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdSDict.[down.VKCode] <- true
+        | KeyDown(_) -> kdSArray.[down.VKCode] <- true
         | _ -> ()
 
     static member IsDownSuppressed (up: MouseEvent) =
@@ -348,9 +348,7 @@ type LastFlags() =
 
     static member IsDownSuppressed (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) ->
-            let (ok, b) = kdSDict.TryGetValue(up.VKCode)
-            if ok then b else false
+        | KeyUp(_) -> kdSArray.[up.VKCode]
         | _ -> false
 
     static member Reset (down: MouseEvent) =
@@ -362,7 +360,7 @@ type LastFlags() =
 
     static member Reset (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdSDict.[down.VKCode] <- false
+        | KeyDown(_) -> kdSArray.[down.VKCode] <- false
         | _ -> ()
 
 let getPollTimeout () =
