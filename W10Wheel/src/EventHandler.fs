@@ -20,7 +20,8 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NoneEvent
-let mutable private lastResendEvent: MouseEvent = NoneEvent
+let private preLeftResendEvent: MouseEvent ref = ref NoneEvent
+let private preRightResendEvent: MouseEvent ref = ref NoneEvent
 let mutable private dragged = false
 
 (*
@@ -36,17 +37,23 @@ let private resetLastFlags (me: MouseEvent): nativeint option =
     Ctx.LastFlags.Reset me
     None
 
+let private getPreResendEvent me =
+    match me with
+    | LeftDown(_) | LeftUp(_) -> preLeftResendEvent
+    | RightDown(_) | RightUp(_) -> preRightResendEvent
+    | _ -> raise (InvalidOperationException())
+
 let private skipResendEventLR (me: MouseEvent): nativeint option =
     if Windows.isResendEvent me then
-        match lastResendEvent, me with
-        | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
+        match !(getPreResendEvent me), me with
+        | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
             Debug.WriteLine(sprintf "re-resend event: %s" me.Name)
             Windows.resendUp(me)
             suppress()
         | _ ->
             Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
-            lastResendEvent <- me
-            callNextHook()
+            (getPreResendEvent me) := me
+            callNextHook() 
     else
         None
 
@@ -172,7 +179,7 @@ let private checkTriggerWaitStart (me: MouseEvent): nativeint option =
         None
 
 let private checkKeySendMiddle (me: MouseEvent): nativeint option =
-    if Ctx.isSendMiddleClick() && (Windows.getAsyncShiftState() || Windows.getAsyncCtrlState() || Windows.getAsyncAltState()) then
+    if Ctx.isSendMiddleClick() && (Windows.checkShiftState() || Windows.checkCtrlState() || Windows.checkAltState()) then
         Debug.WriteLine(sprintf "send middle click: %s" me.Name)
         Windows.resendClick(MiddleClick(me.Info))
         Ctx.LastFlags.SetSuppressed(me)
@@ -192,8 +199,8 @@ let private dragDefault info = ()
 let mutable private drag: HookInfo -> unit = dragDefault
 
 let private dragStart info =
-    if Ctx.isCursorChange() then
-        WinCursor.change()
+    if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
+        WinCursor.changeV()
 
     drag <- dragDefault
     dragged <- true

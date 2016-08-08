@@ -32,7 +32,7 @@ let main argv =
     WinHook.setMouseDispatcher(Dispatcher.getMouseDispatcher())
     WinHook.setKeyboardDispatcher(Dispatcher.getKeyboardDispatcher())
     EventHandler.setChangeTrigger()
-    Windows.setStartWheelCount()
+    Windows.setInitScroll()
 
     Ctx.loadProperties()
     Ctx.setSystemTray()

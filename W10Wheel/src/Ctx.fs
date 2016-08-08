@@ -20,7 +20,7 @@ open Mouse
 open Keyboard
 
 let private firstTrigger: Trigger ref = ref LRTrigger
-let private pollTimeout = ref 300
+let private pollTimeout = ref 200
 let private passMode = ref false
 let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
@@ -42,6 +42,37 @@ let isNoneTriggerKey () =
 
 let isSendMiddleClick () =
     Volatile.Read(sendMiddleClick)
+
+type VHAdjusterMethod =
+    | Fixed
+    | Switching
+
+    member self.Name =
+        Mouse.getUnionCaseName(self)
+
+let private vhAdjusterMode = ref false
+let private vhAdjusterMethod: VHAdjusterMethod ref = ref Switching
+let private firstPreferVertical = ref true
+let private firstMinThreshold = ref 5
+let private switchingThreshold = ref 50
+
+let isVhAdjusterMode () =
+    Volatile.Read(vhAdjusterMode)
+
+let private getVhAdjusterMethod () =
+    Volatile.Read(vhAdjusterMethod)
+
+let isVhAdjusterSwitching () =
+    getVhAdjusterMethod() = Switching
+
+let isFirstPreferVertical () =
+    Volatile.Read(firstPreferVertical)
+
+let getFirstMinThreshold () =
+    Volatile.Read(firstMinThreshold)
+
+let getSwitchingThreshold () =
+    Volatile.Read(switchingThreshold)
 
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
@@ -215,17 +246,17 @@ let isQuickFirst () =
 let isQuickTurn () =
     RealWheel.QuickTurn
 
-let mutable private startWheelCount: (unit -> unit) = (fun () -> ())
+let mutable private initScroll: (unit -> unit) = (fun () -> ())
 
-let setStartWheelCount (f: unit -> unit) =
-    startWheelCount <- f
+let setInitScroll (f: unit -> unit) =
+    initScroll <- f
 
 type private Scroll() =
     [<VolatileField>] static let mutable mode = false
     [<VolatileField>] static let mutable stime = 0u
     [<VolatileField>] static let mutable sx = 0
     [<VolatileField>] static let mutable sy = 0
-    [<VolatileField>] static let mutable locktime = 300
+    [<VolatileField>] static let mutable locktime = 200
     [<VolatileField>] static let mutable cursorChange = true
     [<VolatileField>] static let mutable reverse = false
     [<VolatileField>] static let mutable horizontal = true
@@ -233,8 +264,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable swap = false
 
     static member Start (info: HookInfo) =
-        if RealWheel.Mode then
-            startWheelCount()
+        initScroll()
 
         stime <- info.time
         sx <- info.pt.x
@@ -242,11 +272,10 @@ type private Scroll() =
         mode <- true
 
         if cursorChange && not (isDragTrigger()) then
-            WinCursor.change()
+            WinCursor.changeV()
 
     static member Start (info: KHookInfo) =
-        if RealWheel.Mode then
-            startWheelCount()
+        initScroll()
 
         stime <- info.time
         sx <- Cursor.Position.X
@@ -254,7 +283,7 @@ type private Scroll() =
         mode <- true
 
         if cursorChange then
-            WinCursor.change()
+            WinCursor.changeV()
 
     static member Exit () =
         mode <- false
@@ -420,6 +449,7 @@ let private accelMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private priorityMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private numberMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private keyboardMenuDict = new Dictionary<string, ToolStripMenuItem>()
+let private vhAdjusterMenuDict = new Dictionary<string, ToolStripMenuItem>()
 
 let private getBooleanOfName (name: string): bool =
     match name with
@@ -435,6 +465,8 @@ let private getBooleanOfName (name: string): bool =
     | "swapScroll" -> Scroll.Swap
     | "sendMiddleClick" -> Volatile.Read(sendMiddleClick)
     | "keyboardHook" -> Volatile.Read(keyboardHook)
+    | "vhAdjusterMode" -> Volatile.Read(vhAdjusterMode)
+    | "firstPreferVertical" -> Volatile.Read(firstPreferVertical)
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -453,6 +485,8 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "swapScroll" -> Scroll.Swap <- b
     | "sendMiddleClick" -> Volatile.Write(sendMiddleClick, b)
     | "keyboardHook" -> Volatile.Write(keyboardHook, b)
+    | "vhAdjusterMode" -> Volatile.Write(vhAdjusterMode, b)
+    | "firstPreferVertical" -> Volatile.Write(firstPreferVertical, b)
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -637,6 +671,8 @@ let private getNumberOfName (name: string): int =
     | "wheelDelta" -> RealWheel.WheelDelta
     | "vWheelMove" -> RealWheel.VWheelMove
     | "hWheelMove" -> RealWheel.HWheelMove
+    | "firstMinThreshold" -> Volatile.Read(firstMinThreshold)
+    | "switchingThreshold" -> Volatile.Read(switchingThreshold)
     | e -> raise (ArgumentException(e))
 
 let private setNumberOfName (name: string) (n: int): unit =
@@ -649,6 +685,8 @@ let private setNumberOfName (name: string) (n: int): unit =
     | "wheelDelta" -> RealWheel.WheelDelta <- n
     | "vWheelMove" -> RealWheel.VWheelMove <- n
     | "hWheelMove" -> RealWheel.HWheelMove <- n
+    | "firstMinThreshold" -> Volatile.Write(firstMinThreshold, n)
+    | "switchingThreshold" -> Volatile.Write(switchingThreshold, n)
     | e -> raise (ArgumentException(e))
 
 let private makeNumberText (name: string) (num: int) =
@@ -715,7 +753,51 @@ let private createRealWheelModeMenu () =
         
     menu
 
-let setTargetVKCode name =
+let private getVhAdjusterMethodOfName name =
+    match name with
+    | "Fixed" -> Fixed
+    | "Switching" -> Switching
+    | _ -> raise (ArgumentException())
+
+let private setVhAdjusterMethod name =
+    Debug.WriteLine(sprintf "setVhAdjusterMethod: %s" name)
+    Volatile.Write(vhAdjusterMethod, getVhAdjusterMethodOfName name)
+
+let private createVhAdjusterMenuItem name =
+    let item = new ToolStripMenuItem(name, null)
+    vhAdjusterMenuDict.[name] <- item
+
+    item.Click.Add (fun _ ->
+        if item.CheckState = CheckState.Unchecked then
+            uncheckAllItems vhAdjusterMenuDict
+            item.CheckState <- CheckState.Indeterminate
+            setVhAdjusterMethod name
+    )
+
+    item
+
+let private createVhAdjusterMenu () =
+    let menu = new ToolStripMenuItem("VH Adjuster")
+    let items = menu.DropDownItems
+    let add name = items.Add(createVhAdjusterMenuItem name) |> ignore
+    let addNum name low up = items.Add(createNumberMenuItem name low up) |> ignore
+    let addBool name = items.Add(createBoolMenuItemS name) |> ignore
+
+    items.Add(createOnOffMenuItemNA "vhAdjusterMode") |> ignore
+    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
+    addSeparator items
+
+    add "Fixed"
+    add "Switching"
+    addSeparator items
+
+    addBool "firstPreferVertical"
+    addNum "firstMinThreshold" 1 10
+    addNum "switchingThreshold" 10 500
+
+    menu
+
+let private setTargetVKCode name =
     Debug.WriteLine(sprintf "setTargetVKCode: %s" name)
     Volatile.Write(targetVKCode, Keyboard.getVKCode name)
 
@@ -774,7 +856,11 @@ let private createCursorChangeMenuItem () =
     createBoolMenuItem "cursorChange" "Cursor Change" true
 
 let private createHorizontalScrollMenuItem () =
-    createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
+    let item = createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
+    item.Click.Add(fun _ ->
+        boolMenuDict.["vhAdjusterMode"].Enabled <- item.Checked
+    )
+    item
 
 let private createReverseScrollMenuItem () =
     createBoolMenuItem "reverseScroll" "Reverse Scroll (Flip)" true
@@ -814,7 +900,8 @@ let private setDefaultPriority () =
 let private NumberNames: string array =
     [|"pollTimeout"; "scrollLocktime";
       "verticalThreshold"; "horizontalThreshold";
-      "wheelDelta"; "vWheelMove"; "hWheelMove"|]
+      "wheelDelta"; "vWheelMove"; "hWheelMove";
+      "firstMinThreshold"; "switchingThreshold"|]
 
 let private BooleanNames: string array =
     [|"realWheelMode"; "cursorChange";
@@ -822,7 +909,8 @@ let private BooleanNames: string array =
      "quickFirst"; "quickTurn";
      "accelTable"; "customAccelTable";
      "draggedLock"; "swapScroll";
-     "sendMiddleClick"; "keyboardHook"|]
+     "sendMiddleClick"; "keyboardHook";
+     "vhAdjusterMode"; "firstPreferVertical"|]
 
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
@@ -865,13 +953,24 @@ let private resetKeyboardMenuItems () =
             else
                 CheckState.Unchecked
 
+let private resetVhAdjusterMenuItems () =
+    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
+
+    for KeyValue(name, item) in vhAdjusterMenuDict do
+        item.CheckState <-
+            if getVhAdjusterMethodOfName name = getVhAdjusterMethod() then
+                CheckState.Indeterminate
+            else
+                CheckState.Unchecked
+
 let private resetMenuItems () =
     resetTriggerMenuItems()
+    resetKeyboardMenuItems()
     resetAccelMenuItems()
     resetPriorityMenuItems()
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
-    resetKeyboardMenuItems()
+    resetVhAdjusterMenuItems()
 
 let PROP_NAME = sprintf ".%s.properties" AppDef.PROGRAM_NAME
 
@@ -926,6 +1025,13 @@ let private setVKCodeOfProperty (): unit =
         | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
         | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message)
 
+let private setVhAdjusterMethodOfProperty (): unit =
+    try
+        setVhAdjusterMethod (prop.GetString "vhAdjusterMethod")
+    with
+        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message)
+
 let private setBooleanOfProperty (name: string): unit =
     try
         setBooleanOfName name (prop.GetBool name)
@@ -960,6 +1066,7 @@ let loadProperties (): unit =
         setCustomAccelOfProperty()
         setPriorityOfProperty()
         setVKCodeOfProperty()
+        setVhAdjusterMethodOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
         WinHook.setOrUnsetKeyboardHook (Volatile.Read(keyboardHook))
@@ -973,6 +1080,9 @@ let loadProperties (): unit =
         setNum "wheelDelta" 10 500
         setNum "vWheelMove" 10 500
         setNum "hWheelMove" 10 500
+
+        setNum "firstMinThreshold" 1 10
+        setNum "switchingThreshold" 10 500
     with
         | :? FileNotFoundException ->
             Debug.WriteLine("Properties file not found")
@@ -992,10 +1102,12 @@ let private isChangedProperties () =
             Array.map (fun n -> (prop.GetInt n) <> getNumberOfName n) |>
             Array.contains true
 
-        (prop.GetString "firstTrigger") <> getFirstTrigger().Name ||
-        (prop.GetString "accelMultiplier") <> Accel.Multiplier.Name ||
-        (prop.GetString "processPriority") <> getProcessPriority().Name ||
-        (prop.GetString "targetVKCode") <> Keyboard.getName(getTargetVKCode()) ||
+        let check n v = prop.GetString(n) <> v
+        check "firstTrigger" (getFirstTrigger().Name) ||
+        check "accelMultiplier" (Accel.Multiplier.Name) ||
+        check "processPriority" (getProcessPriority().Name) ||
+        check "targetVKCode" (Keyboard.getName(getTargetVKCode())) ||
+        check "vhAdjusterMethod" (getVhAdjusterMethod().Name) ||
         isChangedBoolean() || isChangedNumber() 
     with
         | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
@@ -1014,6 +1126,7 @@ let storeProperties () =
             set "accelMultiplier" (Accel.Multiplier.Name)
             set "processPriority" (getProcessPriority().Name)
             set "targetVKCode" (Keyboard.getName (getTargetVKCode()))
+            set "vhAdjusterMethod" (getVhAdjusterMethod().Name)
 
             BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
             NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
@@ -1043,11 +1156,14 @@ let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
     let add (item: ToolStripMenuItem) = menu.Items.Add(item) |> ignore
     add (createTriggerMenu())
+    add (createKeyboardMenu())
+    addSeparator menu.Items
+
     add (createAccelTableMenu())
     add (createPriorityMenu())
     add (createSetNumberMenu())
     add (createRealWheelModeMenu())
-    add (createKeyboardMenu())
+    add (createVhAdjusterMenu())
     addSeparator menu.Items
 
     add (createReloadPropertiesMenuItem())

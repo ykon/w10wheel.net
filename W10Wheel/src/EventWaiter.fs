@@ -54,17 +54,11 @@ let private fromUp (down:MouseEvent) (up:MouseEvent) =
         Windows.resendDown down
         Windows.resendUp up
 
-    match down with
-    | LeftDown(_) ->
-        match up with
-        | LeftUp(_)  -> resendC(LeftClick(down.Info))
-        | RightUp(_) -> resendUD()
-        | _ -> raise (InvalidOperationException())
-    | RightDown(_) ->
-        match up with
-        | RightUp(_) -> resendC(RightClick(down.Info))
-        | LeftUp(_) -> resendUD()
-        | _ -> raise (InvalidOperationException())
+    match down, up with
+    | LeftDown(_), LeftUp(_)  -> resendC(LeftClick(down.Info))
+    | LeftDown(_), RightUp(_) -> resendUD()
+    | RightDown(_), RightUp(_) -> resendC(RightClick(down.Info))
+    | RightDown(_), LeftUp(_) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
 let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
