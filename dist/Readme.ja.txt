@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        0.9
+        1.0
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-11: Version 1.0.0: Propertiesを選択できるように変更、他
         2016-08-08: Version 0.9.0: VHAdjusterを追加、他
         2016-08-05: Version 0.8.2: キーボードのフラグ変更
         2016-08-04: Version 0.8.1: EventHandlerの最適化
@@ -96,8 +97,7 @@ URL:
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
-        
-        Reload Properties: 設定ファイルを再読込
+        Properties: 設定ファイル関連
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
         Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)

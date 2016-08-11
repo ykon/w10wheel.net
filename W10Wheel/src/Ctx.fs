@@ -19,6 +19,8 @@ open System.Collections.Generic
 open Mouse
 open Keyboard
 
+let private selectedProperties: string ref = ref Properties.DEFAULT_DEF
+
 let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 200
 let private passMode = ref false
@@ -579,15 +581,16 @@ let private createTriggerMenu () =
 
     menu
 
+let private getOnOffText (b: bool) = if b then "ON" else "OFF"
+
 let private createOnOffMenuItem (vname:string) (action: bool -> unit) =
-    let getOnOff (b: bool) = if b then "ON" else "OFF"
-    let item = new ToolStripMenuItem(getOnOff(getBooleanOfName vname))
+    let item = new ToolStripMenuItem(getOnOffText(getBooleanOfName vname))
     item.CheckOnClick <- true
     boolMenuDict.[vname] <- item
 
     item.Click.Add (fun _ ->
         let b  = item.Checked
-        item.Text <- getOnOff b
+        item.Text <- getOnOffText b
         setBooleanOfName vname b
         action(b)
     )
@@ -697,7 +700,7 @@ let private isValidNumber input low up =
     | (true, res) -> res >= low && res <= up 
     | _ -> false
 
-let private openInputBox name low up: int option =
+let private openNumberInputBox name low up: int option =
     let msg = sprintf "%s (%d - %d)" name low up
     let dvalue = (getNumberOfName name).ToString()
     let input = Interaction.InputBox(msg, "Set Number", dvalue)
@@ -711,7 +714,7 @@ let private createNumberMenuItem name low up =
     numberMenuDict.[name] <- item
 
     item.Click.Add (fun _ ->
-        let num = openInputBox name low up
+        let num = openNumberInputBox name low up
         num |> Option.iter (fun n ->
             setNumberOfName name n
             item.Text <- makeNumberText name n
@@ -912,6 +915,9 @@ let private BooleanNames: string array =
      "sendMiddleClick"; "keyboardHook";
      "vhAdjusterMode"; "firstPreferVertical"|]
 
+let private OnOffNames: string array =
+    [|"realWheelMode"; "accelTable"; "keyboardHook"; "vhAdjusterMode"|]
+
 let private resetTriggerMenuItems () =
     for KeyValue(name, item) in triggerMenuDict do
         item.CheckState <-
@@ -963,6 +969,12 @@ let private resetVhAdjusterMenuItems () =
             else
                 CheckState.Unchecked
 
+let private resetOnOffMenuItems () =
+    OnOffNames |> Array.iter (fun name ->
+        let item = boolMenuDict.[name]
+        item.Text <- getOnOffText(getBooleanOfName name)
+    )
+
 let private resetMenuItems () =
     resetTriggerMenuItems()
     resetKeyboardMenuItems()
@@ -971,9 +983,7 @@ let private resetMenuItems () =
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
     resetVhAdjusterMenuItems()
-
-let PROP_NAME = sprintf ".%s.properties" AppDef.PROGRAM_NAME
-
+    resetOnOffMenuItems()
 
 let private prop = Properties.Properties()
 
@@ -1052,12 +1062,12 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         | :? FormatException -> Debug.WriteLine(sprintf "Parse error: %s" name)
         | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
 
-let mutable private loaded = false
+let private getSelectedPropertiesPath () =
+    Properties.getPath (Volatile.Read(selectedProperties))
 
 let loadProperties (): unit =
-    loaded <- true
     try
-        prop.Load(PROP_NAME)
+        prop.Load(getSelectedPropertiesPath())
 
         Debug.WriteLine("Start load")
 
@@ -1091,7 +1101,7 @@ let loadProperties (): unit =
 
 let private isChangedProperties () =
     try
-        prop.Load(PROP_NAME)
+        prop.Load(getSelectedPropertiesPath())
 
         let isChangedBoolean () =
             BooleanNames |>
@@ -1116,11 +1126,9 @@ let private isChangedProperties () =
 
 let storeProperties () =
     try
-        if not (loaded) || not (isChangedProperties()) then
+        if not (prop.IsLoaded) || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
-            Debug.WriteLine("saveConfig start")
-
             let set key value = prop.[key] <- value
             set "firstTrigger" (getFirstTrigger().Name)
             set "accelMultiplier" (Accel.Multiplier.Name)
@@ -1131,14 +1139,12 @@ let storeProperties () =
             BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
             NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
 
-            Debug.WriteLine("Store start")
-            prop.Store(PROP_NAME)
-            Debug.WriteLine("Store end")
+            prop.Store(getSelectedPropertiesPath())
     with
         | e -> Debug.WriteLine(sprintf "store: %s" (e.ToString()))
 
 let private createReloadPropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Reload Properties")
+    let item = new ToolStripMenuItem("Reload")
 
     item.Click.Add (fun _ ->
         loadProperties()
@@ -1148,9 +1154,109 @@ let private createReloadPropertiesMenuItem () =
     item
 
 let private createSavePropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Save Properties")
+    let item = new ToolStripMenuItem("Save")
     item.Click.Add (fun _ -> storeProperties())
     item
+
+let private createOpenDirMenuItem (dir: string) =
+    let item = new ToolStripMenuItem("Open Dir")
+    item.Click.Add(fun _ ->
+        Process.Start(dir) |> ignore
+    )
+    item
+
+let private openTextInputBox msg title: string option =
+    let input = Interaction.InputBox(msg, title)
+    if input <> "" then Some(input) else None
+
+let private errorMessage (e: Exception) =
+    MessageBox.Show(e.Message, e.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
+
+let private DEFAULT_DEF = Properties.DEFAULT_DEF
+
+let private createAddPropertiesMenuItem () =
+    let item = new ToolStripMenuItem("Add")
+    item.Click.Add(fun _ ->
+        let res = openTextInputBox "Properties Name" "Add Properties"
+
+        try
+            res |> Option.iter (fun name ->
+                if name <> DEFAULT_DEF then
+                    storeProperties()
+                    Properties.copyProperties (Volatile.Read(selectedProperties)) name
+                    Volatile.Write(selectedProperties, name)
+            )
+        with
+            | e -> errorMessage e 
+    )
+    item
+
+let private openYesNoMessage msg =
+    let res = MessageBox.Show(msg, "Question", MessageBoxButtons.YesNo, MessageBoxIcon.Information)
+    res = DialogResult.Yes
+
+let private setSelectedProperties name =
+    if Volatile.Read(selectedProperties) <> name then
+        Debug.WriteLine(sprintf "setSelectedProperties: %s" name)
+
+        Volatile.Write(selectedProperties, name)
+        loadProperties()
+        resetMenuItems()
+
+let private createDeletePropertiesMenuItem () =
+    let item = new ToolStripMenuItem("Delete")
+    let name = Volatile.Read(selectedProperties)
+    item.Enabled <- (name <> DEFAULT_DEF)
+    item.Click.Add(fun _ ->
+        try
+            if openYesNoMessage (sprintf "Delete the '%s' properties." name) then
+                Properties.deleteProperties name
+                setSelectedProperties DEFAULT_DEF
+        with
+            | e -> errorMessage e
+    )
+    item
+
+let private createPropertiesMenuItem (name: string) =
+    let item = new ToolStripMenuItem(name)
+    item.CheckState <-
+        if name = Volatile.Read(selectedProperties) then
+            CheckState.Indeterminate
+        else
+            CheckState.Unchecked
+
+    item.Click.Add(fun _ ->
+        storeProperties()
+        setSelectedProperties name
+    )
+    item
+
+let private createPropertiesMenu () =
+    let menu = new ToolStripMenuItem("Properties")
+    let items = menu.DropDownItems
+    let addItem (menuItem: ToolStripMenuItem) = items.Add(menuItem) |> ignore
+    let addDefault () = addItem (createPropertiesMenuItem DEFAULT_DEF)
+    let add path = addItem (createPropertiesMenuItem (Properties.getUserDefName path))
+
+    menu.DropDownOpening.Add(fun _ ->
+        items.Clear()
+
+        addItem (createReloadPropertiesMenuItem())
+        addItem (createSavePropertiesMenuItem())
+        addSeparator items
+
+        addItem (createOpenDirMenuItem(Properties.USER_DIR))
+        addItem (createAddPropertiesMenuItem())
+        addItem (createDeletePropertiesMenuItem())
+        addSeparator items
+
+        addDefault()
+        addSeparator items
+
+        Properties.getPropFiles() |> Array.iter add
+    )
+
+    menu
 
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
@@ -1166,8 +1272,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createVhAdjusterMenu())
     addSeparator menu.Items
 
-    add (createReloadPropertiesMenuItem())
-    add (createSavePropertiesMenuItem())
+    add (createPropertiesMenu())
     addSeparator menu.Items
     
     add (createCursorChangeMenuItem())

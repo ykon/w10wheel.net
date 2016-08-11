@@ -9,16 +9,16 @@ open System
 open System.IO
 open System.Collections.Generic
 open System.Diagnostics
-
-let USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+open System.Text.RegularExpressions
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
+    let mutable loaded = false
 
-    member private self.GetPath name =
-        Path.Combine(USER_DIR, name)
+    //member private self.GetPath name =
+    //    Path.Combine(USER_DIR, name)
 
-    member self.Load (name: string): unit =
+    member self.Load (path: string): unit =
         let removeComment (l: string) =
             let si = l.IndexOf('#')
             if si = -1 then l else l.Substring(0, si)
@@ -27,17 +27,20 @@ type Properties() =
             let pair: string array = l.Split('=')
             (pair.[0].Trim(), pair.[1].Trim())
 
-        File.ReadAllLines(self.GetPath name) |>
+        File.ReadAllLines(path) |>
         Array.map (fun l -> (removeComment l).Trim()) |>
         Array.filter (fun l -> l <> "") |>
         Array.map splitEqual |>
         Array.iter (fun (k, v) -> sdict.[k] <- v)
+        loaded <- true
 
-    member self.Store (name: string): unit =
+    member self.IsLoaded with get() = loaded
+
+    member self.Store (path: string): unit =
         let lines =
             sdict.Keys |> Seq.map (fun k ->
                 (sprintf "%s=%s" k sdict.[k]))
-        File.WriteAllLines(self.GetPath name, lines)
+        File.WriteAllLines(path, lines)
         ()
 
     member self.GetProperty (key: string): string =
@@ -79,3 +82,42 @@ type Properties() =
     member self.SetBool (key: string, b: bool) =
         self.SetProperty(key, b.ToString())
         
+let USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+let PROP_NAME = "." + AppDef.PROGRAM_NAME
+let PROP_EXT = "properties"
+let DEFAULT_PROP_NAME = PROP_NAME + "." + PROP_EXT
+let DEFAULT_DEF = "Default"
+
+let private BAD_DEFAULT_NAME = PROP_NAME + "." + DEFAULT_DEF + "." + PROP_EXT
+
+let private userDefPat = new Regex("^" + PROP_NAME + ".(.+)." + PROP_EXT + "$")
+
+let private isPropFile (path: String): bool =
+    let name = Path.GetFileName(path)
+    name <> BAD_DEFAULT_NAME && userDefPat.Match(name).Success
+
+let getUserDefName (path: String) =
+    let name = Path.GetFileName(path)
+    userDefPat.Match(name).Groups.[1].Value
+
+let getPropFiles () =
+    Directory.GetFiles(USER_DIR) |> Array.filter isPropFile 
+
+let getDefaultPath () =
+    Path.Combine(USER_DIR, DEFAULT_PROP_NAME)
+
+let getPath name =
+    if name = "Default" then
+        getDefaultPath()
+    else
+        Path.Combine(USER_DIR, PROP_NAME + "." + name + "." + PROP_EXT)
+
+let copyProperties (srcName: string) (destName: string) =
+    let srcPath = getPath(srcName)
+    let destPath = getPath(destName)
+
+    File.Copy(srcPath, destPath)
+
+let deleteProperties (name: string) =
+    File.Delete(getPath(name))
+
