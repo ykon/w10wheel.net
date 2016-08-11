@@ -1234,6 +1234,8 @@ let private createPropertiesMenuItem (name: string) =
 let private createPropertiesMenu () =
     let menu = new ToolStripMenuItem("Properties")
     let items = menu.DropDownItems
+    addSeparator items
+
     let addItem (menuItem: ToolStripMenuItem) = items.Add(menuItem) |> ignore
     let addDefault () = addItem (createPropertiesMenuItem DEFAULT_DEF)
     let add path = addItem (createPropertiesMenuItem (Properties.getUserDefName path))

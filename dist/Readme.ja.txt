@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        1.0
+        1.0.1
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-11: Version 1.0.1: 起動時のPropertiesメニューにDropDownを示すよう変更
         2016-08-11: Version 1.0.0: Propertiesを選択できるように変更、他
         2016-08-08: Version 0.9.0: VHAdjusterを追加、他
         2016-08-05: Version 0.8.2: キーボードのフラグ変更
