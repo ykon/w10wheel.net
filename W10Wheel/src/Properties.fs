@@ -15,9 +15,6 @@ type Properties() =
     let sdict = SortedDictionary<string, string>()
     let mutable loaded = false
 
-    //member private self.GetPath name =
-    //    Path.Combine(USER_DIR, name)
-
     member self.Load (path: string): unit =
         let removeComment (l: string) =
             let si = l.IndexOf('#')
@@ -83,14 +80,15 @@ type Properties() =
         self.SetProperty(key, b.ToString())
         
 let USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-let PROP_NAME = "." + AppDef.PROGRAM_NAME
+let PROGRAM_NAME = AppDef.PROGRAM_NAME
+let PROP_NAME = (sprintf ".%s" PROGRAM_NAME)
 let PROP_EXT = "properties"
-let DEFAULT_PROP_NAME = PROP_NAME + "." + PROP_EXT
+let DEFAULT_PROP_NAME = (sprintf "%s.%s" PROP_NAME PROP_EXT)
 let DEFAULT_DEF = "Default"
 
-let private BAD_DEFAULT_NAME = PROP_NAME + "." + DEFAULT_DEF + "." + PROP_EXT
+let private BAD_DEFAULT_NAME = (sprintf "%s.%s.%s" PROP_NAME DEFAULT_DEF PROP_EXT)
 
-let private userDefPat = new Regex("^" + PROP_NAME + ".(.+)." + PROP_EXT + "$")
+let private userDefPat = new Regex(sprintf "^\.%s\.(.+)\.%s$" PROGRAM_NAME PROP_EXT)
 
 let private isPropFile (path: String): bool =
     let name = Path.GetFileName(path)
@@ -110,14 +108,17 @@ let getPath name =
     if name = "Default" then
         getDefaultPath()
     else
-        Path.Combine(USER_DIR, PROP_NAME + "." + name + "." + PROP_EXT)
+        Path.Combine(USER_DIR, (sprintf "%s.%s.%s" PROP_NAME name PROP_EXT))
 
-let copyProperties (srcName: string) (destName: string) =
+let exists name =
+    File.Exists(getPath name)
+
+let copy (srcName: string) (destName: string) =
     let srcPath = getPath(srcName)
     let destPath = getPath(destName)
 
     File.Copy(srcPath, destPath)
 
-let deleteProperties (name: string) =
-    File.Delete(getPath(name))
+let delete (name: string) =
+    File.Delete(getPath name)
 

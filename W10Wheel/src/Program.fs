@@ -3,8 +3,6 @@
  * Licensed under the MIT License.
  *)
 
-#nowarn "9"
-
 open System
 open System.Diagnostics
 open System.Runtime.InteropServices
@@ -20,6 +18,14 @@ let private procExit () =
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
 
+let private procArgv (argv: string array) =
+    if argv.Length = 1 then
+        let name = argv.[0]
+        if Properties.exists(name) then
+            Ctx.setSelectedProperties name
+        else
+            Dialog.errorMessage (sprintf "'%s' properties does not exist." name) "Error"
+
 [<STAThread>]
 [<EntryPoint>]
 let main argv =
@@ -34,6 +40,7 @@ let main argv =
     EventHandler.setChangeTrigger()
     Windows.setInitScroll()
 
+    procArgv argv
     Ctx.loadProperties()
     Ctx.setSystemTray()
     

@@ -13,13 +13,18 @@ open System.Windows.Forms
 open System.Reflection
 open System.Resources
 open System.IO
-open Microsoft.VisualBasic
 open System.Collections.Generic
 
 open Mouse
 open Keyboard
 
 let private selectedProperties: string ref = ref Properties.DEFAULT_DEF
+
+let setSelectedProperties name =
+    Volatile.Write(selectedProperties, name)
+
+let private getSelectedProperties () =
+    Volatile.Read(selectedProperties)
 
 let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 200
@@ -695,26 +700,13 @@ let private setNumberOfName (name: string) (n: int): unit =
 let private makeNumberText (name: string) (num: int) =
     sprintf "%s = %d" name num
 
-let private isValidNumber input low up =
-    match Int32.TryParse(input)  with
-    | (true, res) -> res >= low && res <= up 
-    | _ -> false
-
-let private openNumberInputBox name low up: int option =
-    let msg = sprintf "%s (%d - %d)" name low up
-    let dvalue = (getNumberOfName name).ToString()
-    let input = Interaction.InputBox(msg, "Set Number", dvalue)
-    if isValidNumber input low up then
-        Some(Int32.Parse(input))
-    else
-        None
-
 let private createNumberMenuItem name low up =
     let item = new ToolStripMenuItem(name, null)
     numberMenuDict.[name] <- item
 
     item.Click.Add (fun _ ->
-        let num = openNumberInputBox name low up
+        let cur = getNumberOfName name
+        let num = Dialog.openNumberInputBox name low up cur
         num |> Option.iter (fun n ->
             setNumberOfName name n
             item.Text <- makeNumberText name n
@@ -1063,7 +1055,7 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
 
 let private getSelectedPropertiesPath () =
-    Properties.getPath (Volatile.Read(selectedProperties))
+    Properties.getPath (getSelectedProperties())
 
 let loadProperties (): unit =
     try
@@ -1165,29 +1157,22 @@ let private createOpenDirMenuItem (dir: string) =
     )
     item
 
-let private openTextInputBox msg title: string option =
-    let input = Interaction.InputBox(msg, title)
-    if input <> "" then Some(input) else None
-
-let private errorMessage (e: Exception) =
-    MessageBox.Show(e.Message, e.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
-
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
 let private createAddPropertiesMenuItem () =
     let item = new ToolStripMenuItem("Add")
     item.Click.Add(fun _ ->
-        let res = openTextInputBox "Properties Name" "Add Properties"
+        let res = Dialog.openTextInputBox "Properties Name" "Add Properties"
 
         try
             res |> Option.iter (fun name ->
                 if name <> DEFAULT_DEF then
                     storeProperties()
-                    Properties.copyProperties (Volatile.Read(selectedProperties)) name
-                    Volatile.Write(selectedProperties, name)
+                    Properties.copy (getSelectedProperties()) name
+                    setSelectedProperties name
             )
         with
-            | e -> errorMessage e 
+            | e -> Dialog.errorMessageE e 
     )
     item
 
@@ -1195,39 +1180,39 @@ let private openYesNoMessage msg =
     let res = MessageBox.Show(msg, "Question", MessageBoxButtons.YesNo, MessageBoxIcon.Information)
     res = DialogResult.Yes
 
-let private setSelectedProperties name =
-    if Volatile.Read(selectedProperties) <> name then
-        Debug.WriteLine(sprintf "setSelectedProperties: %s" name)
+let private setProperties name =
+    if getSelectedProperties() <> name then
+        Debug.WriteLine(sprintf "setProperties: %s" name)
 
-        Volatile.Write(selectedProperties, name)
+        setSelectedProperties name
         loadProperties()
         resetMenuItems()
 
 let private createDeletePropertiesMenuItem () =
     let item = new ToolStripMenuItem("Delete")
-    let name = Volatile.Read(selectedProperties)
+    let name = getSelectedProperties()
     item.Enabled <- (name <> DEFAULT_DEF)
     item.Click.Add(fun _ ->
         try
-            if openYesNoMessage (sprintf "Delete the '%s' properties." name) then
-                Properties.deleteProperties name
-                setSelectedProperties DEFAULT_DEF
+            if openYesNoMessage (sprintf "Delete the '%s' properties?" name) then
+                Properties.delete name
+                setProperties DEFAULT_DEF
         with
-            | e -> errorMessage e
+            | e -> Dialog.errorMessageE e
     )
     item
 
 let private createPropertiesMenuItem (name: string) =
     let item = new ToolStripMenuItem(name)
     item.CheckState <-
-        if name = Volatile.Read(selectedProperties) then
+        if name = getSelectedProperties() then
             CheckState.Indeterminate
         else
             CheckState.Unchecked
 
     item.Click.Add(fun _ ->
         storeProperties()
-        setSelectedProperties name
+        setProperties name
     )
     item
 

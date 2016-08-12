@@ -26,6 +26,8 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DocumentationFile>bin\Debug\W10Wheel.XML</DocumentationFile>
     <Prefer32Bit>false</Prefer32Bit>
+    <StartArguments>
+    </StartArguments>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -58,6 +60,7 @@
     <Compile Include="src\PreventMultiInstance.fs" />
     <Compile Include="src\WinAPI.fs" />
     <Compile Include="src\WinCursor.fs" />
+    <Compile Include="src\Dialog.fs" />
     <Compile Include="src\Mouse.fs" />
     <Compile Include="src\Keyboard.fs" />
     <Compile Include="src\ProcessPriority.fs" />
