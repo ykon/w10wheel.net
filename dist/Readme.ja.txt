@@ -31,7 +31,7 @@ URL:
         2016-07-22: Version 0.1.0: 初公開
         
 移植:
-        こちらは、W10Wheel (Java version) を .NET Framework に移植したものです。
+        こちらは、W10Wheel (Java版) を .NET Framework に移植したものです。
         https://github.com/ykon/w10wheel
         
         実行環境が違うだけで、ほとんどの動作は同一になります。
