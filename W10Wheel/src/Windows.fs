@@ -5,8 +5,6 @@
  * Licensed under the MIT License.
  *)
 
-#nowarn "9"
-
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -60,6 +58,19 @@ let private sendInputArray (msgs: WinAPI.MINPUT array) =
     //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
     inputQueue.Add msgs
 
+let private passInt (d: int) = d
+
+let mutable private addAccelIf = passInt
+
+let private reverseIfFlip (d: int) = -d
+let mutable private reverseIfV = passInt
+let mutable private reverseIfH = reverseIfFlip
+let mutable private reverseIfDelta = reverseIfFlip
+
+let private swapIfOn (x: int) (y: int) = (y, x)
+let private swapIfOff (x: int) (y: int) = (x, y)
+let mutable private swapIf = swapIfOff
+
 // d == Not Zero
 let private getNearestIndex (d:int) (thr:int array): int =
     let ad = Math.Abs(d)
@@ -75,12 +86,12 @@ let private getNearestIndex (d:int) (thr:int array): int =
 
     loop 0
 
+let mutable private accelThreshold: int array = null
+let mutable private accelMultiplier: double array = null
+
 let private addAccel (d:int) =
-    if not (Ctx.isAccelTable()) then
-        d
-    else
-        let i = getNearestIndex d (Ctx.getAccelThreshold())
-        int ((double d) * Ctx.getAccelMultiplier().[i])
+    let i = getNearestIndex d (accelThreshold)
+    int ((double d) * accelMultiplier.[i])
 
 open WinAPI.Event
 
@@ -95,18 +106,24 @@ type MoveDirection =
 let mutable private vLastMove: MoveDirection = Zero
 let mutable private hLastMove: MoveDirection = Zero
 
+let mutable private vWheelMove = 0
+let mutable private hWheelMove = 0
+let mutable private quickTurn = false
+
 let startWheelCount () =
     Debug.WriteLine("startWheelCount")
-    vwCount <- if Ctx.isQuickFirst() then Ctx.getVWheelMove() else Ctx.getVWheelMove() / 2
-    hwCount <- if Ctx.isQuickFirst() then Ctx.getHWheelMove() else Ctx.getHWheelMove() / 2
+    vwCount <- if Ctx.isQuickFirst() then vWheelMove else vWheelMove / 2
+    hwCount <- if Ctx.isQuickFirst() then hWheelMove else hWheelMove / 2
     vLastMove <- Zero
     hLastMove <- Zero
 
+let mutable private wheelDelta = 0
+
 let private getVWheelDelta input =
-    let delta = Ctx.getWheelDelta()
+    let delta = wheelDelta
     let res = if input > 0 then -delta else delta
 
-    if Ctx.isReverseScroll() then -res else res
+    reverseIfDelta res
 
 let private getHWheelDelta input =
     -(getVWheelDelta input)
@@ -121,39 +138,34 @@ let private sendRealVWheel pt d =
     let send () = sendInput pt (getVWheelDelta d) MOUSEEVENTF_WHEEL 0u 0u
     vwCount <- vwCount + Math.Abs(d)
 
-    if Ctx.isQuickTurn() && isTurnMove vLastMove d then
+    if quickTurn && isTurnMove vLastMove d then
         send()
-    elif vwCount >= Ctx.getVWheelMove() then
+    elif vwCount >= vWheelMove then
         send()
-        vwCount <- vwCount - Ctx.getVWheelMove()
+        vwCount <- vwCount - vWheelMove
 
     vLastMove <- if d > 0 then Plus else Minus
 
-let private sendVWheel (pt:WinAPI.POINT) (d:int) =
-    if Ctx.isRealWheelMode() then
-        sendRealVWheel pt d
-    else
-        let rev d = if Ctx.isReverseScroll() then d else -d
-        sendInput pt (rev (addAccel d)) MOUSEEVENTF_WHEEL 0u 0u
+let private sendDirectVWheel (pt:WinAPI.POINT) (d:int) =
+    sendInput pt (reverseIfV (addAccelIf d)) MOUSEEVENTF_WHEEL 0u 0u
 
 let private sendRealHWheel pt d =
     let send () = sendInput pt (getHWheelDelta d) MOUSEEVENTF_HWHEEL 0u 0u
     hwCount <- hwCount + Math.Abs(d)
 
-    if Ctx.isQuickTurn() && isTurnMove hLastMove d then
+    if quickTurn && isTurnMove hLastMove d then
         send()
-    elif hwCount >= Ctx.getHWheelMove() then
+    elif hwCount >= hWheelMove then
         send()
-        hwCount <- hwCount - Ctx.getHWheelMove()
+        hwCount <- hwCount - hWheelMove
 
     hLastMove <- if d > 0 then Plus else Minus
 
-let private sendHWheel (pt:WinAPI.POINT) (d:int) =
-    if Ctx.isRealWheelMode() then
-        sendRealHWheel pt d
-    else
-        let rev d = if Ctx.isReverseScroll() then -d else d
-        sendInput pt (rev (addAccel d)) MOUSEEVENTF_HWHEEL 0u 0u
+let private sendDirectHWheel (pt:WinAPI.POINT) (d:int) =
+    sendInput pt (reverseIfH (addAccelIf d)) MOUSEEVENTF_HWHEEL 0u 0u
+
+let mutable private sendVWheel = sendDirectVWheel
+let mutable private sendHWheel = sendDirectHWheel
 
 type VHDirection =
     | Vertical
@@ -161,18 +173,6 @@ type VHDirection =
     | Init
 
 let mutable private vhDirection: VHDirection = Init
-
-let private resetVHA () =
-    vhDirection <- Init
-
-let initScroll () =
-    if Ctx.isRealWheelMode() then
-        startWheelCount()
-    if Ctx.isVhAdjusterMode() then
-        resetVHA()
-
-let setInitScroll () =
-    Ctx.setInitScroll initScroll
 
 let private setVerticalVHA () =
     vhDirection <- Vertical
@@ -185,12 +185,18 @@ let private setHorizontalVHA () =
 let private checkFirstVHA adx ady =
     let mthr = Ctx.getFirstMinThreshold()
     if adx > mthr || ady > mthr then
-        let iy = if Ctx.isFirstPreferVertical() then ady * 2 else ady
-        if iy >= adx then setVerticalVHA() else setHorizontalVHA()
+        let y = if Ctx.isFirstPreferVertical() then ady * 2 else ady
+        if y >= adx then setVerticalVHA() else setHorizontalVHA()
 
-let private checkSwitchingVHA adx ady =
-    let sthr = Ctx.getSwitchingThreshold()
+let mutable private switchingThreshold = 0
+
+let private checkSwitchVHA adx ady =
+    let sthr = switchingThreshold
     if ady > sthr then setVerticalVHA() elif adx > sthr then setHorizontalVHA()
+
+let private checkSwitchVHAifNone adx ady = ()
+
+let mutable private checkSwitchVHAif = checkSwitchVHA
 
 let private sendWheelVHA (wspt:WinAPI.POINT) (dx:int) (dy:int) =
     let adx = Math.Abs(dx)
@@ -199,30 +205,40 @@ let private sendWheelVHA (wspt:WinAPI.POINT) (dx:int) (dy:int) =
     if vhDirection = Init then // first
         checkFirstVHA adx ady
     else
-        if Ctx.isVhAdjusterSwitching() then
-            checkSwitchingVHA adx ady
+        checkSwitchVHAif adx ady
 
     match vhDirection with
     | Init -> ()
     | Vertical -> if dy <> 0 then sendVWheel wspt dy
     | Horizontal -> if dx <> 0 then sendHWheel wspt dx
 
+let mutable private verticalThreshold = 0
+let mutable private horizontalThreshold = 0
+
+let private sendWheelStdHorizontal (wspt:WinAPI.POINT) (dx:int) (dy:int) =
+    if Math.Abs(dx) > horizontalThreshold then
+        sendHWheel wspt dx
+
+let private sendWheelStdNone (wspt:WinAPI.POINT) (dx:int) (dy:int) = ()
+
+let mutable private sendWheelStdIfHorizontal = sendWheelStdHorizontal
+
+let private sendWheelStd (wspt:WinAPI.POINT) (dx:int) (dy:int) =
+    if Math.Abs(dy) > verticalThreshold then
+        sendVWheel wspt dy
+
+    sendWheelStdIfHorizontal wspt dx dy
+
+let mutable private sendWheelIf = sendWheelStd
+
+let mutable private scrollStartPoint: (int * int) = 0, 0
+
 let sendWheel (pt: WinAPI.POINT) =
-    let sx, sy = Ctx.getScrollStartPoint()
-
-    let swap x y = if Ctx.isSwapScroll() then y, x else x, y
-    let dx, dy = swap (pt.x - sx) (pt.y - sy)
-
+    let sx, sy = scrollStartPoint
+    let dx, dy = swapIf (pt.x - sx) (pt.y - sy)
     let wspt = WinAPI.POINT(sx, sy)
 
-    if Ctx.isVhAdjusterMode() && Ctx.isHorizontalScroll() then
-        sendWheelVHA wspt dx dy
-    else
-        if Math.Abs(dy) > Ctx.getVerticalThreshold() then
-            sendVWheel wspt dy
-        if Ctx.isHorizontalScroll() then
-            if Math.Abs(dx) > Ctx.getHorizontalThreshold() then
-                sendHWheel wspt dx
+    sendWheelIf wspt dx dy
 
 let private createClick (mc:MouseClick) (extra:uint32) =
     let create mouseData es = Array.map (fun e -> createInput mc.Info.pt mouseData e 0u extra) es
@@ -234,19 +250,15 @@ let private createClick (mc:MouseClick) (extra:uint32) =
     | X2Click(_) -> create WinAPI.XBUTTON2 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
 
 let resendClick (mc: MouseClick) =
-    //Ctx.setSkipMC mc true
     sendInputArray (createClick mc resendTag)
 
-
 let resendDown (me: MouseEvent) =
-    //Ctx.setSkip me true
     match me with
     | LeftDown(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTDOWN 0u resendTag
     | RightDown(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTDOWN 0u resendTag
     | _ -> raise (ArgumentException())
 
 let resendUp (me: MouseEvent) =
-    //Ctx.setSkip me true
     match me with
     | LeftUp(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTUP 0u resendTag
     | RightUp(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTUP 0u resendTag
@@ -265,4 +277,57 @@ let checkCtrlState () =
 
 let checkAltState () =
     checkAsyncKeyState(VK_MENU)
+
+let private initFuncs () =
+    addAccelIf <- if Ctx.isAccelTable() then addAccel else passInt
+    swapIf <- if Ctx.isSwapScroll() then swapIfOn else swapIfOff
+
+    reverseIfV <- if Ctx.isReverseScroll() then passInt else reverseIfFlip
+    reverseIfH <- if Ctx.isReverseScroll() then reverseIfFlip else passInt
+
+    sendVWheel <- if Ctx.isRealWheelMode() then sendRealVWheel else sendDirectVWheel
+    sendHWheel <- if Ctx.isRealWheelMode() then sendRealHWheel else sendDirectHWheel
+
+    sendWheelIf <- if Ctx.isHorizontalScroll() && Ctx.isVhAdjusterMode() then sendWheelVHA else sendWheelStd
+
+let private initAccelTable () =
+    accelThreshold <- Ctx.getAccelThreshold()
+    accelMultiplier <- Ctx.getAccelMultiplier()
+
+let private initRealWheelMode () =
+    vWheelMove <- Ctx.getVWheelMove()
+    hWheelMove <- Ctx.getHWheelMove()
+    quickTurn <- Ctx.isQuickTurn()
+    wheelDelta <- Ctx.getWheelDelta()
+    reverseIfDelta <- if Ctx.isReverseScroll() then reverseIfFlip else passInt
+
+    startWheelCount()
+
+let private initVhAdjusterMode () =
+    vhDirection <- Init
+    switchingThreshold <- Ctx.getSwitchingThreshold()
+    checkSwitchVHAif <- if Ctx.isVhAdjusterSwitching() then checkSwitchVHA else checkSwitchVHAifNone
+
+let private initStdMode () =
+    verticalThreshold <- Ctx.getVerticalThreshold()
+    horizontalThreshold <- Ctx.getHorizontalThreshold()
+    sendWheelStdIfHorizontal <- if Ctx.isHorizontalScroll() then sendWheelStdHorizontal else sendWheelStdNone
+
+let initScroll () =
+    scrollStartPoint <- Ctx.getScrollStartPoint()
+    initFuncs()
+
+    if Ctx.isAccelTable() then
+        initAccelTable()
+    if Ctx.isRealWheelMode() then
+        initRealWheelMode()
+
+    if Ctx.isVhAdjusterMode() then
+        initVhAdjusterMode()
+    else
+        initStdMode()
+
+let setInitScroll () =
+    Ctx.setInitScroll initScroll
+     
 

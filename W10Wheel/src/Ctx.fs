@@ -57,29 +57,50 @@ type VHAdjusterMethod =
     member self.Name =
         Mouse.getUnionCaseName(self)
 
-let private vhAdjusterMode = ref false
-let private vhAdjusterMethod: VHAdjusterMethod ref = ref Switching
-let private firstPreferVertical = ref true
-let private firstMinThreshold = ref 5
-let private switchingThreshold = ref 50
+type private VHAdjuster() =
+    [<VolatileField>] static let mutable mode = false
+    [<VolatileField>] static let mutable _method: VHAdjusterMethod = Switching
+    [<VolatileField>] static let mutable firstPreferVertical = true
+    [<VolatileField>] static let mutable firstMinThreshold = 5
+    [<VolatileField>] static let mutable switchingThreshold = 50
+
+    static member Mode
+        with get() = mode
+        and set b = mode <- b
+        
+    static member Method
+        with get() = _method
+        and set m = _method <- m
+        
+    static member FirstPreferVertical
+        with get() = firstPreferVertical
+        and set b = firstPreferVertical <- b
+        
+    static member FirstMinThreshold
+        with get() = firstMinThreshold
+        and set n = firstMinThreshold <- n
+        
+    static member SwitchingThreshold
+        with get() = switchingThreshold
+        and set n = switchingThreshold <- n    
 
 let isVhAdjusterMode () =
-    Volatile.Read(vhAdjusterMode)
+    VHAdjuster.Mode
 
 let private getVhAdjusterMethod () =
-    Volatile.Read(vhAdjusterMethod)
+    VHAdjuster.Method
 
 let isVhAdjusterSwitching () =
     getVhAdjusterMethod() = Switching
 
 let isFirstPreferVertical () =
-    Volatile.Read(firstPreferVertical)
+    VHAdjuster.FirstPreferVertical
 
 let getFirstMinThreshold () =
-    Volatile.Read(firstMinThreshold)
+    VHAdjuster.FirstMinThreshold
 
 let getSwitchingThreshold () =
-    Volatile.Read(switchingThreshold)
+    VHAdjuster.SwitchingThreshold
 
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
@@ -201,13 +222,6 @@ type private Threshold() =
 let getVerticalThreshold () = Threshold.Vertical
 let getHorizontalThreshold () = Threshold.Horizontal
 
-(*
-let private skip_right_down = ref false
-let private skip_right_up = ref false
-let private skip_left_down = ref false
-let private skip_left_up = ref false
-*)
-
 type private RealWheel() =
     [<VolatileField>] static let mutable mode = false
     [<VolatileField>] static let mutable wheelDelta = 120
@@ -271,26 +285,28 @@ type private Scroll() =
     [<VolatileField>] static let mutable swap = false
 
     static member Start (info: HookInfo) =
-        initScroll()
-
         stime <- info.time
         sx <- info.pt.x
         sy <- info.pt.y
-        mode <- true
+
+        initScroll()
 
         if cursorChange && not (isDragTrigger()) then
             WinCursor.changeV()
 
-    static member Start (info: KHookInfo) =
-        initScroll()
+        mode <- true
 
+    static member Start (info: KHookInfo) =
         stime <- info.time
         sx <- Cursor.Position.X
         sy <- Cursor.Position.Y
-        mode <- true
+
+        initScroll()
 
         if cursorChange then
             WinCursor.changeV()
+
+        mode <- true
 
     static member Exit () =
         mode <- false
@@ -472,8 +488,8 @@ let private getBooleanOfName (name: string): bool =
     | "swapScroll" -> Scroll.Swap
     | "sendMiddleClick" -> Volatile.Read(sendMiddleClick)
     | "keyboardHook" -> Volatile.Read(keyboardHook)
-    | "vhAdjusterMode" -> Volatile.Read(vhAdjusterMode)
-    | "firstPreferVertical" -> Volatile.Read(firstPreferVertical)
+    | "vhAdjusterMode" -> VHAdjuster.Mode
+    | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical
     | "passMode" -> Volatile.Read(passMode)
     | e -> raise (ArgumentException(e))
 
@@ -492,8 +508,8 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "swapScroll" -> Scroll.Swap <- b
     | "sendMiddleClick" -> Volatile.Write(sendMiddleClick, b)
     | "keyboardHook" -> Volatile.Write(keyboardHook, b)
-    | "vhAdjusterMode" -> Volatile.Write(vhAdjusterMode, b)
-    | "firstPreferVertical" -> Volatile.Write(firstPreferVertical, b)
+    | "vhAdjusterMode" -> VHAdjuster.Mode <- b
+    | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical <- b
     | "passMode" -> Volatile.Write(passMode, b)
     | e -> raise (ArgumentException(e))
 
@@ -679,8 +695,8 @@ let private getNumberOfName (name: string): int =
     | "wheelDelta" -> RealWheel.WheelDelta
     | "vWheelMove" -> RealWheel.VWheelMove
     | "hWheelMove" -> RealWheel.HWheelMove
-    | "firstMinThreshold" -> Volatile.Read(firstMinThreshold)
-    | "switchingThreshold" -> Volatile.Read(switchingThreshold)
+    | "firstMinThreshold" -> VHAdjuster.FirstMinThreshold
+    | "switchingThreshold" -> VHAdjuster.SwitchingThreshold
     | e -> raise (ArgumentException(e))
 
 let private setNumberOfName (name: string) (n: int): unit =
@@ -693,8 +709,8 @@ let private setNumberOfName (name: string) (n: int): unit =
     | "wheelDelta" -> RealWheel.WheelDelta <- n
     | "vWheelMove" -> RealWheel.VWheelMove <- n
     | "hWheelMove" -> RealWheel.HWheelMove <- n
-    | "firstMinThreshold" -> Volatile.Write(firstMinThreshold, n)
-    | "switchingThreshold" -> Volatile.Write(switchingThreshold, n)
+    | "firstMinThreshold" -> VHAdjuster.FirstMinThreshold <- n
+    | "switchingThreshold" -> VHAdjuster.SwitchingThreshold <- n
     | e -> raise (ArgumentException(e))
 
 let private makeNumberText (name: string) (num: int) =
@@ -756,7 +772,7 @@ let private getVhAdjusterMethodOfName name =
 
 let private setVhAdjusterMethod name =
     Debug.WriteLine(sprintf "setVhAdjusterMethod: %s" name)
-    Volatile.Write(vhAdjusterMethod, getVhAdjusterMethodOfName name)
+    VHAdjuster.Method <- (getVhAdjusterMethodOfName name)
 
 let private createVhAdjusterMenuItem name =
     let item = new ToolStripMenuItem(name, null)
