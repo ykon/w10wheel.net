@@ -13,7 +13,6 @@ open System.Text.RegularExpressions
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
-    let mutable loaded = false
 
     member self.Load (path: string): unit =
         let removeComment (l: string) =
@@ -29,9 +28,6 @@ type Properties() =
         Array.filter (fun l -> l <> "") |>
         Array.map splitEqual |>
         Array.iter (fun (k, v) -> sdict.[k] <- v)
-        loaded <- true
-
-    member self.IsLoaded with get() = loaded
 
     member self.Store (path: string): unit =
         let lines =
@@ -59,6 +55,9 @@ type Properties() =
     member self.GetInt (key: string): int =
         Int32.Parse(self.GetString(key))
 
+    member self.GetDouble (key: string): double =
+        Double.Parse(self.GetString(key))
+
     member self.GetBool (key: string): bool =
         Boolean.Parse(self.GetString(key))
 
@@ -75,6 +74,9 @@ type Properties() =
 
     member self.SetInt (key: string, n: int) =
         self.SetProperty(key, n.ToString())
+
+    member self.SetDouble (key: string, d: double) =
+        self.SetProperty(key, d.ToString("F"))
 
     member self.SetBool (key: string, b: bool) =
         self.SetProperty(key, b.ToString())

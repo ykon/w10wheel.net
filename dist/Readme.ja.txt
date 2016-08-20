@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        1.8.1
+        1.9
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-20: Version 1.9.0: 初期状態でのバグ修正とDPICorrection追加、他
         2016-08-15: Version 1.8.1: ホイール処理(スクロール)の最適化
         2016-08-12: Version 1.8.0: コマンドライン引数でPropertiesを指定可能、他
         2016-08-12: Version 1.1.0-1.7.0: Java版に合わせるためスキップ
@@ -90,8 +91,10 @@ URL:
         *Dragのトリガーではドラッグしている間だけスクロールします。
         スクロールモードに固定されません。(Dragged Lock が無効の場合)
         
-        終了するには、タスクトレイのアイコンをダブルクリックか
-        右クリックメニューから Exit を選択してください。
+        タスクトレイのアイコンをダブルクリックするとPassModeを切り替えます。
+        PassModeを有効にするとアイコンが赤色に変更されます。
+        
+        終了するには、右クリックメニューから Exit を選択してください。
         
 メニュー項目:
         Trigger: トリガーを変更 (設定項目を参照)
@@ -101,6 +104,7 @@ URL:
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
+        DPI Correction: DPI補正
         Properties: 設定ファイル関連
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -221,6 +225,12 @@ URL:
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー 
+                
+        dpiCorrection: double  (default: 1.0) # DPI Correction
+                DPI補正に使う値
+                
+        dpiAware: bool (default: empty) # DPI Correction
+                自動的にDPI補正する (メニューは拡大されません) 
                 
 ライセンス:
         The MIT License

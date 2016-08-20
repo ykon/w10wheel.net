@@ -220,3 +220,20 @@ let SPI_SETCURSORS = 0x0057
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool SystemParametersInfo(uint32 uiAction, uint32 uiParam, nativeint pvParam, uint32 fWinIni)
 
+type DpiType = Effective = 0 | Angular = 1 | Raw = 2
+
+let MONITOR_DEFAULTTONEAREST = 0x00000002
+let MONITOR_DEFAULTTONULL = 0x00000000
+let MONITOR_DEFAULTTOPRIMARY = 0x00000001
+
+[<DllImport("User32.dll")>]
+extern nativeint MonitorFromPoint([<In>]POINT pt, [<In>]uint32 dwFlags)
+
+[<DllImport("Shcore.dll")>]
+extern nativeint GetDpiForMonitor([<In>]nativeint hmonitor, [<In>]DpiType dpiType, [<Out>]uint32& dpiX, [<Out>]uint32& dpiY)
+
+type PROCESS_DPI_AWARENESS = DPI_UNAWARE = 0 | SYSTEM_DPI_AWARE = 1 | PER_MONITOR_DPI_AWARE = 2
+
+[<DllImport("Shcore.dll")>]
+extern int SetProcessDpiAwareness([<In>]PROCESS_DPI_AWARENESS value)
+

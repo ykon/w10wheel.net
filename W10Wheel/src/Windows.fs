@@ -329,5 +329,8 @@ let initScroll () =
 
 let setInitScroll () =
     Ctx.setInitScroll initScroll
+
+let setProcessPerMonitorDpiAwareness () =
+    WinAPI.SetProcessDpiAwareness(WinAPI.PROCESS_DPI_AWARENESS.PER_MONITOR_DPI_AWARE) |> ignore
      
 

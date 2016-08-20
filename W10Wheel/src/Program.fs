@@ -14,11 +14,15 @@ let private messageDoubleLaunch () =
     MessageBox.Show("Double Launch?", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
 let private procExit () =
+    Debug.WriteLine("procExit")
+
     WinHook.unhook()
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
 
 let private procArgv (argv: string array) =
+    Debug.WriteLine("procArgv")
+
     if argv.Length = 1 then
         let name = argv.[0]
         if Properties.exists(name) then
@@ -41,7 +45,12 @@ let main argv =
     Windows.setInitScroll()
 
     procArgv argv
+
     Ctx.loadProperties()
+
+    if Ctx.isDpiAware() then
+        Windows.setProcessPerMonitorDpiAwareness()
+
     Ctx.setSystemTray()
     
     WinHook.setMouseHook()

@@ -18,6 +18,9 @@ open System.Collections.Generic
 open Mouse
 open Keyboard
 
+let private ICON_RUN_NAME = "TrayIcon-Run.ico"
+let private ICON_STOP_NAME = "TrayIcon-Stop.ico"
+
 let private selectedProperties: string ref = ref Properties.DEFAULT_DEF
 
 let setSelectedProperties name =
@@ -28,12 +31,20 @@ let private getSelectedProperties () =
 
 let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 200
-let private passMode = ref false
 let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
 
 let private keyboardHook = ref false
 let private targetVKCode = ref (Keyboard.getVKCode("VK_NONCONVERT"))
+
+let private dpiCorrection = ref 1.00
+let private dpiAware = ref false
+
+let isDpiAware () =
+    Volatile.Read(dpiAware)
+
+let private getDpiCorrection () =
+    Volatile.Read(dpiCorrection)
 
 let isKeyboardHook () =
     Volatile.Read(keyboardHook)
@@ -49,6 +60,36 @@ let isNoneTriggerKey () =
 
 let isSendMiddleClick () =
     Volatile.Read(sendMiddleClick)
+
+let private notifyIcon = new System.Windows.Forms.NotifyIcon()
+let mutable private passModeMenuItem: ToolStripMenuItem = null
+
+let private getTrayText b =
+    sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (if b then "Stopped" else "Runnable")
+
+let private getIcon (name: string) =
+    let stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+    new Drawing.Icon(stream)
+
+let private getTrayIcon b =
+    getIcon(if b then ICON_STOP_NAME else ICON_RUN_NAME)
+
+let private changeNotifyIcon b =
+    notifyIcon.Text <- (getTrayText b)
+    notifyIcon.Icon <- (getTrayIcon b)
+
+type private Pass() =
+    [<VolatileField>] static let mutable mode = false
+
+    static member Mode
+        with get() = mode
+        and set b =
+            mode <- b
+            changeNotifyIcon b
+            passModeMenuItem.Checked <- b
+
+    static member toggleMode () =
+        Pass.Mode <- not mode
 
 type VHAdjusterMethod =
     | Fixed
@@ -284,11 +325,14 @@ type private Scroll() =
     [<VolatileField>] static let mutable draggedLock = false
     [<VolatileField>] static let mutable swap = false
 
+    static let setStartPoint () =
+        let scale = if isDpiAware() then 1.0 else getDpiCorrection()
+        sx <- int ((double Cursor.Position.X) * scale)
+        sy <- int ((double Cursor.Position.Y) * scale)
+
     static member Start (info: HookInfo) =
         stime <- info.time
-        sx <- info.pt.x
-        sy <- info.pt.y
-
+        setStartPoint()
         initScroll()
 
         if cursorChange && not (isDragTrigger()) then
@@ -298,9 +342,7 @@ type private Scroll() =
 
     static member Start (info: KHookInfo) =
         stime <- info.time
-        sx <- Cursor.Position.X
-        sy <- Cursor.Position.Y
-
+        setStartPoint()
         initScroll()
 
         if cursorChange then
@@ -419,7 +461,7 @@ let getPollTimeout () =
     Volatile.Read(pollTimeout)
 
 let isPassMode () =
-    Volatile.Read(passMode)
+    Pass.Mode
 
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
@@ -473,6 +515,7 @@ let private priorityMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private numberMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private keyboardMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private vhAdjusterMenuDict = new Dictionary<string, ToolStripMenuItem>()
+let private dpiCorrectionMenuDict = new Dictionary<string, ToolStripMenuItem>()
 
 let private getBooleanOfName (name: string): bool =
     match name with
@@ -490,7 +533,8 @@ let private getBooleanOfName (name: string): bool =
     | "keyboardHook" -> Volatile.Read(keyboardHook)
     | "vhAdjusterMode" -> VHAdjuster.Mode
     | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical
-    | "passMode" -> Volatile.Read(passMode)
+    | "dpiAware" -> Volatile.Read(dpiAware)
+    | "passMode" -> Pass.Mode
     | e -> raise (ArgumentException(e))
 
 let private setBooleanOfName (name:string) (b:bool) =
@@ -510,7 +554,8 @@ let private setBooleanOfName (name:string) (b:bool) =
     | "keyboardHook" -> Volatile.Write(keyboardHook, b)
     | "vhAdjusterMode" -> VHAdjuster.Mode <- b
     | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical <- b
-    | "passMode" -> Volatile.Write(passMode, b)
+    | "dpiAware" -> Volatile.Write(dpiAware, b)
+    | "passMode" -> Pass.Mode <- b
     | e -> raise (ArgumentException(e))
 
 let private makeSetBooleanEvent (name: String) =
@@ -808,6 +853,37 @@ let private createVhAdjusterMenu () =
 
     menu
 
+let private createDpiCorrectionMenuItem (scale: double) =
+    let text = scale.ToString("F")
+    let item = new ToolStripMenuItem(text, null)
+    dpiCorrectionMenuDict.[text] <- item
+
+    item.Click.Add (fun _ ->
+        if item.CheckState = CheckState.Unchecked then
+            uncheckAllItems dpiCorrectionMenuDict
+            item.CheckState <- CheckState.Indeterminate
+            Volatile.Write(dpiCorrection, scale)
+    )
+
+    item
+
+let mutable private dpiCorrectionMenu: ToolStripMenuItem = null
+
+let private createDpiCorrectionMenu () =
+    let menu = new ToolStripMenuItem("DPI Correction")
+    menu.Enabled <- not (isDpiAware())
+    let items = menu.DropDownItems
+    let add scale = items.Add(createDpiCorrectionMenuItem scale) |> ignore
+
+    add 1.00
+    add 1.25
+    add 1.50
+    add 1.75
+    add 2.00
+
+    dpiCorrectionMenu <- menu
+    menu
+
 let private setTargetVKCode name =
     Debug.WriteLine(sprintf "setTargetVKCode: %s" name)
     Volatile.Write(targetVKCode, Keyboard.getVKCode name)
@@ -883,6 +959,7 @@ let private createPassModeMenuItem () =
     let event = makeSetBooleanEvent "passMode"
     let item = new ToolStripMenuItem("Pass Mode", null, event)
     item.CheckOnClick <- true
+    passModeMenuItem <- item
     item
 
 let private createInfoMenuItem () =
@@ -893,8 +970,6 @@ let private createInfoMenuItem () =
         MessageBox.Show(msg, "Info", MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
     item
-
-let private notifyIcon = new System.Windows.Forms.NotifyIcon()
 
 let private exitAction () =
     notifyIcon.Visible <- false
@@ -907,6 +982,9 @@ let private createExitMenuItem (): ToolStripMenuItem =
 let private setDefaultPriority () =
     Debug.WriteLine("setDefaultPriority")
     ProcessPriority.setPriority(getProcessPriority())
+
+let private setDefaultTrigger () =
+    setTrigger(getFirstTrigger().Name)
 
 let private NumberNames: string array =
     [|"pollTimeout"; "scrollLocktime";
@@ -983,6 +1061,16 @@ let private resetOnOffMenuItems () =
         item.Text <- getOnOffText(getBooleanOfName name)
     )
 
+let private resetDpiCorrectionMenuItems () =
+    dpiCorrectionMenu.Enabled <- not (isDpiAware())
+
+    for KeyValue(name, item) in dpiCorrectionMenuDict do
+        item.CheckState <-
+            if name = getDpiCorrection().ToString("F") then
+                CheckState.Indeterminate
+            else
+                CheckState.Unchecked
+
 let private resetMenuItems () =
     resetTriggerMenuItems()
     resetKeyboardMenuItems()
@@ -992,6 +1080,7 @@ let private resetMenuItems () =
     resetBoolNumberMenuItems()
     resetVhAdjusterMenuItems()
     resetOnOffMenuItems()
+    resetDpiCorrectionMenuItems()
 
 let private prop = Properties.Properties()
 
@@ -1070,10 +1159,26 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         | :? FormatException -> Debug.WriteLine(sprintf "Parse error: %s" name)
         | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
 
+let private setDpiCorrectionOfProperty () =
+    try
+        Volatile.Write(dpiCorrection, prop.GetDouble "dpiCorrection")
+    with
+        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message) 
+
+let private setDpiAwareOfProperty () =
+    try
+        Volatile.Write(dpiAware, prop.GetBool "dpiAware")
+    with
+        | :? KeyNotFoundException as e -> Volatile.Write(dpiAware, false) 
+
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
+let mutable private loaded = false
+
 let loadProperties (): unit =
+    loaded <- true
     try
         prop.Load(getSelectedPropertiesPath())
 
@@ -1085,6 +1190,9 @@ let loadProperties (): unit =
         setPriorityOfProperty()
         setVKCodeOfProperty()
         setVhAdjusterMethodOfProperty()
+        
+        setDpiCorrectionOfProperty()
+        setDpiAwareOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
         WinHook.setOrUnsetKeyboardHook (Volatile.Read(keyboardHook))
@@ -1105,6 +1213,7 @@ let loadProperties (): unit =
         | :? FileNotFoundException ->
             Debug.WriteLine("Properties file not found")
             setDefaultPriority()
+            setDefaultTrigger()
         | e -> Debug.WriteLine(sprintf "load: %s" (e.ToString()))
 
 let private isChangedProperties () =
@@ -1126,6 +1235,7 @@ let private isChangedProperties () =
         check "processPriority" (getProcessPriority().Name) ||
         check "targetVKCode" (Keyboard.getName(getTargetVKCode())) ||
         check "vhAdjusterMethod" (getVhAdjusterMethod().Name) ||
+        check "dpiCorrection" (getDpiCorrection().ToString("F")) ||
         isChangedBoolean() || isChangedNumber() 
     with
         | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
@@ -1134,7 +1244,7 @@ let private isChangedProperties () =
 
 let storeProperties () =
     try
-        if not (prop.IsLoaded) || not (isChangedProperties()) then
+        if not loaded || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
             let set key value = prop.[key] <- value
@@ -1143,6 +1253,8 @@ let storeProperties () =
             set "processPriority" (getProcessPriority().Name)
             set "targetVKCode" (Keyboard.getName (getTargetVKCode()))
             set "vhAdjusterMethod" (getVhAdjusterMethod().Name)
+
+            prop.SetDouble("dpiCorrection", getDpiCorrection())
 
             BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
             NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
@@ -1273,6 +1385,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createSetNumberMenu())
     add (createRealWheelModeMenu())
     add (createVhAdjusterMenu())
+    add (createDpiCorrectionMenu())
     addSeparator menu.Items
 
     add (createPropertiesMenu())
@@ -1290,13 +1403,14 @@ let private createContextMenuStrip (): ContextMenuStrip =
 
     menu
 
+let mutable private contextMenu: ContextMenuStrip = null
+
 let setSystemTray (): unit =
     let menu = createContextMenuStrip()
 
     let ni = notifyIcon
-    let icon = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("TrayIcon.ico")
-    ni.Icon <- new Drawing.Icon(icon)
-    ni.Text <- AppDef.PROGRAM_NAME_NET
+    ni.Icon <- getTrayIcon false
+    ni.Text <- getTrayText false
     ni.Visible <- true
     ni.ContextMenuStrip <- menu
-    ni.DoubleClick.Add (fun _ -> exitAction())
+    ni.DoubleClick.Add (fun _ -> Pass.toggleMode())
