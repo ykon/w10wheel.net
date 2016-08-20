@@ -43,7 +43,7 @@ URL:
         .NET Framework (4.6.1) システム要件
          https://msdn.microsoft.com/ja-jp/library/8z6watww(v=vs.110).aspx
         
-        Windows 7, 8.1:
+        Windows 8.1:
                 最新の.NET Frameworkをインストールしてください。 
                 https://www.microsoft.com/ja-JP/download/details.aspx?id=49981
                 WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
