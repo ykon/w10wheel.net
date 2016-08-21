@@ -11,7 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
-        2016-08-21: Version 2.0.0: --sendExit, --sendPassModeを追加
+        2016-08-21: Version 2.0.0: コマンドを追加 (--sendExit, --sendPassMode)
         2016-08-20: Version 1.9.0: 初期状態でのバグ修正とDPICorrection追加、他
         2016-08-15: Version 1.8.1: ホイール処理(スクロール)の最適化
         2016-08-12: Version 1.8.0: コマンドライン引数でPropertiesを指定可能、他
