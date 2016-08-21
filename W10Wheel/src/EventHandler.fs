@@ -398,10 +398,10 @@ let private noneUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
-let private __procDownLR: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
-let private __procUpLR: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
-let private __procDownS: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
-let private __procUpS: (MouseEvent -> nativeint) ref = ref (fun _ -> IntPtr.Zero)
+let private __procDownLR: (MouseEvent -> nativeint) ref = ref lrDown
+let private __procUpLR: (MouseEvent -> nativeint) ref = ref lrUp
+let private __procDownS: (MouseEvent -> nativeint) ref = ref noneDown
+let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 
 let private procDownLR (d: MouseEvent): nativeint =
     Volatile.Read(__procDownLR)(d)

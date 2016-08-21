@@ -46,17 +46,23 @@ let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
-    let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, uint32 data, uint32 flags, time, UIntPtr(extra))
+    let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
     WinAPI.MINPUT(mi)
 
-let private sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
+let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
     inputQueue.Add [|input|]
 
+let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
+    let input = createInput pt data flags time extra
+    WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
+
 let private sendInputArray (msgs: WinAPI.MINPUT array) =
     //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
     inputQueue.Add msgs
+
+open WinAPI.Event
 
 let private passInt (d: int) = d
 
@@ -92,8 +98,6 @@ let mutable private accelMultiplier: double array = null
 let private addAccel (d:int) =
     let i = getNearestIndex d (accelThreshold)
     int ((double d) * accelMultiplier.[i])
-
-open WinAPI.Event
 
 let mutable private vwCount = 0
 let mutable private hwCount = 0

@@ -77,24 +77,43 @@ type MINPUT =
     new (_mi) = {``type`` = 0u; mi = _mi}
 
 module Message =
+    [<Literal>]
     let WM_KEYDOWN = 0x0100
+    [<Literal>]
     let WM_KEYUP = 0x0101
+    [<Literal>]
     let WM_SYSKEYDOWN = 0x0104
+    [<Literal>]
     let WM_SYSKEYUP = 0x0105
+    [<Literal>]
     let WM_MOUSEMOVE = 0x0200
+    [<Literal>]
     let WM_LBUTTONDOWN = 0x0201
+    [<Literal>]
     let WM_LBUTTONUP = 0x0202
+    [<Literal>]
     let WM_LBUTTONDBLCLK = 0x0203
+    [<Literal>]
     let WM_RBUTTONDOWN = 0x0204
+    [<Literal>]
     let WM_RBUTTONUP = 0x0205
+    [<Literal>]
     let WM_RBUTTONDBLCLK = 0x0206
+    [<Literal>]
     let WM_MBUTTONDOWN = 0x207
+    [<Literal>]
     let WM_MBUTTONUP = 0x208
+    [<Literal>]
     let WM_MBUTTONDBLCLK = 0x0209
+    [<Literal>]
     let WM_MOUSEWHEEL = 0x020A
+    [<Literal>]
     let WM_XBUTTONDOWN = 0x020B
+    [<Literal>]
     let WM_XBUTTONUP = 0x020C
+    [<Literal>]
     let WM_XBUTTONDBLCLK = 0x020D
+    [<Literal>]
     let WM_MOUSEHWHEEL = 0x020E
 
 let WH_KEYBOARD_LL = 13

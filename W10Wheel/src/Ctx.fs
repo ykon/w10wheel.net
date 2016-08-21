@@ -463,6 +463,9 @@ let getPollTimeout () =
 let isPassMode () =
     Pass.Mode
 
+let setPassMode b =
+    Pass.Mode <- b
+
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
@@ -971,7 +974,7 @@ let private createInfoMenuItem () =
     )
     item
 
-let private exitAction () =
+let exitAction () =
     notifyIcon.Visible <- false
     Application.Exit()
 

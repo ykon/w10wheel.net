@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        1.9
+        2.0
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-21: Version 2.0.0: --sendExit, --sendPassModeを追加
         2016-08-20: Version 1.9.0: 初期状態でのバグ修正とDPICorrection追加、他
         2016-08-15: Version 1.8.1: ホイール処理(スクロール)の最適化
         2016-08-12: Version 1.8.0: コマンドライン引数でPropertiesを指定可能、他
@@ -96,6 +97,38 @@ URL:
         
         終了するには、右クリックメニューから Exit を選択してください。
         
+コマンド:
+        "--"が先頭に付いた文字列を実行ファイルの引数に渡すとコマンドと解釈します。
+        
+        --send*のコマンドは実行したら、そのまま終了します。
+        Java版と.NET版で相互に機能します。
+
+        --sendPassMode [true | false]
+        # --sendPassMode true // PassMode有効
+        実行中のプロセスにPassModeを設定をします。 
+        第二引数を省略した場合はtrueと見なします。
+
+        --sendExit
+        実行中のプロセスを終了します。
+        
+設定ファイル:        
+        Propertiesメニューで他のPropertiesを選択すると
+        現在の設定は保存されて
+        選択されたPropertiesから設定が読み込まれます。
+        
+        Defaultは".W10Wheel.properties"になります。
+        .W10Wheel.Default.properties # これを作っても無視されます
+
+        Addで追加される、Propertiesファイルの名前の書式です。
+        # 正規表現: \.W10Wheel\.(.+)\.properties
+        Left = .W10Wheel.Left.properties
+        Right = .W10Wheel.Right.properties
+        Test = .W10Wheel.Test.properties
+        ファイル名の2回目の"."と3回目の"."の間が定義された(表示される)名前となります。
+
+        "--"が先頭に付かない文字列を実行ファイルの引数に渡すと、Propertiesを選択できます。
+        引数を渡さない場合は、終了時の設定に関わらず、Defaultで起動します。
+        
 メニュー項目:
         Trigger: トリガーを変更 (設定項目を参照)
         Keyboard: キーボードトリガー
@@ -104,7 +137,7 @@ URL:
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
-        DPI Correction: DPI補正
+        DPI Correction: DPI補正 (1.00=100%, 1.25=125%, 1.50=150%, ...)
         Properties: 設定ファイル関連
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -226,8 +259,8 @@ URL:
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー 
                 
-        dpiCorrection: double  (default: 1.0) # DPI Correction
-                DPI補正に使う値
+        dpiCorrection: double  (default: 1.00) # DPI Correction
+                DPI補正に使う値 (1.00=100%, 1.25=125%, 1.50=150%, ...)
                 
         dpiAware: bool (default: empty) # DPI Correction
                 自動的にDPI補正する (メニューは拡大されません) 

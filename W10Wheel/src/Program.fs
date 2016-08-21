@@ -6,6 +6,7 @@
 open System
 open System.Diagnostics
 open System.Runtime.InteropServices
+open System.Threading
 open System.Windows.Forms
 open Microsoft.FSharp.NativeInterop
 open Microsoft.Win32
@@ -20,19 +21,39 @@ let private procExit () =
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
 
+let private getBool (argv: string array) i =
+    try
+        if argv.Length = 1 then true else Boolean.Parse(argv.[1])
+    with
+        | :? FormatException as e ->
+            Dialog.errorMessageE e
+            Environment.Exit(0)
+            false
+
+let private setSelectedProperties name =
+    if Properties.exists(name) then
+        Ctx.setSelectedProperties name
+    else
+        Dialog.errorMessage (sprintf "'%s' properties does not exist." name) "Error"
+
 let private procArgv (argv: string array) =
     Debug.WriteLine("procArgv")
 
-    if argv.Length = 1 then
-        let name = argv.[0]
-        if Properties.exists(name) then
-            Ctx.setSelectedProperties name
-        else
-            Dialog.errorMessage (sprintf "'%s' properties does not exist." name) "Error"
+    if argv.Length > 0 then
+        match argv.[0] with
+        | "--sendExit" -> W10Message.sendExit()
+        | "--sendPassMode" -> W10Message.sendPassMode(getBool argv 1)
+        | name -> setSelectedProperties name
+
+        if argv.[0].StartsWith("--send") then
+            Thread.Sleep(1000)
+            Environment.Exit(0)
 
 [<STAThread>]
 [<EntryPoint>]
 let main argv =
+    procArgv argv
+
     if not (PreventMultiInstance.tryLock()) then
         messageDoubleLaunch()
         Environment.Exit(0)
@@ -44,8 +65,6 @@ let main argv =
     EventHandler.setChangeTrigger()
     Windows.setInitScroll()
 
-    procArgv argv
-
     Ctx.loadProperties()
 
     if Ctx.isDpiAware() then
@@ -55,8 +74,8 @@ let main argv =
     
     WinHook.setMouseHook()
     //Hook.setKeyboardHook()
-    Application.Run()
 
+    Application.Run()
     Debug.WriteLine("exit message loop")
     procExit()
     0
