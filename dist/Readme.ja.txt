@@ -105,7 +105,7 @@ URL:
 
         --sendPassMode [true | false]
         # --sendPassMode true // PassMode有効
-        実行中のプロセスにPassModeを設定をします。 
+        実行中のプロセスにPassModeを設定します。 
         第二引数を省略した場合はtrueと見なします。
 
         --sendExit
