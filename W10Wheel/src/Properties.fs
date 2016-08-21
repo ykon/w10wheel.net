@@ -90,7 +90,7 @@ let DEFAULT_DEF = "Default"
 
 let private BAD_DEFAULT_NAME = (sprintf "%s.%s.%s" PROP_NAME DEFAULT_DEF PROP_EXT)
 
-let private userDefPat = new Regex(sprintf "^\.%s\.(.+)\.%s$" PROGRAM_NAME PROP_EXT)
+let private userDefPat = new Regex(sprintf "^\.%s\.(?!--)(.+)\.%s$" PROGRAM_NAME PROP_EXT)
 
 let private isPropFile (path: String): bool =
     let name = Path.GetFileName(path)

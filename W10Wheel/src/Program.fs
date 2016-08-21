@@ -36,6 +36,10 @@ let private setSelectedProperties name =
     else
         Dialog.errorMessage (sprintf "'%s' properties does not exist." name) "Error"
 
+let private unknownCommand name =
+    Dialog.errorMessage ("Unknown Command: " + name) "Command Error"
+    Environment.Exit(0)
+
 let private procArgv (argv: string array) =
     Debug.WriteLine("procArgv")
 
@@ -43,6 +47,7 @@ let private procArgv (argv: string array) =
         match argv.[0] with
         | "--sendExit" -> W10Message.sendExit()
         | "--sendPassMode" -> W10Message.sendPassMode(getBool argv 1)
+        | name when name.StartsWith("--") -> unknownCommand name
         | name -> setSelectedProperties name
 
         if argv.[0].StartsWith("--send") then
@@ -76,7 +81,7 @@ let main argv =
     //Hook.setKeyboardHook()
 
     Application.Run()
-    Debug.WriteLine("exit message loop")
+    Debug.WriteLine("Exit message loop")
     procExit()
     0
         

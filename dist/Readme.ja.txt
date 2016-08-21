@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.0
+        2.0.1
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-22: Version 2.0.1: Propertiesファイルのユーザー定義名を制限 (先頭 "--")
         2016-08-21: Version 2.0.0: コマンドを追加 (--sendExit, --sendPassMode)
         2016-08-20: Version 1.9.0: 初期状態でのバグ修正とDPICorrection追加、他
         2016-08-15: Version 1.8.1: ホイール処理(スクロール)の最適化
@@ -117,14 +118,16 @@ URL:
         選択されたPropertiesから設定が読み込まれます。
         
         Defaultは".W10Wheel.properties"になります。
-        .W10Wheel.Default.properties # これを作っても無視されます
+        # これは使えません => .W10Wheel.Default.properties
 
         Addで追加される、Propertiesファイルの名前の書式です。
-        # 正規表現: \.W10Wheel\.(.+)\.properties
+        # 正規表現: \.W10Wheel\.(?!--)(.+)\.properties
         Left = .W10Wheel.Left.properties
         Right = .W10Wheel.Right.properties
         Test = .W10Wheel.Test.properties
         ファイル名の2回目の"."と3回目の"."の間が定義された(表示される)名前となります。
+        コマンドを区別するため、先頭に"--"は使えません。
+        # これは使えません => .W10Wheel.--Test.properties
 
         "--"が先頭に付かない文字列を実行ファイルの引数に渡すと、Propertiesを選択できます。
         引数を渡さない場合は、終了時の設定に関わらず、Defaultで起動します。
