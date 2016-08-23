@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.0.1
+        2.0.2
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-23: Version 2.0.2: LR系トリガー再送の無限ループ修正、他 
         2016-08-22: Version 2.0.1: Propertiesファイルのユーザー定義名を制限 (先頭 "--")
         2016-08-21: Version 2.0.0: コマンドを追加 (--sendExit, --sendPassMode)
         2016-08-20: Version 1.9.0: 初期状態でのバグ修正とDPICorrection追加、他

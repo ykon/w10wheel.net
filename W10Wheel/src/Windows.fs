@@ -41,9 +41,13 @@ let private createRandomNumber (): uint32 =
     res
 
 let private resendTag = createRandomNumber()
+let private reResendTag = createRandomNumber()
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag
+
+let isReResendEvent (me: MouseEvent) =
+    me.Info.dwExtraInfo.ToUInt32() = reResendTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
@@ -237,9 +241,9 @@ let mutable private sendWheelIf = sendWheelStd
 
 let mutable private scrollStartPoint: (int * int) = 0, 0
 
-let sendWheel (pt: WinAPI.POINT) =
+let sendWheel (movePt: WinAPI.POINT) =
     let sx, sy = scrollStartPoint
-    let dx, dy = swapIf (pt.x - sx) (pt.y - sy)
+    let dx, dy = swapIf (movePt.x - sx) (movePt.y - sy)
     let wspt = WinAPI.POINT(sx, sy)
 
     sendWheelIf wspt dx dy
@@ -262,11 +266,17 @@ let resendDown (me: MouseEvent) =
     | RightDown(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTDOWN 0u resendTag
     | _ -> raise (ArgumentException())
 
-let resendUp (me: MouseEvent) =
+let private __resendUp (me: MouseEvent) (extra: uint32) =
     match me with
-    | LeftUp(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTUP 0u resendTag
-    | RightUp(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTUP 0u resendTag
+    | LeftUp(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTUP 0u extra
+    | RightUp(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTUP 0u extra
     | _ -> raise (ArgumentException())
+
+let resendUp (me: MouseEvent) =
+    __resendUp me resendTag
+
+let reResendUp (me: MouseEvent) =
+    __resendUp me reResendTag
 
 open WinAPI.VKey
 

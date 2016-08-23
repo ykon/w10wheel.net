@@ -24,15 +24,6 @@ let private preLeftResendEvent: MouseEvent ref = ref NoneEvent
 let private preRightResendEvent: MouseEvent ref = ref NoneEvent
 let mutable private dragged = false
 
-(*
-let checkSkip (me: MouseEvent): nativeint option =
-    if Ctx.checkSkip me then
-        Debug.WriteLine(sprintf "skip resend event: %s" me.name)
-        callNextHook()
-    else
-        None
-*)
-
 let private resetLastFlags (me: MouseEvent): nativeint option =
     Ctx.LastFlags.Reset me
     None
@@ -44,16 +35,20 @@ let private getPreResendEvent me =
     | _ -> raise (InvalidOperationException())
 
 let private skipResendEventLR (me: MouseEvent): nativeint option =
+    let pass () =
+        Debug.WriteLine(sprintf "pass resend event: %s" me.Name)
+        (getPreResendEvent me) := me
+        callNextHook()
+
     if Windows.isResendEvent me then
         match !(getPreResendEvent me), me with
         | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
             Debug.WriteLine(sprintf "re-resend event: %s" me.Name)
-            Windows.resendUp(me)
+            Windows.reResendUp(me)
             suppress()
-        | _ ->
-            Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
-            (getPreResendEvent me) := me
-            callNextHook() 
+        | _ -> pass()
+    elif Windows.isReResendEvent me then
+        pass()
     else
         None
 
@@ -95,15 +90,6 @@ let private checkSameLastEvent (me: MouseEvent): nativeint option =
     else
         lastEvent <- me
         None
-
-(*
-let checkCancelUp (me: MouseEvent): nativeint option =
-    if Ctx.checkCancelUp me then
-        Debug.WriteLine(sprintf "cancel up: %s: " me.Name)
-        suppress()
-    else
-        None
-*)
 
 let private checkExitScrollDown (me: MouseEvent): nativeint option =
     if Ctx.isScrollMode() then

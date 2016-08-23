@@ -469,48 +469,6 @@ let setPassMode b =
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
-(*
-let setSkip (me:MouseEvent) (enabled:bool) =
-    match me with
-    | LeftDown(_) -> Volatile.Write(skip_left_down, enabled)
-    | LeftUp(_) -> Volatile.Write(skip_left_up, enabled)
-    | RightDown(_) -> Volatile.Write(skip_right_down, enabled)
-    | RightUp(_) -> Volatile.Write(skip_right_up, enabled)
-    | _ -> raise (ArgumentException())
-
-let setSkipMC (mc:MouseClick) (enabled:bool): unit =
-    match mc with
-    | LeftClick(info) ->
-        setSkip (LeftDown(info)) enabled
-        setSkip (LeftUp(info)) enabled
-    | RightClick(info) ->
-        setSkip (RightDown(info)) enabled
-        setSkip (RightUp(info)) enabled
-    | _ -> raise (ArgumentException())
-
-
-let checkSkip (me: MouseEvent): bool =
-    if not (isResendTag (me.info.dwExtraInfo.ToUInt32())) then
-        false
-    else
-        let res =
-            match me with
-            | LeftDown(_) -> Volatile.Read(skip_left_down)
-            | LeftUp(_) -> Volatile.Read(skip_left_up)
-            | RightDown(_) -> Volatile.Read(skip_right_down)
-            | RightUp(_) -> Volatile.Read(skip_right_up)
-            | _ -> raise (ArgumentException())
-
-        setSkip me false |> ignore
-        res
-*)
-
-(*
-let testInputBox () =
-    let s = Interaction.InputBox("test", "test", "0")
-    Debug.WriteLine(s)
-*)
-
 let private boolMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private triggerMenuDict = new Dictionary<string, ToolStripMenuItem>()
 let private accelMenuDict = new Dictionary<string, ToolStripMenuItem>()
@@ -1290,6 +1248,9 @@ let private createOpenDirMenuItem (dir: string) =
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
+let private isValidPropertiesName name =
+    (name <> DEFAULT_DEF) && not (name.StartsWith("--"))
+
 let private createAddPropertiesMenuItem () =
     let item = new ToolStripMenuItem("Add")
     item.Click.Add(fun _ ->
@@ -1297,10 +1258,12 @@ let private createAddPropertiesMenuItem () =
 
         try
             res |> Option.iter (fun name ->
-                if name <> DEFAULT_DEF then
+                if isValidPropertiesName name then
                     storeProperties()
                     Properties.copy (getSelectedProperties()) name
                     setSelectedProperties name
+                else
+                    Dialog.errorMessage ("Invalid Name: " + name) "Name Error"
             )
         with
             | e -> Dialog.errorMessageE e 
