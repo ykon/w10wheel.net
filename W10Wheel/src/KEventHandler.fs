@@ -24,9 +24,11 @@ let private skipFirstUp (ke: KeyboardEvent): nativeint option =
     else
         None
 
+(*
 let private resetLastFlags (ke: KeyboardEvent): nativeint option =
     Ctx.LastFlags.Reset ke
     None
+*)
 
 let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
     if ke.Same lastEvent && Ctx.isScrollMode() then
@@ -72,11 +74,9 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
     else
         None
 
-let private checkDownSuppressed (up: KeyboardEvent): nativeint option =
-    let suppressed = Ctx.LastFlags.IsDownSuppressed up
-
-    if suppressed then
-        Debug.WriteLine(sprintf "suppress (checkDownSuppressed): %s" up.Name)
+let private checkSuppressedDown (up: KeyboardEvent): nativeint option =
+    if Ctx.LastFlags.GetAndReset_SuppressedDown up then
+        Debug.WriteLine(sprintf "suppress (checkSuppressedDown(K)): %s" up.Name)
         suppress()
     else
         None
@@ -104,7 +104,7 @@ let rec private getResult (cs:Checkers) (ke:KeyboardEvent) =
 let private singleDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkSameLastEvent
-        resetLastFlags
+        //resetLastFlags
         checkExitScrollDown
         passNotTrigger
         checkTriggerScrollStart
@@ -117,7 +117,7 @@ let private singleUp (ke: KeyboardEvent) =
     let checkers = [
         skipFirstUp
         checkSameLastEvent
-        checkDownSuppressed
+        checkSuppressedDown
         passNotTrigger
         checkExitScrollUp
         endIllegalState

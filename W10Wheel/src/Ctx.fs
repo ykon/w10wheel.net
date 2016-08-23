@@ -407,7 +407,12 @@ type LastFlags() =
     [<VolatileField>] static let mutable rdS = false
     [<VolatileField>] static let mutable sdS = false
 
-    static let kdSArray = Array.create 256 false
+    static let kdS = Array.create 256 false
+
+    static let getAndReset (flag: bool byref) =
+        let res = flag
+        flag <- false
+        res
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -415,10 +420,10 @@ type LastFlags() =
         | RightDown(_) -> rdR <- true
         | _ -> ()
 
-    static member IsDownResent (up: MouseEvent) =
+    static member GetAndReset_ResentDown (up: MouseEvent) =
         match up with
-        | LeftUp(_) -> ldR
-        | RightUp(_) -> rdR
+        | LeftUp(_) -> getAndReset(&ldR)
+        | RightUp(_) -> getAndReset(&rdR)
         | _ -> false
 
     static member SetSuppressed (down: MouseEvent): unit =
@@ -430,19 +435,19 @@ type LastFlags() =
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdSArray.[down.VKCode] <- true
+        | KeyDown(_) -> kdS.[down.VKCode] <- true
         | _ -> ()
 
-    static member IsDownSuppressed (up: MouseEvent) =
+    static member GetAndReset_SuppressedDown (up: MouseEvent) =
         match up with
-        | LeftUp(_) -> ldS
-        | RightUp(_) -> rdS
-        | MiddleUp(_) | X1Up(_) | X2Up(_) -> sdS
+        | LeftUp(_) -> getAndReset(&ldS)
+        | RightUp(_) -> getAndReset(&rdS)
+        | MiddleUp(_) | X1Up(_) | X2Up(_) -> getAndReset(&sdS)
         | _ -> false
 
-    static member IsDownSuppressed (up: KeyboardEvent) =
+    static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) -> kdSArray.[up.VKCode]
+        | KeyUp(_) -> getAndReset(&kdS.[up.VKCode])
         | _ -> false
 
     static member Reset (down: MouseEvent) =
@@ -452,10 +457,12 @@ type LastFlags() =
         | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
         | _ -> ()
 
+    (*
     static member Reset (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdSArray.[down.VKCode] <- false
+        | KeyDown(_) -> kdS.[down.VKCode] <- false
         | _ -> ()
+    *)
 
 let getPollTimeout () =
     Volatile.Read(pollTimeout)

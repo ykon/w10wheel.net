@@ -119,9 +119,10 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
     else
         None
 
+(*
 let private checkSingleSuppressed (up: MouseEvent): nativeint option =
     if up.IsSingle then
-        if Ctx.LastFlags.IsDownSuppressed(up) then
+        if Ctx.LastFlags.IsDownSuppressed up then
             Debug.WriteLine(sprintf "suppress (checkSingleSuppressed): %s" up.Name)
             suppress()
         else
@@ -129,6 +130,7 @@ let private checkSingleSuppressed (up: MouseEvent): nativeint option =
             callNextHook()
     else
         None
+*)
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     if EventWaiter.offer me then
@@ -137,20 +139,16 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
     else
         None
 
-let private checkDownSuppressed (up: MouseEvent): nativeint option =
-    let suppressed = Ctx.LastFlags.IsDownSuppressed up
-
-    if suppressed then
-        Debug.WriteLine(sprintf "suppress (checkDownSuppressed): %s" up.Name)
+let private checkSuppressedDown (up: MouseEvent): nativeint option =
+    if Ctx.LastFlags.GetAndReset_SuppressedDown up then
+        Debug.WriteLine(sprintf "suppress (checkSuppressedDown): %s" up.Name)
         suppress()
     else
         None
 
-let private checkDownResent (up: MouseEvent): nativeint option =
-    let resent = Ctx.LastFlags.IsDownResent up
-
-    if resent then
-        Debug.WriteLine(sprintf "resendUp and suppress (checkDownResent): %s" up.Name)
+let private checkResentDown (up: MouseEvent): nativeint option =
+    if Ctx.LastFlags.GetAndReset_ResentDown up then
+        Debug.WriteLine(sprintf "resendUp and suppress (checkResentDown): %s" up.Name)
         Windows.resendUp up
         suppress()
     else
@@ -168,7 +166,7 @@ let private checkKeySendMiddle (me: MouseEvent): nativeint option =
     if Ctx.isSendMiddleClick() && (Windows.checkShiftState() || Windows.checkCtrlState() || Windows.checkAltState()) then
         Debug.WriteLine(sprintf "send middle click: %s" me.Name)
         Windows.resendClick(MiddleClick(me.Info))
-        Ctx.LastFlags.SetSuppressed(me)
+        Ctx.LastFlags.SetSuppressed me
         suppress()
     else
         None
@@ -301,9 +299,9 @@ let private lrUp (me: MouseEvent): nativeint =
         checkSameLastEvent
         //checkSingleSuppressed
         checkExitScrollUp
-        checkDownResent
+        checkResentDown
         offerEventWaiter
-        checkDownSuppressed
+        checkSuppressedDown
         endNotTrigger
     ]
 
@@ -314,7 +312,7 @@ let private singleDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventSingle
         checkSameLastEvent
-        resetLastFlags
+        //resetLastFlags
         checkExitScrollDown
         passNotTrigger
         checkKeySendMiddle
@@ -330,7 +328,7 @@ let private singleUp (me: MouseEvent): nativeint =
         skipResendEventSingle
         skipFirstUp
         checkSameLastEvent
-        checkDownSuppressed
+        checkSuppressedDown
         passNotTrigger
         checkExitScrollUp
         endIllegalState
@@ -343,7 +341,7 @@ let private dragDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventSingle
         checkSameLastEvent
-        resetLastFlags
+        //resetLastFlags
         checkExitScrollDown
         passNotDragTrigger
         startScrollDrag
@@ -357,7 +355,7 @@ let private dragUp (me: MouseEvent): nativeint =
         skipResendEventSingle
         skipFirstUp
         checkSameLastEvent
-        checkDownSuppressed
+        checkSuppressedDown
         passNotDragTrigger
         continueScrollDrag
         exitAndResendDrag
@@ -368,7 +366,7 @@ let private dragUp (me: MouseEvent): nativeint =
 let private noneDown (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneDown")
     let checkers = [
-        resetLastFlags
+        //resetLastFlags
         checkExitScrollDown
         endPass
     ]
@@ -378,7 +376,7 @@ let private noneDown (me: MouseEvent): nativeint =
 let private noneUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneUp")
     let checkers = [
-        checkDownSuppressed
+        checkSuppressedDown
         endPass
     ]
 
