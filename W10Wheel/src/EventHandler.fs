@@ -20,8 +20,8 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NoneEvent
-let private preLeftResendEvent: MouseEvent ref = ref NoneEvent
-let private preRightResendEvent: MouseEvent ref = ref NoneEvent
+let private preResendLeftEvent: MouseEvent ref = ref NoneEvent
+let private preResendRightEvent: MouseEvent ref = ref NoneEvent
 let mutable private dragged = false
 
 let private resetLastFlags (me: MouseEvent): nativeint option =
@@ -30,8 +30,17 @@ let private resetLastFlags (me: MouseEvent): nativeint option =
 
 let private getPreResendEvent me =
     match me with
-    | LeftDown(_) | LeftUp(_) -> preLeftResendEvent
-    | RightDown(_) | RightUp(_) -> preRightResendEvent
+    | LeftDown(_) | LeftUp(_) -> preResendLeftEvent
+    | RightDown(_) | RightUp(_) -> preResendRightEvent
+    | _ -> raise (InvalidOperationException())
+
+let private stagingLeftUp: MouseEvent ref = ref NoneEvent
+let private stagingRightUp: MouseEvent ref = ref NoneEvent
+
+let private getStagingUp me =
+    match me with
+    | LeftDown(_) | LeftUp(_) -> stagingLeftUp
+    | RightDown(_) | RightUp(_) -> stagingRightUp
     | _ -> raise (InvalidOperationException())
 
 let private skipResendEventLR (me: MouseEvent): nativeint option =
@@ -41,14 +50,19 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         callNextHook()
 
     if Windows.isResendEvent me then
+        let stagingUpRef = (getStagingUp me)
+
         match !(getPreResendEvent me), me with
         | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
-            Debug.WriteLine(sprintf "re-resend event: %s" me.Name)
-            Windows.reResendUp(me)
+            Debug.WriteLine(sprintf "set stagingUp: %s" me.Name)
+            stagingUpRef := me
+            suppress()
+        | (_, LeftDown(_)) | (_, RightDown(_)) when !stagingUpRef <> NoneEvent ->
+            Debug.WriteLine(sprintf "resend Click: %s" me.Name)
+            Windows.resendClickDU me !stagingUpRef
+            stagingUpRef := NoneEvent
             suppress()
         | _ -> pass()
-    elif Windows.isReResendEvent me then
-        pass()
     else
         None
 

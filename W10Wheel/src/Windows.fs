@@ -41,13 +41,9 @@ let private createRandomNumber (): uint32 =
     res
 
 let private resendTag = createRandomNumber()
-let private reResendTag = createRandomNumber()
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag
-
-let isReResendEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt32() = reResendTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
@@ -260,6 +256,12 @@ let private createClick (mc:MouseClick) (extra:uint32) =
 let resendClick (mc: MouseClick) =
     sendInputArray (createClick mc resendTag)
 
+let resendClickDU (down:MouseEvent) (up:MouseEvent) =
+    match down, up with
+    | LeftDown(_), LeftUp(_) -> resendClick(LeftClick(down.Info))
+    | RightDown(_), RightUp(_) -> resendClick(RightClick(down.Info))
+    | _ -> raise (ArgumentException())
+
 let resendDown (me: MouseEvent) =
     match me with
     | LeftDown(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTDOWN 0u resendTag
@@ -274,9 +276,6 @@ let private __resendUp (me: MouseEvent) (extra: uint32) =
 
 let resendUp (me: MouseEvent) =
     __resendUp me resendTag
-
-let reResendUp (me: MouseEvent) =
-    __resendUp me reResendTag
 
 open WinAPI.VKey
 
