@@ -418,44 +418,44 @@ type LastFlags() =
         match down with
         | LeftDown(_) -> ldR <- true
         | RightDown(_) -> rdR <- true
-        | _ -> ()
+        | _ -> raise (ArgumentException())
 
     static member GetAndReset_ResentDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldR)
         | RightUp(_) -> getAndReset(&rdR)
-        | _ -> false
+        | _ -> raise (ArgumentException())
 
     static member SetSuppressed (down: MouseEvent): unit =
         match down with
         | LeftDown(_) -> ldS <- true 
         | RightDown(_) -> rdS <- true
         | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- true
-        | _ -> ()
+        | _ -> raise (ArgumentException())
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
         | KeyDown(_) -> kdS.[down.VKCode] <- true
-        | _ -> ()
+        | _ -> raise (ArgumentException())
 
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldS)
         | RightUp(_) -> getAndReset(&rdS)
         | MiddleUp(_) | X1Up(_) | X2Up(_) -> getAndReset(&sdS)
-        | _ -> false
+        | _ -> raise (ArgumentException())
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
         | KeyUp(_) -> getAndReset(&kdS.[up.VKCode])
-        | _ -> false
+        | _ -> raise (ArgumentException())
 
-    static member Reset (down: MouseEvent) =
+    static member ResetLR (down: MouseEvent) =
         match down with
         | LeftDown(_) -> ldR <- false; ldS <- false
         | RightDown(_) -> rdR <- false; rdS <- false
-        | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
-        | _ -> ()
+        //| MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
+        | _ -> raise (ArgumentException())
 
     (*
     static member Reset (down: KeyboardEvent) =

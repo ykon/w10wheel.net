@@ -24,8 +24,8 @@ let private preResendLeftEvent: MouseEvent ref = ref NoneEvent
 let private preResendRightEvent: MouseEvent ref = ref NoneEvent
 let mutable private dragged = false
 
-let private resetLastFlags (me: MouseEvent): nativeint option =
-    Ctx.LastFlags.Reset me
+let private resetLastFlagsLR (me: MouseEvent): nativeint option =
+    Ctx.LastFlags.ResetLR me
     None
 
 let private getPreResendEvent me =
@@ -49,6 +49,10 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         (getPreResendEvent me) := me
         callNextHook()
 
+    let passClick () =
+        Debug.WriteLine(sprintf "pass resendClick event: %s" me.Name)
+        callNextHook()
+
     if Windows.isResendEvent me then
         let stagingUpRef = (getStagingUp me)
 
@@ -63,12 +67,14 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
             stagingUpRef := NoneEvent
             suppress()
         | _ -> pass()
+    elif Windows.isResendClickEvent me then
+        passClick()
     else
         None
 
 let private skipResendEventSingle (me: MouseEvent): nativeint option =
-    if Windows.isResendEvent me then
-        Debug.WriteLine(sprintf "skip resend event: %s" me.Name)
+    if Windows.isResendClickEvent me then
+        Debug.WriteLine(sprintf "pass resendClick event: %s" me.Name)
         callNextHook()
     else
         None
@@ -295,7 +301,7 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
-        resetLastFlags
+        resetLastFlagsLR
         checkExitScrollDown
         //passSingleEvent
         offerEventWaiter

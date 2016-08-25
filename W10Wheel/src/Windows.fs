@@ -41,9 +41,13 @@ let private createRandomNumber (): uint32 =
     res
 
 let private resendTag = createRandomNumber()
+let private resendClickTag = createRandomNumber()
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag
+
+let isResendClickEvent (me: MouseEvent) =
+    me.Info.dwExtraInfo.ToUInt32() = resendClickTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
@@ -244,7 +248,8 @@ let sendWheel (movePt: WinAPI.POINT) =
 
     sendWheelIf wspt dx dy
 
-let private createClick (mc:MouseClick) (extra:uint32) =
+let private createClick (mc:MouseClick) =
+    let extra = resendClickTag
     let create mouseData es = Array.map (fun e -> createInput mc.Info.pt mouseData e 0u extra) es
     match mc with
     | LeftClick(_) -> create 0 [|MOUSEEVENTF_LEFTDOWN; MOUSEEVENTF_LEFTUP|]
@@ -254,7 +259,7 @@ let private createClick (mc:MouseClick) (extra:uint32) =
     | X2Click(_) -> create WinAPI.XBUTTON2 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
 
 let resendClick (mc: MouseClick) =
-    sendInputArray (createClick mc resendTag)
+    sendInputArray (createClick mc)
 
 let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     match down, up with

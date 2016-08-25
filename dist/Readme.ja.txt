@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.0.4
+        2.0.5
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-25: Version 2.0.5: EventWaiterのフラグ更新修正、Clickには別のタグを持たせる
         2016-08-24: Version 2.0.4: 再々送を廃止して、Clickとして再送信するように変更
         2016-08-23: Version 2.0.3: LastFlagsを参照と同時にリセットするように変更
         2016-08-23: Version 2.0.2: LR系トリガー再々送の無限ループ修正、他 

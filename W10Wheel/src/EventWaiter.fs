@@ -12,21 +12,23 @@ open System.Threading
 
 open Mouse
 
-let private waitingEvent = ref NoneEvent
-let private sync = new BlockingCollection<MouseEvent>(1)
+let private waiting = ref false
+let mutable private waitingEvent = NoneEvent
 
-let private getWatingEvent () =
-    Volatile.Read(waitingEvent)
+let private sync = new BlockingCollection<MouseEvent>(1)
 
 let private setFlagsOffer me =
     match me with
-    | Move(_) | LeftUp(_) | RightUp(_) -> Ctx.LastFlags.SetResent (getWatingEvent())
+    | Move(_) | LeftUp(_) | RightUp(_) ->
+        Debug.WriteLine(sprintf "setFlagsOffer - setResent: %s" waitingEvent.Name)
+        Ctx.LastFlags.SetResent waitingEvent
     | LeftDown(_) | RightDown(_) ->
-        Ctx.LastFlags.SetSuppressed (getWatingEvent())
+        Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
+        Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
     | _ -> raise (InvalidOperationException())
 
-let private isWaiting () = Volatile.Read(waitingEvent) <> NoneEvent
+let private isWaiting () = Volatile.Read(waiting)
 
 let offer me: bool =
     if isWaiting() && sync.TryAdd(me) then
@@ -94,7 +96,7 @@ let private waiter () =
             
         let ts = new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())
         let timeout = not (sync.TryTake(res, ts))
-        Volatile.Write(waitingEvent, NoneEvent)
+        Volatile.Write(waiting, false)
 
         if timeout then
             fromTimeout down
@@ -109,6 +111,7 @@ let start (down: MouseEvent) =
     if not (down.IsDown) then
         raise (ArgumentException())
 
-    Volatile.Write(waitingEvent, down)
+    Volatile.Write(waiting, true)
+    waitingEvent <- down
     waiterQueue.Add(down)
 
