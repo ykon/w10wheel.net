@@ -172,3 +172,6 @@ let getTriggerOfStr = function
     | "X2Drag" | "X2DragTrigger" -> X2DragTrigger
     | "None" | "NoneTrigger" -> NoneTrigger
     | e -> raise (ArgumentException(e))
+
+let samePoint (me1:MouseEvent) (me2:MouseEvent) =
+    (me1.Info.pt.x = me2.Info.pt.x) && (me1.Info.pt.y = me2.Info.pt.y)

@@ -949,7 +949,8 @@ let private createExitMenuItem (): ToolStripMenuItem =
 
 let private setDefaultPriority () =
     Debug.WriteLine("setDefaultPriority")
-    ProcessPriority.setPriority(getProcessPriority())
+    //ProcessPriority.setPriority(getProcessPriority())
+    setPriority (getProcessPriority().Name)
 
 let private setDefaultTrigger () =
     setTrigger(getFirstTrigger().Name)

@@ -22,6 +22,8 @@ let private suppress () = Some(IntPtr(1))
 let mutable private lastEvent: MouseEvent = NoneEvent
 let private preResendLeftEvent: MouseEvent ref = ref NoneEvent
 let private preResendRightEvent: MouseEvent ref = ref NoneEvent
+let mutable private resentDownUp = false
+
 let mutable private dragged = false
 
 let private resetLastFlagsLR (me: MouseEvent): nativeint option =
@@ -34,6 +36,7 @@ let private getPreResendEvent me =
     | RightDown(_) | RightUp(_) -> preResendRightEvent
     | _ -> raise (InvalidOperationException())
 
+(*
 let private stagingLeftUp: MouseEvent ref = ref NoneEvent
 let private stagingRightUp: MouseEvent ref = ref NoneEvent
 
@@ -42,6 +45,7 @@ let private getStagingUp me =
     | LeftDown(_) | LeftUp(_) -> stagingLeftUp
     | RightDown(_) | RightUp(_) -> stagingRightUp
     | _ -> raise (InvalidOperationException())
+*)
 
 let private skipResendEventLR (me: MouseEvent): nativeint option =
     let pass () =
@@ -54,6 +58,7 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         callNextHook()
 
     if Windows.isResendEvent me then
+        (*
         let stagingUpRef = (getStagingUp me)
 
         match !(getPreResendEvent me), me with
@@ -67,6 +72,21 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
             stagingUpRef := NoneEvent
             suppress()
         | _ -> pass()
+        *)
+
+        if resentDownUp then
+            Debug.WriteLine(sprintf "isResendEvent - resendDownUp: %s" me.Name)
+            resentDownUp <- false
+
+            match !(getPreResendEvent me), me with
+            | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
+                Debug.WriteLine(sprintf "sleep(0) and resendUp: %s" me.Name)
+                Thread.Sleep(0)
+                Windows.resendUp me
+                suppress()
+            | _ -> pass()
+        else
+            pass()
     elif Windows.isResendClickEvent me then
         passClick()
     else
@@ -169,6 +189,7 @@ let private checkSuppressedDown (up: MouseEvent): nativeint option =
 let private checkResentDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_ResentDown up then
         Debug.WriteLine(sprintf "resendUp and suppress (checkResentDown): %s" up.Name)
+        resentDownUp <- true
         Windows.resendUp up
         suppress()
     else

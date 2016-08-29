@@ -12,6 +12,8 @@ open System.Threading
 
 open Mouse
 
+let private THREAD_PRIORITY = ThreadPriority.AboveNormal
+
 let private waiting = ref false
 let mutable private waitingEvent = NoneEvent
 
@@ -57,9 +59,17 @@ let private fromUp (down:MouseEvent) (up:MouseEvent) =
         Windows.resendUp up
 
     match down, up with
-    | LeftDown(_), LeftUp(_)  -> resendC(LeftClick(down.Info))
+    | LeftDown(_), LeftUp(_)  ->
+        if Mouse.samePoint down up then
+            resendC(LeftClick(down.Info))
+        else
+            resendUD()
     | LeftDown(_), RightUp(_) -> resendUD()
-    | RightDown(_), RightUp(_) -> resendC(RightClick(down.Info))
+    | RightDown(_), RightUp(_) ->
+        if Mouse.samePoint down up then
+            resendC(RightClick(down.Info))
+        else
+            resendUD()
     | RightDown(_), LeftUp(_) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
@@ -78,14 +88,9 @@ let private dispatchEvent down res =
     | _ -> raise (InvalidOperationException())
 
 let private fromTimeout down =
-    Thread.Sleep(0)
-    let res: MouseEvent ref = ref NoneEvent
-    if sync.TryTake(res) then
-        dispatchEvent down res.Value
-    else
-        Ctx.LastFlags.SetResent down
-        Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-        Windows.resendDown down
+    Ctx.LastFlags.SetResent down
+    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
+    Windows.resendDown down
 
 let private waiterQueue = new BlockingCollection<MouseEvent>(1)
 
@@ -95,8 +100,12 @@ let private waiter () =
         let down = waiterQueue.Take()
             
         let ts = new TimeSpan(0, 0, 0, 0, Ctx.getPollTimeout())
-        let timeout = not (sync.TryTake(res, ts))
+        let mutable timeout = not (sync.TryTake(res, ts))
         Volatile.Write(waiting, false)
+
+        if timeout then
+            Thread.Sleep(0)
+            timeout <- not (sync.TryTake(res))
 
         if timeout then
             fromTimeout down
@@ -105,6 +114,7 @@ let private waiter () =
         
 let private waiterThread = new Thread(waiter)
 waiterThread.IsBackground <- true
+waiterThread.Priority <- THREAD_PRIORITY
 waiterThread.Start()
 
 let start (down: MouseEvent) =
@@ -114,4 +124,5 @@ let start (down: MouseEvent) =
     Volatile.Write(waiting, true)
     waitingEvent <- down
     waiterQueue.Add(down)
+
 
