@@ -70,31 +70,46 @@ type MouseEvent =
 
     member self.SameEvent me2 =
         match self, me2 with
-        | LeftDown(_), LeftDown(_) -> true
-        | LeftUp(_), LeftUp(_) -> true
-        | RightDown(_), RightDown(_) -> true
-        | RightUp(_), RightUp(_) -> true
-        | MiddleDown(_), MiddleDown(_) -> true
-        | MiddleUp(_), MiddleUp(_) -> true
-        | X1Down(_), X1Down(_) -> true
-        | X1Up(_), X1Up(_) -> true
-        | X2Down(_), X2Down(_) -> true
-        | X2Up(_), X2Up(_) -> true
+        | LeftDown(_), LeftDown(_) | LeftUp(_), LeftUp(_) -> true
+        | RightDown(_), RightDown(_) | RightUp(_), RightUp(_) -> true
+        | MiddleDown(_), MiddleDown(_) | MiddleUp(_), MiddleUp(_) -> true
+        | X1Down(_), X1Down(_) | X1Up(_), X1Up(_) -> true
+        | X2Down(_), X2Down(_) | X2Up(_), X2Up(_)  -> true
         | _ -> false
 
     member self.SameButton me2 =
         match self, me2 with
-        | LeftDown(_), LeftUp(_) -> true
-        | LeftUp(_), LeftDown(_) -> true
-        | RightDown(_), RightUp(_) -> true
-        | RightUp(_), RightDown(_) -> true
-        | MiddleDown(_), MiddleUp(_) -> true
-        | MiddleUp(_), MiddleDown(_) -> true
-        | X1Down(_), X1Up(_) -> true
-        | X1Up(_), X1Down(_) -> true
-        | X2Down(_), X2Up(_) -> true
-        | X2Up(_), X2Down(_) -> true
+        | LeftDown(_), LeftUp(_) | LeftUp(_), LeftDown(_) -> true
+        | RightDown(_), RightUp(_) | RightUp(_), RightDown(_) -> true
+        | MiddleDown(_), MiddleUp(_) | MiddleUp(_), MiddleDown(_) -> true
+        | X1Down(_), X1Up(_) | X1Up(_), X1Down(_) -> true
+        | X2Down(_), X2Up(_) | X2Up(_), X2Down(_) -> true
         | _ -> false
+
+let (|LeftEvent|_|) (me: MouseEvent) =
+    match me with
+    | LeftDown(_) | LeftUp(_) -> Some(me.Info)
+    | _ -> None
+
+let (|RightEvent|_|) (me: MouseEvent) =
+    match me with
+    | RightDown(_) | RightUp(_) -> Some(me.Info)
+    | _ -> None
+
+let (|MiddleEvent|_|) (me: MouseEvent) =
+    match me with
+    | MiddleDown(_) | MiddleUp(_) -> Some(me.Info)
+    | _ -> None
+
+let (|X1Event|_|) (me: MouseEvent) =
+    match me with
+    | X1Down(_) | X1Up(_) -> Some(me.Info)
+    | _ -> None
+
+let (|X2Event|_|) (me: MouseEvent) =
+    match me with
+    | X2Down(_) | X2Up(_) -> Some(me.Info)
+    | _ -> None
 
 type MouseClick =
     | LeftClick of HookInfo
@@ -151,11 +166,11 @@ let isXButton2 (mouseData: uint32) =
     not (isXButton1 mouseData)
 
 let getTrigger = function
-    | LeftDown(_) | LeftUp(_) -> LeftTrigger
-    | RightDown(_) | RightUp(_) -> RightTrigger
-    | MiddleDown(_) | MiddleUp(_) -> MiddleTrigger
-    | X1Down(_) | X1Up(_) -> X1Trigger
-    | X2Down(_) | X2Up(_) -> X2Trigger
+    | LeftEvent(_) -> LeftTrigger
+    | RightEvent(_) -> RightTrigger
+    | MiddleEvent(_) -> MiddleTrigger
+    | X1Event(_) -> X1Trigger
+    | X2Event(_) -> X2Trigger
     | _ -> raise (ArgumentException())
 
 let getTriggerOfStr = function

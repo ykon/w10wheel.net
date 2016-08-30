@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.0.6
+        2.0.7
 
 URL:
         https://github.com/ykon/w10wheel.net
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-30: Version 2.0.7: トリガーが押されていたら、他のボタンではスクロールを終了しない(LR系以外)
         2016-08-29: Version 2.0.6: 再送方式を変更、EventWaiterスレッド優先度引き上げ
         2016-08-25: Version 2.0.5: EventWaiterのフラグ更新修正、Clickには別のタグを持たせる
         2016-08-24: Version 2.0.4: 再々送を廃止して、Clickとして再送信するように変更

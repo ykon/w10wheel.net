@@ -25,6 +25,7 @@ let private preResendRightEvent: MouseEvent ref = ref NoneEvent
 let mutable private resentDownUp = false
 
 let mutable private dragged = false
+let mutable private pressedTriggerButton = false
 
 let private resetLastFlagsLR (me: MouseEvent): nativeint option =
     Ctx.LastFlags.ResetLR me
@@ -32,8 +33,8 @@ let private resetLastFlagsLR (me: MouseEvent): nativeint option =
 
 let private getPreResendEvent me =
     match me with
-    | LeftDown(_) | LeftUp(_) -> preResendLeftEvent
-    | RightDown(_) | RightUp(_) -> preResendRightEvent
+    | LeftEvent(_) -> preResendLeftEvent
+    | RightEvent(_) -> preResendRightEvent
     | _ -> raise (InvalidOperationException())
 
 (*
@@ -131,8 +132,17 @@ let private checkSameLastEvent (me: MouseEvent): nativeint option =
         lastEvent <- me
         None
 
-let private checkExitScrollDown (me: MouseEvent): nativeint option =
+let private checkExitScrollDownLR (me: MouseEvent): nativeint option =
     if Ctx.isScrollMode() then
+        Debug.WriteLine(sprintf "exit scroll mode %s: " me.Name)
+        Ctx.exitScrollMode()
+        Ctx.LastFlags.SetSuppressed me
+        suppress()
+    else
+        None
+
+let private checkExitScrollDown (me: MouseEvent): nativeint option =
+    if Ctx.isScrollMode() && (not pressedTriggerButton) then
         Debug.WriteLine(sprintf "exit scroll mode %s: " me.Name)
         Ctx.exitScrollMode()
         Ctx.LastFlags.SetSuppressed me
@@ -148,6 +158,7 @@ let private checkExitScrollUp (me: MouseEvent): nativeint option =
         else
             Debug.WriteLine(sprintf "continue scroll mode: %s" me.Name)
 
+        pressedTriggerButton <- false
         suppress()
     else
         None
@@ -216,6 +227,7 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         Debug.WriteLine(sprintf "start scroll mode: %s" me.Name)
         Ctx.startScrollMode me.Info
+        pressedTriggerButton <- true
         suppress()
     else
         None
@@ -233,6 +245,7 @@ let private dragStart info =
 let private startScrollDrag (me: MouseEvent): nativeint option =
     Debug.WriteLine(sprintf "start scroll mode: %s" me.Name)
     Ctx.startScrollMode me.Info
+    pressedTriggerButton <- true
 
     drag <- dragStart
     dragged <- false
@@ -242,6 +255,7 @@ let private startScrollDrag (me: MouseEvent): nativeint option =
 let private continueScrollDrag (me: MouseEvent): nativeint option =
     if Ctx.isDraggedLock() && dragged then
         Debug.WriteLine(sprintf "continueScrollDrag: %s" me.Name)
+        pressedTriggerButton <- false
         suppress()
     else
         None
@@ -249,6 +263,7 @@ let private continueScrollDrag (me: MouseEvent): nativeint option =
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
     Debug.WriteLine(sprintf "exit scroll mode: %s" me.Name)
     Ctx.exitScrollMode()
+    pressedTriggerButton <- false
 
     if not dragged then
         Debug.WriteLine(sprintf "resend click: %s" me.Name)
@@ -323,7 +338,7 @@ let private lrDown (me: MouseEvent): nativeint =
         skipResendEventLR
         checkSameLastEvent
         resetLastFlagsLR
-        checkExitScrollDown
+        checkExitScrollDownLR
         //passSingleEvent
         offerEventWaiter
         checkTriggerWaitStart

@@ -16,6 +16,7 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NoneEvent
+let mutable private pressedTriggerKey = false
 
 let private skipFirstUp (ke: KeyboardEvent): nativeint option =
     if lastEvent.IsNone then
@@ -49,12 +50,13 @@ let private checkTriggerScrollStart (ke: KeyboardEvent): nativeint option =
     if Ctx.isTriggerKey ke then
         Debug.WriteLine(sprintf "start scroll mode: %s" ke.Name)
         Ctx.startScrollModeK ke.Info
+        pressedTriggerKey <- true
         suppress()
     else
         None
 
 let private checkExitScrollDown (ke: KeyboardEvent): nativeint option =
-    if Ctx.isScrollMode() then
+    if Ctx.isScrollMode() && (not pressedTriggerKey) then
         Debug.WriteLine(sprintf "exit scroll mode %s: " ke.Name)
         Ctx.exitScrollMode()
         Ctx.LastFlags.SetSuppressed ke
@@ -70,6 +72,7 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
         else
             Debug.WriteLine(sprintf "continue scroll mode: %s" ke.Name)
 
+        pressedTriggerKey <- false
         suppress()
     else
         None

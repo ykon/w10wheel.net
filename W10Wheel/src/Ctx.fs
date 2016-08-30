@@ -230,11 +230,11 @@ let isLRTrigger () =
     isTrigger LRTrigger
 
 let isDragTriggerEvent = function
-    | LeftDown(_) | LeftUp(_) -> isTrigger(LeftDragTrigger)
-    | RightDown(_) | RightUp(_) -> isTrigger(RightDragTrigger)
-    | MiddleDown(_) | MiddleUp(_) -> isTrigger(MiddleDragTrigger)
-    | X1Down(_) | X1Up(_) -> isTrigger(X1DragTrigger)
-    | X2Down(_) | X2Up(_) -> isTrigger(X2DragTrigger)
+    | LeftEvent(_) -> isTrigger(LeftDragTrigger)
+    | RightEvent(_) -> isTrigger(RightDragTrigger)
+    | MiddleEvent(_) -> isTrigger(MiddleDragTrigger)
+    | X1Event(_) -> isTrigger(X1DragTrigger)
+    | X2Event(_) -> isTrigger(X2DragTrigger)
     | _ -> raise (ArgumentException())
 
 let isSingleTrigger () =
