@@ -324,6 +324,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable horizontal = true
     [<VolatileField>] static let mutable draggedLock = false
     [<VolatileField>] static let mutable swap = false
+    [<VolatileField>] static let mutable releasedMode = false
 
     static let setStartPoint () =
         let scale = if isDpiAware() then 1.0 else getDpiCorrection()
@@ -352,6 +353,7 @@ type private Scroll() =
 
     static member Exit () =
         mode <- false
+        releasedMode <- false
 
         if cursorChange then
             WinCursor.restore() |> ignore
@@ -382,6 +384,9 @@ type private Scroll() =
     static member Swap
         with get() = swap
         and set b = swap <- b
+    static member ReleasedMode
+        with get() = releasedMode
+        and set b = releasedMode <- b
 
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
@@ -397,10 +402,18 @@ let isHorizontalScroll () = Scroll.Horizontal
 let isDraggedLock () = Scroll.DraggedLock
 let isSwapScroll () = Scroll.Swap
 
+let isReleasedScrollMode () = Scroll.ReleasedMode
+let isPressedScrollMode () = Scroll.IsMode && not (Scroll.ReleasedMode)
+let setReleasedScrollMode () = Scroll.ReleasedMode <- true
+
 type LastFlags() =
     // R = Resent
     [<VolatileField>] static let mutable ldR = false
     [<VolatileField>] static let mutable rdR = false
+
+    // P = Passed
+    [<VolatileField>] static let mutable ldP = false
+    [<VolatileField>] static let mutable rdP = false
 
     // S = Suppressed
     [<VolatileField>] static let mutable ldS = false
@@ -424,6 +437,18 @@ type LastFlags() =
         match up with
         | LeftUp(_) -> getAndReset(&ldR)
         | RightUp(_) -> getAndReset(&rdR)
+        | _ -> raise (ArgumentException())
+
+    static member SetPassed (down: MouseEvent): unit =
+        match down with
+        | LeftDown(_) -> ldP <- true
+        | RightDown(_) -> rdP <- true
+        | _ -> raise (ArgumentException())
+
+    static member GetAndReset_PassedDown (up: MouseEvent) =
+        match up with
+        | LeftUp(_) -> getAndReset(&ldP)
+        | RightUp(_) -> getAndReset(&rdP)
         | _ -> raise (ArgumentException())
 
     static member SetSuppressed (down: MouseEvent): unit =
@@ -452,8 +477,8 @@ type LastFlags() =
 
     static member ResetLR (down: MouseEvent) =
         match down with
-        | LeftDown(_) -> ldR <- false; ldS <- false
-        | RightDown(_) -> rdR <- false; rdS <- false
+        | LeftDown(_) -> ldR <- false; ldS <- false; ldP <- false
+        | RightDown(_) -> rdR <- false; rdS <- false; rdP <- false
         //| MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
         | _ -> raise (ArgumentException())
 

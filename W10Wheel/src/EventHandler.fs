@@ -20,38 +20,29 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NoneEvent
-let private preResendLeftEvent: MouseEvent ref = ref NoneEvent
-let private preResendRightEvent: MouseEvent ref = ref NoneEvent
+let private lastResendLeftEvent: MouseEvent ref = ref NoneEvent
+let private lastResendRightEvent: MouseEvent ref = ref NoneEvent
+
 let mutable private resentDownUp = false
+let mutable private secondTriggerUp = false
+//let mutable private lrTriggerState: LRTriggerState = FirstButton
 
 let mutable private dragged = false
-let mutable private pressedTriggerButton = false
 
 let private resetLastFlagsLR (me: MouseEvent): nativeint option =
     Ctx.LastFlags.ResetLR me
     None
 
-let private getPreResendEvent me =
+let private getLastResendEvent me =
     match me with
-    | LeftEvent(_) -> preResendLeftEvent
-    | RightEvent(_) -> preResendRightEvent
+    | LeftEvent(_) -> lastResendLeftEvent
+    | RightEvent(_) -> lastResendRightEvent
     | _ -> raise (InvalidOperationException())
-
-(*
-let private stagingLeftUp: MouseEvent ref = ref NoneEvent
-let private stagingRightUp: MouseEvent ref = ref NoneEvent
-
-let private getStagingUp me =
-    match me with
-    | LeftDown(_) | LeftUp(_) -> stagingLeftUp
-    | RightDown(_) | RightUp(_) -> stagingRightUp
-    | _ -> raise (InvalidOperationException())
-*)
 
 let private skipResendEventLR (me: MouseEvent): nativeint option =
     let pass () =
         Debug.WriteLine(sprintf "pass resend event: %s" me.Name)
-        (getPreResendEvent me) := me
+        (getLastResendEvent me) := me
         callNextHook()
 
     let passClick () =
@@ -59,27 +50,11 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         callNextHook()
 
     if Windows.isResendEvent me then
-        (*
-        let stagingUpRef = (getStagingUp me)
-
-        match !(getPreResendEvent me), me with
-        | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
-            Debug.WriteLine(sprintf "set stagingUp: %s" me.Name)
-            stagingUpRef := me
-            suppress()
-        | (_, LeftDown(_)) | (_, RightDown(_)) when !stagingUpRef <> NoneEvent ->
-            Debug.WriteLine(sprintf "resend Click: %s" me.Name)
-            Windows.resendClickDU me !stagingUpRef
-            stagingUpRef := NoneEvent
-            suppress()
-        | _ -> pass()
-        *)
-
         if resentDownUp then
             Debug.WriteLine(sprintf "isResendEvent - resendDownUp: %s" me.Name)
             resentDownUp <- false
 
-            match !(getPreResendEvent me), me with
+            match !(getLastResendEvent me), me with
             | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
                 Debug.WriteLine(sprintf "sleep(0) and resendUp: %s" me.Name)
                 Thread.Sleep(0)
@@ -132,33 +107,50 @@ let private checkSameLastEvent (me: MouseEvent): nativeint option =
         lastEvent <- me
         None
 
-let private checkExitScrollDownLR (me: MouseEvent): nativeint option =
-    if Ctx.isScrollMode() then
-        Debug.WriteLine(sprintf "exit scroll mode %s: " me.Name)
+let private checkExitScrollDown (me: MouseEvent): nativeint option =
+    if Ctx.isReleasedScrollMode() then
+        Debug.WriteLine(sprintf "exit scroll mode (Released): %s" me.Name)
         Ctx.exitScrollMode()
         Ctx.LastFlags.SetSuppressed me
         suppress()
     else
         None
 
-let private checkExitScrollDown (me: MouseEvent): nativeint option =
-    if Ctx.isScrollMode() && (not pressedTriggerButton) then
-        Debug.WriteLine(sprintf "exit scroll mode %s: " me.Name)
-        Ctx.exitScrollMode()
-        Ctx.LastFlags.SetSuppressed me
-        suppress()
+let private passPressedScrollMode (down: MouseEvent): nativeint option =
+    if Ctx.isPressedScrollMode() then
+        Debug.WriteLine(sprintf "pass scroll mode (Pressed): %s" down.Name)
+        Ctx.LastFlags.SetPassed(down)
+        callNextHook()
     else
         None
 
 let private checkExitScrollUp (me: MouseEvent): nativeint option =
-    if Ctx.isScrollMode() then
+    if Ctx.isPressedScrollMode() then
         if Ctx.checkExitScroll me.Info.time then
-            Debug.WriteLine(sprintf "exit scroll mode: %s" me.Name)
+            Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" me.Name)
             Ctx.exitScrollMode()
         else
-            Debug.WriteLine(sprintf "continue scroll mode: %s" me.Name)
+            Debug.WriteLine(sprintf "continue scroll mode (Released): %s" me.Name)
+            Ctx.setReleasedScrollMode()
 
-        pressedTriggerButton <- false
+        suppress()
+    else
+        None
+
+let private checkExitScrollUpLR (me: MouseEvent): nativeint option =
+    if Ctx.isPressedScrollMode() then
+        if not secondTriggerUp then
+            Debug.WriteLine(sprintf "continue scroll mode (FirstUp): %s" me.Name)
+            secondTriggerUp <- true
+        else
+            secondTriggerUp <- false
+            if Ctx.checkExitScroll me.Info.time then
+                Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" me.Name)
+                Ctx.exitScrollMode()
+            else
+                Debug.WriteLine(sprintf "continue scroll mode (Released): %s" me.Name)
+                Ctx.setReleasedScrollMode()
+
         suppress()
     else
         None
@@ -206,6 +198,13 @@ let private checkResentDown (up: MouseEvent): nativeint option =
     else
         None
 
+let private checkPassedDown (up: MouseEvent): nativeint option =
+    if Ctx.LastFlags.GetAndReset_PassedDown up then
+        Debug.WriteLine(sprintf "pass (checkPassedDown): %s" up.Name)
+        callNextHook()
+    else
+        None
+
 let private checkTriggerWaitStart (me: MouseEvent): nativeint option =
     if Ctx.isLRTrigger() || Ctx.isTriggerEvent me then
         Debug.WriteLine(sprintf "start wait trigger: %s" me.Name)
@@ -227,7 +226,6 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         Debug.WriteLine(sprintf "start scroll mode: %s" me.Name)
         Ctx.startScrollMode me.Info
-        pressedTriggerButton <- true
         suppress()
     else
         None
@@ -243,9 +241,8 @@ let private dragStart info =
     dragged <- true
 
 let private startScrollDrag (me: MouseEvent): nativeint option =
-    Debug.WriteLine(sprintf "start scroll mode: %s" me.Name)
+    Debug.WriteLine(sprintf "start scroll mode (Drag): %s" me.Name)
     Ctx.startScrollMode me.Info
-    pressedTriggerButton <- true
 
     drag <- dragStart
     dragged <- false
@@ -254,16 +251,15 @@ let private startScrollDrag (me: MouseEvent): nativeint option =
 
 let private continueScrollDrag (me: MouseEvent): nativeint option =
     if Ctx.isDraggedLock() && dragged then
-        Debug.WriteLine(sprintf "continueScrollDrag: %s" me.Name)
-        pressedTriggerButton <- false
+        Debug.WriteLine(sprintf "continueScrollDrag (Released): %s" me.Name)
+        Ctx.setReleasedScrollMode()
         suppress()
     else
         None
 
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
-    Debug.WriteLine(sprintf "exit scroll mode: %s" me.Name)
+    Debug.WriteLine(sprintf "exit scroll mode (Drag): %s" me.Name)
     Ctx.exitScrollMode()
-    pressedTriggerButton <- false
 
     if not dragged then
         Debug.WriteLine(sprintf "resend click: %s" me.Name)
@@ -338,7 +334,8 @@ let private lrDown (me: MouseEvent): nativeint =
         skipResendEventLR
         checkSameLastEvent
         resetLastFlagsLR
-        checkExitScrollDownLR
+        checkExitScrollDown
+        passPressedScrollMode
         //passSingleEvent
         offerEventWaiter
         checkTriggerWaitStart
@@ -354,7 +351,8 @@ let private lrUp (me: MouseEvent): nativeint =
         skipFirstUp
         checkSameLastEvent
         //checkSingleSuppressed
-        checkExitScrollUp
+        checkPassedDown
+        checkExitScrollUpLR
         checkResentDown
         offerEventWaiter
         checkSuppressedDown

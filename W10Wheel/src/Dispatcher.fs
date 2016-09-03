@@ -10,7 +10,6 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private procCommand (info: HookInfo): bool =
-    Debug.WriteLine("procCommand")
     if (info.mouseData >>> 16) <> 1u then
         false
     else
