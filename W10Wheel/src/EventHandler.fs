@@ -137,19 +137,37 @@ let private checkExitScrollUp (me: MouseEvent): nativeint option =
     else
         None
 
-let private checkExitScrollUpLR (me: MouseEvent): nativeint option =
+let private checkExitScrollUpLR (up: MouseEvent): nativeint option =
     if Ctx.isPressedScrollMode() then
         if not secondTriggerUp then
-            Debug.WriteLine(sprintf "continue scroll mode (FirstUp): %s" me.Name)
+            Debug.WriteLine(sprintf "ignore first up: %s" up.Name)
             secondTriggerUp <- true
         else
             secondTriggerUp <- false
-            if Ctx.checkExitScroll me.Info.time then
-                Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" me.Name)
+            if Ctx.checkExitScroll up.Info.time then
+                Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" up.Name)
                 Ctx.exitScrollMode()
             else
-                Debug.WriteLine(sprintf "continue scroll mode (Released): %s" me.Name)
+                Debug.WriteLine(sprintf "continue scroll mode (Released): %s" up.Name)
                 Ctx.setReleasedScrollMode()
+
+        suppress()
+    else
+        None
+
+let private checkStartingScroll (up: MouseEvent): nativeint option =
+    if Ctx.isStartingScrollMode() then
+        Debug.WriteLine("check starting scroll")
+
+        if not secondTriggerUp then
+            Debug.WriteLine(sprintf "ignore first up (starting): %s" up.Name)
+            secondTriggerUp <- true
+            Thread.Sleep(0)
+        else
+            Debug.WriteLine(sprintf "exit scroll mode (starting): %s" up.Name)
+            secondTriggerUp <- false
+            Thread.Sleep(0)
+            Ctx.exitScrollMode()
 
         suppress()
     else
@@ -353,6 +371,7 @@ let private lrUp (me: MouseEvent): nativeint =
         //checkSingleSuppressed
         checkPassedDown
         checkExitScrollUpLR
+        checkStartingScroll
         checkResentDown
         offerEventWaiter
         checkSuppressedDown

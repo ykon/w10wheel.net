@@ -314,6 +314,7 @@ let setInitScroll (f: unit -> unit) =
     initScroll <- f
 
 type private Scroll() =
+    [<VolatileField>] static let mutable starting = false
     [<VolatileField>] static let mutable mode = false
     [<VolatileField>] static let mutable stime = 0u
     [<VolatileField>] static let mutable sx = 0
@@ -326,12 +327,14 @@ type private Scroll() =
     [<VolatileField>] static let mutable swap = false
     [<VolatileField>] static let mutable releasedMode = false
 
+    static let monitor = new Object()
+
     static let setStartPoint () =
         let scale = if isDpiAware() then 1.0 else getDpiCorrection()
         sx <- int ((double Cursor.Position.X) * scale)
         sy <- int ((double Cursor.Position.Y) * scale)
 
-    static member Start (info: HookInfo) =
+    static member Start (info: HookInfo) = lock monitor (fun () ->
         stime <- info.time
         setStartPoint()
         initScroll()
@@ -340,8 +343,10 @@ type private Scroll() =
             WinCursor.changeV()
 
         mode <- true
+        starting <- false
+    )
 
-    static member Start (info: KHookInfo) =
+    static member Start (info: KHookInfo) = lock monitor (fun () ->
         stime <- info.time
         setStartPoint()
         initScroll()
@@ -350,13 +355,16 @@ type private Scroll() =
             WinCursor.changeV()
 
         mode <- true
+        starting <- false
+    )
 
-    static member Exit () =
+    static member Exit () = lock monitor (fun () ->
         mode <- false
         releasedMode <- false
 
         if cursorChange then
             WinCursor.restore() |> ignore
+    )
 
     static member CheckExit (time: uint32) =
         let dt = time - stime
@@ -388,6 +396,9 @@ type private Scroll() =
         with get() = releasedMode
         and set b = releasedMode <- b
 
+    static member SetStarting () = starting <- true
+    static member IsStarting with get() = starting
+
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
@@ -405,6 +416,9 @@ let isSwapScroll () = Scroll.Swap
 let isReleasedScrollMode () = Scroll.ReleasedMode
 let isPressedScrollMode () = Scroll.IsMode && not (Scroll.ReleasedMode)
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
+
+let setStartingScrollMode () = Scroll.SetStarting()
+let isStartingScrollMode () = Scroll.IsStarting
 
 type LastFlags() =
     // R = Resent

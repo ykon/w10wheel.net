@@ -71,7 +71,7 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
 
 let private checkSuppressedDown (up: KeyboardEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_SuppressedDown up then
-        Debug.WriteLine(sprintf "suppress (checkSuppressedDown(K)): %s" up.Name)
+        Debug.WriteLine(sprintf "suppress (checkSuppressedDown): %s" up.Name)
         suppress()
     else
         None

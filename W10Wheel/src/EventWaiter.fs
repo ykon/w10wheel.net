@@ -28,6 +28,7 @@ let private setFlagsOffer me =
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
+        Ctx.setStartingScrollMode()
     | _ -> raise (InvalidOperationException())
 
 let private isWaiting () = Volatile.Read(waiting)
