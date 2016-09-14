@@ -396,7 +396,10 @@ type private Scroll() =
         with get() = releasedMode
         and set b = releasedMode <- b
 
-    static member SetStarting () = starting <- true
+    static member SetStarting () = lock monitor (fun () ->
+        starting <- (not mode)
+    )
+
     static member IsStarting with get() = starting
 
 let isScrollMode () = Scroll.IsMode

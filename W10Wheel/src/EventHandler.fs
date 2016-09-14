@@ -370,9 +370,9 @@ let private lrUp (me: MouseEvent): nativeint =
         checkSameLastEvent
         //checkSingleSuppressed
         checkPassedDown
+        checkResentDown
         checkExitScrollUpLR
         checkStartingScroll
-        checkResentDown
         offerEventWaiter
         checkSuppressedDown
         endNotTrigger
