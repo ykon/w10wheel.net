@@ -21,8 +21,12 @@ let private sync = new BlockingCollection<MouseEvent>(1)
 
 let private setFlagsOffer me =
     match me with
-    | Move(_) | LeftUp(_) | RightUp(_) ->
-        Debug.WriteLine(sprintf "setFlagsOffer - setResent: %s" waitingEvent.Name)
+    | Move(_) ->
+        Debug.WriteLine(sprintf "setFlagsOffer - setResent (Move): %s" waitingEvent.Name)
+        Ctx.LastFlags.SetResent waitingEvent
+        Thread.Sleep(0)
+    | LeftUp(_) | RightUp(_) ->
+        Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
         Ctx.LastFlags.SetResent waitingEvent
     | LeftDown(_) | RightDown(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)

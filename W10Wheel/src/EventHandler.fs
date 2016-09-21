@@ -55,7 +55,7 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
             resentDownUp <- false
 
             match !(getLastResendEvent me), me with
-            | LeftUp(_), LeftUp(_) | RightUp(_), RightUp(_) ->
+            | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
                 Debug.WriteLine(sprintf "sleep(0) and resendUp: %s" me.Name)
                 Thread.Sleep(0)
                 Windows.resendUp me
