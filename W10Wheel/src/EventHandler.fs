@@ -51,13 +51,13 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
 
     if Windows.isResendEvent me then
         if resentDownUp then
-            Debug.WriteLine(sprintf "isResendEvent - resendDownUp: %s" me.Name)
+            Debug.WriteLine(sprintf "ResendEvent: resentDownUp: %s" me.Name)
             resentDownUp <- false
 
             match !(getLastResendEvent me), me with
             | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
-                Debug.WriteLine(sprintf "sleep(0) and resendUp: %s" me.Name)
-                Thread.Sleep(0)
+                Debug.WriteLine(sprintf "Bad: resendUp retry: %s" me.Name)
+                Thread.Sleep(1)
                 Windows.resendUp me
                 suppress()
             | _ -> pass()
@@ -162,11 +162,11 @@ let private checkStartingScroll (up: MouseEvent): nativeint option =
         if not secondTriggerUp then
             Debug.WriteLine(sprintf "ignore first up (starting): %s" up.Name)
             secondTriggerUp <- true
-            Thread.Sleep(0)
+            Thread.Sleep(1)
         else
             Debug.WriteLine(sprintf "exit scroll mode (starting): %s" up.Name)
             secondTriggerUp <- false
-            Thread.Sleep(0)
+            Thread.Sleep(1)
             Ctx.exitScrollMode()
 
         suppress()
