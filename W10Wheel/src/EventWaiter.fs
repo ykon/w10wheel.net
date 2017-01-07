@@ -38,7 +38,11 @@ type private SynchronousQueue() =
                 raise (InvalidOperationException())
 
             let rec loop () =
-                if waiting then loop() else not (sync.TryTake(&res))
+                if waiting then
+                    Thread.Sleep(0)
+                    loop()
+                else
+                    not (sync.TryTake(&res))
 
             loop()
         else
@@ -57,7 +61,7 @@ let private setFlagsOffer me =
     | Move(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setResent (Move): %s" waitingEvent.Name)
         Ctx.LastFlags.SetResent waitingEvent
-        //Thread.Sleep(1)
+        //Thread.Sleep(0)
     | LeftUp(_) | RightUp(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
         Ctx.LastFlags.SetResent waitingEvent
