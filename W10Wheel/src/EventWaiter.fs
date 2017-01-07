@@ -14,7 +14,6 @@ open Mouse
 
 type private SynchronousQueue() =
     let sync = new BlockingCollection<MouseEvent>(1)
-    let mres = new ManualResetEventSlim()
 
     [<VolatileField>]
     let mutable waiting = false
@@ -30,27 +29,25 @@ type private SynchronousQueue() =
             if sync.TryTake(&res, ts) then Some(res) else None
         finally
             waiting <- false
-            mres.Set()
 
     member self.offer (e: MouseEvent): bool =
         let mutable res = NoneEvent
 
-        try
-            if waiting then
-                if not (sync.TryAdd(e)) then
-                    raise (InvalidOperationException())
-                mres.Wait()
-                sync.TryTake(&res) = false
-            else
-                false
-        finally
-            mres.Reset()
+        if waiting then
+            if not (sync.TryAdd(e)) then
+                raise (InvalidOperationException())
 
+            let rec loop () =
+                if waiting then loop() else not (sync.TryTake(&res))
+
+            loop()
+        else
+            false
 
 
 let private THREAD_PRIORITY = ThreadPriority.AboveNormal
 
-let private waiting = ref false
+//let private waiting = ref false
 let mutable private waitingEvent = NoneEvent
 
 let private sync = new SynchronousQueue()
