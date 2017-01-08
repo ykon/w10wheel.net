@@ -25,7 +25,6 @@ let private lastResendRightEvent: MouseEvent ref = ref NoneEvent
 
 let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
-//let mutable private lrTriggerState: LRTriggerState = FirstButton
 
 let mutable private dragged = false
 
@@ -38,6 +37,15 @@ let private getLastResendEvent me =
     | LeftEvent(_) -> lastResendLeftEvent
     | RightEvent(_) -> lastResendRightEvent
     | _ -> raise (InvalidOperationException())
+
+let private isCorrectOrder pre cur =
+    match pre, cur with
+    | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
+        false
+    | _ -> true
+
+let private checkCorrectOrder me =
+    isCorrectOrder !(getLastResendEvent me) me
 
 let private skipResendEventLR (me: MouseEvent): nativeint option =
     let pass () =
@@ -54,13 +62,13 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
             Debug.WriteLine(sprintf "ResendEvent: resentDownUp: %s" me.Name)
             resentDownUp <- false
 
-            match !(getLastResendEvent me), me with
-            | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
+            if checkCorrectOrder me then
+                pass()
+            else
                 Debug.WriteLine(sprintf "Bad: resendUp retry: %s" me.Name)
                 Thread.Sleep(1)
                 Windows.resendUp me
                 suppress()
-            | _ -> pass()
         else
             pass()
     elif Windows.isResendClickEvent me then
@@ -141,16 +149,14 @@ let private checkExitScrollUpLR (up: MouseEvent): nativeint option =
     if Ctx.isPressedScrollMode() then
         if not secondTriggerUp then
             Debug.WriteLine(sprintf "ignore first up: %s" up.Name)
-            secondTriggerUp <- true
+        elif Ctx.checkExitScroll up.Info.time then
+            Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" up.Name)
+            Ctx.exitScrollMode()
         else
-            secondTriggerUp <- false
-            if Ctx.checkExitScroll up.Info.time then
-                Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" up.Name)
-                Ctx.exitScrollMode()
-            else
-                Debug.WriteLine(sprintf "continue scroll mode (Released): %s" up.Name)
-                Ctx.setReleasedScrollMode()
+            Debug.WriteLine(sprintf "continue scroll mode (Released): %s" up.Name)
+            Ctx.setReleasedScrollMode()
 
+        secondTriggerUp <- not secondTriggerUp
         suppress()
     else
         None
@@ -161,14 +167,13 @@ let private checkStartingScroll (up: MouseEvent): nativeint option =
 
         if not secondTriggerUp then
             Debug.WriteLine(sprintf "ignore first up (starting): %s" up.Name)
-            secondTriggerUp <- true
             Thread.Sleep(1)
         else
             Debug.WriteLine(sprintf "exit scroll mode (starting): %s" up.Name)
-            secondTriggerUp <- false
             Thread.Sleep(1)
             Ctx.exitScrollMode()
 
+        secondTriggerUp <- not secondTriggerUp
         suppress()
     else
         None
