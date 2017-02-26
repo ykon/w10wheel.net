@@ -42,6 +42,11 @@ let private createRandomNumber (): uint32 =
 
 let private resendTag = createRandomNumber()
 let private resendClickTag = createRandomNumber()
+
+// LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
+// https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
+let isInjectedEvent (me: MouseEvent) =
+    me.Info.flags = 1u || me.Info.flags = 2u
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag

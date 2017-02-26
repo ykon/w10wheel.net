@@ -53,11 +53,12 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         (getLastResendEvent me) := me
         callNextHook()
 
-    let passClick () =
+    if not (Windows.isInjectedEvent me) then
+        None
+    elif Windows.isResendClickEvent me then
         Debug.WriteLine(sprintf "pass resendClick event: %s" me.Name)
         callNextHook()
-
-    if Windows.isResendEvent me then
+    elif Windows.isResendEvent me then
         if resentDownUp then
             Debug.WriteLine(sprintf "ResendEvent: resentDownUp: %s" me.Name)
             resentDownUp <- false
@@ -71,10 +72,10 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
                 suppress()
         else
             pass()
-    elif Windows.isResendClickEvent me then
-        passClick()
+
     else
-        None
+        Debug.WriteLine(sprintf "pass other software event: %s" me.Name)
+        callNextHook()
 
 let private skipResendEventSingle (me: MouseEvent): nativeint option =
     if Windows.isResendClickEvent me then
@@ -89,22 +90,6 @@ let private skipFirstUp (me: MouseEvent): nativeint option =
         callNextHook()
     else
         None
-
-(*
-let private skipFirstUpOrSingle (me: MouseEvent): nativeint option =
-    if lastEvent.IsNone || lastEvent.IsSingle then
-        Debug.WriteLine(sprintf "skip first Up or Single: %s" me.Name)
-        callNextHook()
-    else
-        None
-
-let private skipFirstUpOrLR (me: MouseEvent): nativeint option =
-    if lastEvent.IsNone || lastEvent.IsLR then
-        Debug.WriteLine(sprintf "skip first Up or LR: %s" me.Name)
-        callNextHook()
-    else
-        None
-*)
 
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
     if me.SameEvent lastEvent then
@@ -184,19 +169,6 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
         callNextHook()
     else
         None
-
-(*
-let private checkSingleSuppressed (up: MouseEvent): nativeint option =
-    if up.IsSingle then
-        if Ctx.LastFlags.IsDownSuppressed up then
-            Debug.WriteLine(sprintf "suppress (checkSingleSuppressed): %s" up.Name)
-            suppress()
-        else
-            Debug.WriteLine(sprintf "pass (checkSingleSuppressed): %s" up.Name)
-            callNextHook()
-    else
-        None
-*)
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     if EventWaiter.offer me then
