@@ -78,11 +78,14 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         callNextHook()
 
 let private skipResendEventSingle (me: MouseEvent): nativeint option =
-    if Windows.isResendClickEvent me then
+    if not (Windows.isInjectedEvent me) then
+        None
+    elif Windows.isResendClickEvent me then
         Debug.WriteLine(sprintf "pass resendClick event: %s" me.Name)
         callNextHook()
     else
-        None
+        Debug.WriteLine(sprintf "pass other software event: %s" me.Name)
+        callNextHook()
 
 let private skipFirstUp (me: MouseEvent): nativeint option =
     if lastEvent.IsNone then
