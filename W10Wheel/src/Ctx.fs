@@ -628,7 +628,7 @@ let private addSeparator (col: ToolStripItemCollection) =
     col.Add(new ToolStripSeparator()) |> ignore
 
 let private createTriggerMenu () =
-    let menu = new ToolStripMenuItem("Tigger")
+    let menu = new ToolStripMenuItem("Trigger")
     let items = menu.DropDownItems
     let add name = items.Add(createTriggerMenuItem name) |> ignore
 

@@ -17,7 +17,7 @@ open System.Runtime.InteropServices
 [<assembly: AssemblyConfiguration("")>]
 [<assembly: AssemblyCompany("")>]
 [<assembly: AssemblyProduct("W10Wheel.NET")>]
-[<assembly: AssemblyCopyright("Copyright (c) 2016 Yuki Ono")>]
+[<assembly: AssemblyCopyright("Copyright (c) 2017 Yuki Ono")>]
 [<assembly: AssemblyTrademark("")>]
 [<assembly: AssemblyCulture("")>]
 
@@ -39,8 +39,8 @@ open System.Runtime.InteropServices
 // すべての値を指定するか、下に示すように '*' を使用してビルドおよびリビジョン番号を
 // 既定値にすることができます。:
 // [<assembly: AssemblyVersion("1.0.*")>]
-[<assembly: AssemblyVersion("2.1.0.0")>]
-[<assembly: AssemblyFileVersion("2.1.0.0")>]
+[<assembly: AssemblyVersion("2.2.0.0")>]
+[<assembly: AssemblyFileVersion("2.2.0.0")>]
 
 do
     ()

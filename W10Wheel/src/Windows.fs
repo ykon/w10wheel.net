@@ -25,6 +25,8 @@ let private sender () =
     while true do
         let msgs = inputQueue.Take()
         WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE) |> ignore
+        //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
+        //Debug.WriteLine(sprintf "sendinput: %d" res)
         
 let private senderThread = new Thread(sender)
 senderThread.IsBackground <- true
