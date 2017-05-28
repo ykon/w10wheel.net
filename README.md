@@ -2,7 +2,7 @@
 W10Wheel.NET is the Mouse Wheel Simulator for Windows 10.  
 [W10Wheel (Java Edition)](https://github.com/ykon/w10wheel) ported to .NET Framework.
 ## Supported
-Windows and .NET Framework 4.6.1  
+Windows and .NET Framework 4.6.1 or later.
 <https://www.microsoft.com/en-us/download/details.aspx?id=49981>
 ### Windows 8.1
 Requires software to enable scroll inactive windows, such as WizMouse.  
