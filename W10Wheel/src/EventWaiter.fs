@@ -134,16 +134,16 @@ let private fromTimeout down =
 
 let private waiterQueue = new BlockingCollection<MouseEvent>(1)
 
-let private waiter () =
+let private waiterThread = new Thread(fun () ->
     while true do
         let down = waiterQueue.Take()
 
         match sync.poll(Ctx.getPollTimeout()) with
         | Some(res) -> dispatchEvent down res
         | None -> fromTimeout down
-
+)
         
-let private waiterThread = new Thread(waiter)
+//let private waiterThread = new Thread(waiter)
 waiterThread.IsBackground <- true
 waiterThread.Priority <- THREAD_PRIORITY
 waiterThread.Start()

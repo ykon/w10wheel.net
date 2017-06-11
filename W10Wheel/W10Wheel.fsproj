@@ -65,6 +65,7 @@
     <Compile Include="src\PreventMultiInstance.fs" />
     <Compile Include="src\WinAPI.fs" />
     <Compile Include="src\WinCursor.fs" />
+    <Compile Include="src\RawInput.fs" />
     <Compile Include="src\Dialog.fs" />
     <Compile Include="src\Mouse.fs" />
     <Compile Include="src\Keyboard.fs" />
@@ -79,6 +80,9 @@
     <Compile Include="src\KEventHandler.fs" />
     <Compile Include="src\Dispatcher.fs" />
     <Compile Include="src\Program.fs" />
+    <Content Include="App.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.VisualBasic" />
@@ -92,11 +96,6 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Windows.Forms" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="App.config">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -8,6 +8,7 @@
 #nowarn "9"
 
 open System
+open System.Reflection
 open System.Runtime.InteropServices
 
 // https://msdn.microsoft.com/library/windows/desktop/dd162805.aspx 
@@ -239,20 +240,52 @@ let SPI_SETCURSORS = 0x0057
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool SystemParametersInfo(uint32 uiAction, uint32 uiParam, nativeint pvParam, uint32 fWinIni)
 
-type DpiType = Effective = 0 | Angular = 1 | Raw = 2
+module RawInput =
+    let WM_INPUT = 0x00ff
+    let HWND_MESSAGE = IntPtr(-3)
+    let RID_INPUT = 0x10000003u
+    let MOUSE_MOVE_RELATIVE = 0us
+    let RIM_TYPEMOUSE = 0u
+    let HID_USAGE_PAGE_GENERIC = 0x01us
+    let HID_USAGE_GENERIC_MOUSE = 0x02us
+    let RIDEV_INPUTSINK = 0x00000100u
+    let RIDEV_REMOVE = 0x00000001u
 
-let MONITOR_DEFAULTTONEAREST = 0x00000002
-let MONITOR_DEFAULTTONULL = 0x00000000
-let MONITOR_DEFAULTTOPRIMARY = 0x00000001
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type RAWINPUTDEVICE =
+    val usUsagePage : uint16
+    val usUsage     : uint16
+    val dwFlags     : uint32
+    val hwndTarget  : nativeint
 
-[<DllImport("User32.dll")>]
-extern nativeint MonitorFromPoint([<In>]POINT pt, [<In>]uint32 dwFlags)
+    new(usup, usu, dwf, ht) = {usUsagePage = usup; usUsage = usu; dwFlags = dwf; hwndTarget = ht}
 
-[<DllImport("Shcore.dll")>]
-extern nativeint GetDpiForMonitor([<In>]nativeint hmonitor, [<In>]DpiType dpiType, [<Out>]uint32& dpiX, [<Out>]uint32& dpiY)
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type RAWINPUTHEADER =
+    val dwType  : uint32
+    val dwSize  : uint32
+    val hDevice : nativeint
+    val wParam  : nativeint
 
-type PROCESS_DPI_AWARENESS = DPI_UNAWARE = 0 | SYSTEM_DPI_AWARE = 1 | PER_MONITOR_DPI_AWARE = 2
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type RAWMOUSE =
+    val usFlags            : uint16
+    val usButtonFlags      : uint16
+    val usButtonData       : uint16
+    val ulRawButtons       : uint32
+    val lLastX             : int
+    val lLastY             : int
+    val ulExtraInformation : uint32
 
-[<DllImport("Shcore.dll")>]
-extern int SetProcessDpiAwareness([<In>]PROCESS_DPI_AWARENESS value)
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type RAWINPUT =
+    val header : RAWINPUTHEADER
+    val mouse  : RAWMOUSE
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern bool RegisterRawInputDevices([<MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0s); In>]RAWINPUTDEVICE[] pRawInputDevices, [<In>]uint32 uiNumDevices, [<In>]uint32 cbSize)
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern uint32 GetRawInputData([<In>]nativeint hRawInput, [<In>]uint32 uiCommand, [<Out>]nativeint pData, [<In; Out>]uint32& pcbSize, [<In>]uint32 cbSizeHeader)
+
 

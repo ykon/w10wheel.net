@@ -39,8 +39,8 @@ open System.Runtime.InteropServices
 // すべての値を指定するか、下に示すように '*' を使用してビルドおよびリビジョン番号を
 // 既定値にすることができます。:
 // [<assembly: AssemblyVersion("1.0.*")>]
-[<assembly: AssemblyVersion("2.3.0.0")>]
-[<assembly: AssemblyFileVersion("2.3.0.0")>]
+[<assembly: AssemblyVersion("2.4.0.0")>]
+[<assembly: AssemblyFileVersion("2.4.0.0")>]
 
 do
     ()

@@ -12,23 +12,25 @@ open System.Diagnostics
 open System.Runtime.InteropServices
 open System.Threading
 open Microsoft.FSharp.NativeInterop
+open System.Windows.Forms
 
 open Mouse
 
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
-let private MINPUT_SIZE = Marshal.SizeOf(typedefof<WinAPI.MINPUT>)
+let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
 let private inputQueue = new BlockingCollection<WinAPI.MINPUT array>(128)
 
-let private sender () =
+let private senderThread = new Thread(fun () ->
     while true do
         let msgs = inputQueue.Take()
         WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE) |> ignore
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
-        
-let private senderThread = new Thread(sender)
+)
+
+//let private senderThread = new Thread(sender)
 senderThread.IsBackground <- true
 senderThread.Start()
 
@@ -252,8 +254,17 @@ let sendWheel (movePt: WinAPI.POINT) =
     let sx, sy = scrollStartPoint
     let dx, dy = swapIf (movePt.x - sx) (movePt.y - sy)
     let wspt = WinAPI.POINT(sx, sy)
-
     sendWheelIf wspt dx dy
+
+let private sendWheelRaw (x: int) (y: int): unit =
+    let sx, sy = scrollStartPoint
+    if (sx <> x) && (sy <> y) then
+        let dx, dy = swapIf x y
+        let wspt = WinAPI.POINT(sx, sy)
+        sendWheelIf wspt dx dy
+
+let setSendWheelRaw (): unit =
+    RawInput.setSendWheelRaw sendWheelRaw
 
 let private createClick (mc:MouseClick) =
     let extra = resendClickTag
@@ -354,8 +365,5 @@ let initScroll () =
 
 let setInitScroll () =
     Ctx.setInitScroll initScroll
-
-let setProcessPerMonitorDpiAwareness () =
-    WinAPI.SetProcessDpiAwareness(WinAPI.PROCESS_DPI_AWARENESS.PER_MONITOR_DPI_AWARE) |> ignore
      
 

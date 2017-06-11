@@ -68,13 +68,10 @@ let main argv =
     WinHook.setMouseDispatcher(Dispatcher.getMouseDispatcher())
     WinHook.setKeyboardDispatcher(Dispatcher.getKeyboardDispatcher())
     EventHandler.setChangeTrigger()
+    Windows.setSendWheelRaw()
     Windows.setInitScroll()
 
     Ctx.loadProperties()
-
-    if Ctx.isDpiAware() then
-        Windows.setProcessPerMonitorDpiAwareness()
-
     Ctx.setSystemTray()
     
     WinHook.setMouseHook()

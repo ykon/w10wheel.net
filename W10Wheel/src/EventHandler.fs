@@ -492,7 +492,7 @@ let move (info: HookInfo) =
     //Debug.WriteLine "Move: test"
     if Ctx.isScrollMode() then
         drag info
-        Windows.sendWheel info.pt
+        //Windows.sendWheel info.pt
         suppress().Value
     elif EventWaiter.offer (Move(info)) then
         Debug.WriteLine("success to offer: Move")
@@ -500,7 +500,7 @@ let move (info: HookInfo) =
     else
         callNextHook().Value
 
-let changeTrigger (): unit =
+let private changeTrigger (): unit =
     Debug.WriteLine("changeTrigger: EventHandler")
 
     let downLR, upLR, downS, upS =

@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.3
+        2.4
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2017-06-11: v2.4.0: RawInputから移動値を取得するように変更、DPIの設定を削除
         2017-05-28: v2.3.0: コンパイラーをF#-4.1(VS2017)に更新
         2017-05-14: v2.2.0: Injectされたクリックを無視、同期改良、タイポ修正
         2016-10-15: v2.1.0: イベント受け渡しと同期を改良
@@ -156,7 +157,6 @@ URL:
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
-        DPI Correction: DPI補正 (1.00=100%, 1.25=125%, 1.50=150%, ...)
         Properties: 設定ファイル関連
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -277,12 +277,6 @@ URL:
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー 
-                
-        dpiCorrection: double  (default: 1.00) # DPI Correction
-                DPI補正に使う値 (1.00=100%, 1.25=125%, 1.50=150%, ...)
-                
-        dpiAware: bool (default: empty) # DPI Correction
-                自動的にDPI補正する (メニューは拡大されません) 
                 
 ライセンス:
         The MIT License
