@@ -325,11 +325,11 @@ type private Scroll() =
         sy <- y
 
     static member Start (info: HookInfo) = lock monitor (fun () ->
-        RawInput.register()
-
         stime <- info.time
         setStartPoint(info.pt.x, info.pt.y)
         initScroll()
+
+        RawInput.register()
 
         if cursorChange && not (isDragTrigger()) then
             WinCursor.changeV()
@@ -339,11 +339,11 @@ type private Scroll() =
     )
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
-        RawInput.register()
-
         stime <- info.time
         setStartPoint(Cursor.Position.X, Cursor.Position.Y)
         initScroll()
+
+        RawInput.register()
 
         if cursorChange then
             WinCursor.changeV()
