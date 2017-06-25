@@ -13,19 +13,22 @@ let mutable private sendWheelRaw: int -> int -> unit = (fun x y -> ())
 let setSendWheelRaw f =
     sendWheelRaw <- f
 
-let private procInput (lParam: nativeint): unit =
+let private procRawInput (lParam: nativeint): unit =
     let mutable pcbSize = 0u
     let cbSizeHeader = uint32 (Marshal.SizeOf(typeof<WinAPI.RAWINPUTHEADER>))
-    //Debug.WriteLine(sprintf "GetRawInputData: %d, pcbSize: %d" res pcbSize)
 
-    if WinAPI.GetRawInputData(lParam, RID_INPUT, IntPtr.Zero, &pcbSize, cbSizeHeader) = 0u then
+    let getRawInputData data =
+        WinAPI.GetRawInputData(lParam, RID_INPUT, data, &pcbSize, cbSizeHeader)
+
+    let isMouseMoveRelative (ri: WinAPI.RAWINPUT) =
+        (ri.header.dwType = RIM_TYPEMOUSE) && (ri.mouse.usFlags = MOUSE_MOVE_RELATIVE)
+
+    if (getRawInputData IntPtr.Zero) = 0u then
         let buf = Marshal.AllocHGlobal(int pcbSize)
-        if WinAPI.GetRawInputData(lParam, RID_INPUT, buf, &pcbSize, cbSizeHeader) = pcbSize then
-            let rawInput = Marshal.PtrToStructure(buf, typeof<WinAPI.RAWINPUT>) :?> WinAPI.RAWINPUT
-            if (rawInput.header.dwType = RIM_TYPEMOUSE) && (rawInput.mouse.usFlags = MOUSE_MOVE_RELATIVE) then
-                let x = rawInput.mouse.lLastX
-                let y = rawInput.mouse.lLastY
-                sendWheelRaw x y
+        if (getRawInputData buf) = pcbSize then
+            let ri = Marshal.PtrToStructure(buf, typeof<WinAPI.RAWINPUT>) :?> WinAPI.RAWINPUT
+            if isMouseMoveRelative ri then
+                sendWheelRaw ri.mouse.lLastX ri.mouse.lLastY
 
 type MessageWindow() =
     inherit NativeWindow()
@@ -36,7 +39,7 @@ type MessageWindow() =
 
     override self.WndProc(m:Message byref): unit =
         if m.Msg = WM_INPUT then
-            procInput(m.LParam)
+            procRawInput(m.LParam)
         
         base.WndProc(&m)
 
