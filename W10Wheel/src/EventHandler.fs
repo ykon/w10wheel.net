@@ -100,6 +100,7 @@ let private checkEscape (me: MouseEvent): nativeint option =
         initState()
         Ctx.LastFlags.Init()
         Ctx.exitScrollMode()
+        EventWaiter.offer(Cancel) |> ignore
         callNextHook()
     else
         None

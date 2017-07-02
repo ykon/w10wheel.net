@@ -70,6 +70,7 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
         Ctx.setStartingScrollMode()
+    | Cancel -> Debug.WriteLine("setFlagsOffer: cancel")
     | _ -> raise (InvalidOperationException())
 
 let offer me: bool =
@@ -125,6 +126,7 @@ let private dispatchEvent down res =
     | Move(_) -> fromMove down
     | LeftUp(_) | RightUp(_) -> fromUp down res
     | LeftDown(_) | RightDown(_) -> fromDown down res
+    | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
 
 let private fromTimeout down =

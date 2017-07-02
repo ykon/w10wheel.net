@@ -27,6 +27,7 @@ type MouseEvent =
     | X2Down of HookInfo
     | X2Up of HookInfo
     | Move of HookInfo
+    | Cancel
     | NoneEvent
 
     member self.Name = getUnionCaseName(self)
