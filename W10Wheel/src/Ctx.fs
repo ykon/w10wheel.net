@@ -440,6 +440,12 @@ type LastFlags() =
         flag <- false
         res
 
+    static member Init () =
+        ldR <- false; rdR <- false
+        ldP <- false; rdP <- false
+        ldS <- false; rdS <- false; sdS <- false
+        Array.fill kdS 0 (kdS.Length) false
+
     static member SetResent (down: MouseEvent): unit =
         match down with
         | LeftDown(_) -> ldR <- true

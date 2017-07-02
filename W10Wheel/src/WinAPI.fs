@@ -192,6 +192,7 @@ module VKey =
     let VK_SHIFT = 0x10
     let VK_CONTROL = 0x11
     let VK_MENU = 0x12
+    let VK_ESCAPE = 0x1B
 
 // https://msdn.microsoft.com/ibrary/windows/desktop/ms646293.aspx
 // http://www.pinvoke.net/default.aspx/user32.getasynckeystate

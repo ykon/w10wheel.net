@@ -25,8 +25,15 @@ let private lastResendRightEvent: MouseEvent ref = ref NoneEvent
 
 let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
-
 let mutable private dragged = false
+
+let private initState () =
+    lastEvent <- NoneEvent
+    lastResendLeftEvent := NoneEvent
+    lastResendRightEvent := NoneEvent
+    resentDownUp <- false
+    secondTriggerUp <- false
+    dragged <- false
 
 let private resetLastFlagsLR (me: MouseEvent): nativeint option =
     Ctx.LastFlags.ResetLR me
@@ -86,6 +93,16 @@ let private skipResendEventSingle (me: MouseEvent): nativeint option =
     else
         Debug.WriteLine(sprintf "pass other software event: %s" me.Name)
         callNextHook()
+
+let private checkEscape (me: MouseEvent): nativeint option =
+    if Windows.checkEscState() then
+        Debug.WriteLine(sprintf "init state and exit scroll: %s" me.Name)
+        initState()
+        Ctx.LastFlags.Init()
+        Ctx.exitScrollMode()
+        callNextHook()
+    else
+        None
 
 let private skipFirstUp (me: MouseEvent): nativeint option =
     if lastEvent.IsNone then
@@ -346,6 +363,7 @@ let private lrUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("lrUp")
     let checkers = [
         skipResendEventLR
+        checkEscape
         skipFirstUp
         checkSameLastEvent
         //checkSingleSuppressed
@@ -379,6 +397,7 @@ let private singleUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("singleUp")
     let checkers = [
         skipResendEventSingle
+        checkEscape
         skipFirstUp
         checkSameLastEvent
         checkSuppressedDown
@@ -406,6 +425,7 @@ let private dragUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("dragUp")
     let checkers = [
         skipResendEventSingle
+        checkEscape
         skipFirstUp
         checkSameLastEvent
         checkSuppressedDown
@@ -429,6 +449,7 @@ let private noneDown (me: MouseEvent): nativeint =
 let private noneUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneUp")
     let checkers = [
+        checkEscape
         checkSuppressedDown
         endPass
     ]

@@ -305,14 +305,10 @@ open WinAPI.VKey
 let private checkAsyncKeyState (vKey:int) =
     (WinAPI.GetAsyncKeyState(vKey) &&& 0xf000s) <> 0s
 
-let checkShiftState () =
-    checkAsyncKeyState(VK_SHIFT)
-
-let checkCtrlState () =
-    checkAsyncKeyState(VK_CONTROL)
-
-let checkAltState () =
-    checkAsyncKeyState(VK_MENU)
+let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
+let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
+let checkAltState () = checkAsyncKeyState(VK_MENU)
+let checkEscState () = checkAsyncKeyState(VK_ESCAPE)
 
 let private initFuncs () =
     addAccelIf <- if Ctx.isAccelTable() then addAccel else passInt
