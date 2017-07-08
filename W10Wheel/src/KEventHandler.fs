@@ -17,6 +17,9 @@ let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NoneEvent
 
+let initState () =
+    lastEvent <- NoneEvent
+
 let private skipFirstUp (ke: KeyboardEvent): nativeint option =
     if lastEvent.IsNone then
         Debug.WriteLine(sprintf "skip first Up: %s" ke.Name)

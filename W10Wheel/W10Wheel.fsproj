@@ -76,8 +76,8 @@
     <Compile Include="src\Windows.fs" />
     <Compile Include="src\W10Message.fs" />
     <Compile Include="src\EventWaiter.fs" />
-    <Compile Include="src\EventHandler.fs" />
     <Compile Include="src\KEventHandler.fs" />
+    <Compile Include="src\EventHandler.fs" />
     <Compile Include="src\Dispatcher.fs" />
     <Compile Include="src\Program.fs" />
     <Content Include="App.config">

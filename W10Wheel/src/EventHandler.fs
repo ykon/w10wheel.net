@@ -98,6 +98,7 @@ let private checkEscape (me: MouseEvent): nativeint option =
     if Windows.checkEscState() then
         Debug.WriteLine(sprintf "init state and exit scroll: %s" me.Name)
         initState()
+        KEventHandler.initState()
         Ctx.LastFlags.Init()
         Ctx.exitScrollMode()
         EventWaiter.offer(Cancel) |> ignore
@@ -170,13 +171,12 @@ let private checkExitScrollUpLR (up: MouseEvent): nativeint option =
 let private checkStartingScroll (up: MouseEvent): nativeint option =
     if Ctx.isStartingScrollMode() then
         Debug.WriteLine("check starting scroll")
+        Thread.Sleep(1)
 
         if not secondTriggerUp then
             Debug.WriteLine(sprintf "ignore first up (starting): %s" up.Name)
-            Thread.Sleep(1)
         else
             Debug.WriteLine(sprintf "exit scroll mode (starting): %s" up.Name)
-            Thread.Sleep(1)
             Ctx.exitScrollMode()
 
         secondTriggerUp <- not secondTriggerUp
