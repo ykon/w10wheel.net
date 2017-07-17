@@ -5,10 +5,8 @@
 
 open System
 open System.Diagnostics
-open System.Runtime.InteropServices
 open System.Threading
 open System.Windows.Forms
-open Microsoft.FSharp.NativeInterop
 open Microsoft.Win32
 
 let private messageDoubleLaunch () =
@@ -23,7 +21,7 @@ let private procExit () =
 
 let private getBool (argv: string array) i =
     try
-        if argv.Length = 1 then true else Boolean.Parse(argv.[1])
+        if argv.Length = 1 then true else Boolean.Parse(argv.[i])
     with
         | :? FormatException as e ->
             Dialog.errorMessageE e
@@ -45,14 +43,26 @@ let private procArgv (argv: string array) =
 
     if argv.Length > 0 then
         match argv.[0] with
-        | "--sendExit" -> W10Message.sendExit()
-        | "--sendPassMode" -> W10Message.sendPassMode(getBool argv 1)
+        | "--sendExit" -> W10Message.sendExit ()
+        | "--sendPassMode" -> W10Message.sendPassMode (getBool argv 1)
+        | "--sendReloadProp" -> W10Message.sendReloadProp ()
+        | "--sendInitState" -> W10Message.sendInitState ()
         | name when name.StartsWith("--") -> unknownCommand name
         | name -> setSelectedProperties name
 
         if argv.[0].StartsWith("--send") then
             Thread.Sleep(1000)
             Environment.Exit(0)
+
+let private initSetFunctions () =
+    Dispatcher.setMouseDispatcher ()
+    Dispatcher.setKeyboardDispatcher ()
+    EventHandler.setChangeTrigger ()
+    Windows.setSendWheelRaw ()
+    Windows.setInitScroll ()
+    EventWaiter.setOfferEW ()
+    EventHandler.setInitStateMEH ()
+    KEventHandler.setInitStateKEH ()
 
 [<STAThread>]
 [<EntryPoint>]
@@ -64,18 +74,11 @@ let main argv =
         Environment.Exit(0)
 
     SystemEvents.SessionEnding.Add (fun _ -> procExit())
+    initSetFunctions ()
 
-    WinHook.setMouseDispatcher(Dispatcher.getMouseDispatcher())
-    WinHook.setKeyboardDispatcher(Dispatcher.getKeyboardDispatcher())
-    EventHandler.setChangeTrigger()
-    Windows.setSendWheelRaw()
-    Windows.setInitScroll()
-
-    Ctx.loadProperties()
-    Ctx.setSystemTray()
-    
-    WinHook.setMouseHook()
-    //Hook.setKeyboardHook()
+    Ctx.loadProperties ()
+    Ctx.setSystemTray ()
+    WinHook.setMouseHook ()
 
     Application.Run()
     Debug.WriteLine("Exit message loop")

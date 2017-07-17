@@ -6,12 +6,10 @@
  *)
 
 open System
-open System.Configuration
 open System.Diagnostics
 open System.Threading
 open System.Windows.Forms
 open System.Reflection
-open System.Resources
 open System.IO
 open System.Collections.Generic
 
@@ -601,7 +599,7 @@ let setChangeTrigger (f: unit -> unit) =
 
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
-    Debug.WriteLine(sprintf "setTrigger: %s" res.Name)
+    Debug.WriteLine("setTrigger: " + res.Name)
     Volatile.Write(firstTrigger, res)
 
     setMenuEnabled boolMenuDict "sendMiddleClick" res.IsSingle
@@ -609,19 +607,25 @@ let private setTrigger (text: string) =
 
     changeTrigger()
 
+let private addClick (item: ToolStripMenuItem) f =
+    item.Click.Add (fun e -> f (e))
+    item
+
+let private addClickDictMenuItem (item: ToolStripMenuItem) dict f =
+    Debug.WriteLine("addClickDictMenuItem")
+
+    addClick item (fun e -> 
+        if item.CheckState = CheckState.Unchecked then
+            uncheckAllItems dict
+            item.CheckState <- CheckState.Indeterminate
+            f (e)
+    )
+
 let private createTriggerMenuItem text =
     let item = new ToolStripMenuItem(text, null)
     let name = textToName text
     triggerMenuDict.[name] <- item
-
-    item.Click.Add (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems triggerMenuDict
-            item.CheckState <- CheckState.Indeterminate
-            setTrigger name
-    )
-
-    item
+    addClickDictMenuItem item triggerMenuDict (fun _ -> setTrigger name)
 
 let private addSeparator (col: ToolStripItemCollection) =
     col.Add(new ToolStripSeparator()) |> ignore
@@ -663,34 +667,25 @@ let private createOnOffMenuItem (vname:string) (action: bool -> unit) =
     item.CheckOnClick <- true
     boolMenuDict.[vname] <- item
 
-    item.Click.Add (fun _ ->
+    addClick item (fun _ ->
         let b  = item.Checked
         item.Text <- getOnOffText b
         setBooleanOfName vname b
         action(b)
     )
-    item
 
 let private createOnOffMenuItemNA (vname:string) =
     createOnOffMenuItem vname (fun _ -> ())
 
 let private setAccelMultiplier name =
-    Debug.WriteLine(sprintf "setAccelMultiplier %s" name)
+    Debug.WriteLine("setAccelMultiplier " + name)
     Accel.Multiplier <- getAccelMultiplierOfName name
 
 let private createAccelMenuItem text =
     let item = new ToolStripMenuItem(text, null)
     let name = textToName text
     accelMenuDict.[name] <- item
-
-    item.Click.Add (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems accelMenuDict
-            item.CheckState <- CheckState.Indeterminate
-            setAccelMultiplier name
-    )
-
-    item
+    addClickDictMenuItem item accelMenuDict (fun _ -> setAccelMultiplier name)
 
 let private createAccelTableMenu () =
     let menu = new ToolStripMenuItem("Accel Table")
@@ -713,22 +708,14 @@ let private createAccelTableMenu () =
 
 let private setPriority name =
     let p = ProcessPriority.getPriority name
-    Debug.WriteLine(sprintf "setPriority: %s" p.Name)
+    Debug.WriteLine("setPriority: " + p.Name)
     Volatile.Write(processPriority, p)
     ProcessPriority.setPriority p
 
 let private createPriorityMenuItem name =
     let item = new ToolStripMenuItem(name, null)
     priorityMenuDict.[name] <- item
-
-    item.Click.Add (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems priorityMenuDict
-            item.CheckState <- CheckState.Indeterminate
-            setPriority name
-    )
-
-    item
+    addClickDictMenuItem item priorityMenuDict (fun _ -> setPriority name)
 
 let private createPriorityMenu () =
     let menu = new ToolStripMenuItem("Priority")
@@ -774,17 +761,14 @@ let private createNumberMenuItem name low up =
     let item = new ToolStripMenuItem(name, null)
     numberMenuDict.[name] <- item
 
-    item.Click.Add (fun _ ->
+    addClick item (fun _ ->
         let cur = getNumberOfName name
         let num = Dialog.openNumberInputBox name low up cur
         num |> Option.iter (fun n ->
             setNumberOfName name n
             item.Text <- makeNumberText name n
         )
-        ()
     )
-
-    item
 
 let private createSetNumberMenu () =
     let menu = new ToolStripMenuItem("Set Number")
@@ -825,21 +809,13 @@ let private getVhAdjusterMethodOfName name =
     | _ -> raise (ArgumentException())
 
 let private setVhAdjusterMethod name =
-    Debug.WriteLine(sprintf "setVhAdjusterMethod: %s" name)
+    Debug.WriteLine("setVhAdjusterMethod: " + name)
     VHAdjuster.Method <- (getVhAdjusterMethodOfName name)
 
 let private createVhAdjusterMenuItem name =
     let item = new ToolStripMenuItem(name, null)
     vhAdjusterMenuDict.[name] <- item
-
-    item.Click.Add (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems vhAdjusterMenuDict
-            item.CheckState <- CheckState.Indeterminate
-            setVhAdjusterMethod name
-    )
-
-    item
+    addClickDictMenuItem item vhAdjusterMenuDict (fun _ -> setVhAdjusterMethod name)
 
 let private createVhAdjusterMenu () =
     let menu = new ToolStripMenuItem("VH Adjuster")
@@ -863,22 +839,14 @@ let private createVhAdjusterMenu () =
     menu
 
 let private setTargetVKCode name =
-    Debug.WriteLine(sprintf "setTargetVKCode: %s" name)
+    Debug.WriteLine("setTargetVKCode: " + name)
     Volatile.Write(targetVKCode, Keyboard.getVKCode name)
 
 let private createKeyboardMenuItem text =
     let item = new ToolStripMenuItem(text, null)
     let name = textToName text
     keyboardMenuDict.[name] <- item
-
-    item.Click.Add (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems keyboardMenuDict
-            item.CheckState <- CheckState.Indeterminate
-            setTargetVKCode name
-    )
-
-    item
+    addClickDictMenuItem item keyboardMenuDict (fun _ -> setTargetVKCode name)
 
 let private createKeyboardMenu () =
     let menu = new ToolStripMenuItem("Keyboard")
@@ -912,7 +880,6 @@ let private createKeyboardMenu () =
     add "VK_LMENU (Left Alt)"
     add "VK_RMENU (Right Alt)"
     addSeparator items
-
     add "None"
 
     menu
@@ -922,10 +889,9 @@ let private createCursorChangeMenuItem () =
 
 let private createHorizontalScrollMenuItem () =
     let item = createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
-    item.Click.Add(fun _ ->
+    addClick item (fun _ ->
         boolMenuDict.["vhAdjusterMode"].Enabled <- item.Checked
     )
-    item
 
 let private createReverseScrollMenuItem () =
     createBoolMenuItem "reverseScroll" "Reverse Scroll (Flip)" true
@@ -943,11 +909,10 @@ let private createPassModeMenuItem () =
 let private createInfoMenuItem () =
     let item = new ToolStripMenuItem("Info")
 
-    item.Click.Add (fun _ ->
+    addClick item (fun _ ->
         let msg = sprintf "Name: %s / Version: %s" AppDef.PROGRAM_NAME_NET AppDef.PROGRAM_VERSION
         MessageBox.Show(msg, "Info", MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
-    item
 
 let exitAction () =
     notifyIcon.Visible <- false
@@ -983,29 +948,35 @@ let private BooleanNames: string array =
 let private OnOffNames: string array =
     [|"realWheelMode"; "accelTable"; "keyboardHook"; "vhAdjusterMode"|]
 
-let private resetTriggerMenuItems () =
-    for KeyValue(name, item) in triggerMenuDict do
+let private resetDictMenuItems (dict: Dictionary<string, ToolStripMenuItem>) pred =
+    Debug.WriteLine("resetDictMenuItems")
+    for KeyValue(name, item) in dict do
         item.CheckState <-
-            if Mouse.getTriggerOfStr name = getFirstTrigger() then
+            if pred name then
                 CheckState.Indeterminate
             else
                 CheckState.Unchecked
+
+let private resetTriggerMenuItems () =
+    resetDictMenuItems triggerMenuDict
+        (fun name -> Mouse.getTriggerOfStr name = getFirstTrigger())
 
 let private resetAccelMenuItems () =
-    for KeyValue(name, item) in accelMenuDict do
-        item.CheckState <-
-            if name = Accel.Multiplier.Name then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
+    resetDictMenuItems accelMenuDict
+        (fun name -> name = Accel.Multiplier.Name)
 
 let private resetPriorityMenuItems () =
-    for KeyValue(name, item) in priorityMenuDict do
-        item.CheckState <-
-            if ProcessPriority.getPriority name = getProcessPriority() then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
+    resetDictMenuItems priorityMenuDict
+        (fun name -> ProcessPriority.getPriority name = getProcessPriority())
+
+let private resetKeyboardMenuItems () =
+    resetDictMenuItems keyboardMenuDict
+        (fun name -> Keyboard.getVKCode name = getTargetVKCode())
+
+let private resetVhAdjusterMenuItems () =
+    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
+    resetDictMenuItems vhAdjusterMenuDict
+        (fun name -> getVhAdjusterMethodOfName name = getVhAdjusterMethod())
 
 let private resetNumberMenuItems () =
     for KeyValue(name, item) in numberMenuDict do
@@ -1016,31 +987,14 @@ let private resetBoolNumberMenuItems () =
     for KeyValue(name, item) in boolMenuDict do
         item.Checked <- getBooleanOfName name
 
-let private resetKeyboardMenuItems () =
-    for KeyValue(name, item) in keyboardMenuDict do
-        item.CheckState <-
-            if Keyboard.getVKCode name = getTargetVKCode() then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
-
-let private resetVhAdjusterMenuItems () =
-    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
-
-    for KeyValue(name, item) in vhAdjusterMenuDict do
-        item.CheckState <-
-            if getVhAdjusterMethodOfName name = getVhAdjusterMethod() then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
-
 let private resetOnOffMenuItems () =
     OnOffNames |> Array.iter (fun name ->
         let item = boolMenuDict.[name]
         item.Text <- getOnOffText(getBooleanOfName name)
     )
 
-let private resetMenuItems () =
+let private resetAllMenuItems () =
+    Debug.WriteLine("resetAllMenuItems")
     resetTriggerMenuItems()
     resetKeyboardMenuItems()
     resetAccelMenuItems()
@@ -1056,15 +1010,15 @@ let private setTriggerOfProperty (): unit =
     try
         setTrigger(prop.GetString("firstTrigger"))
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found: %s" e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error: %s" e.Message)
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
 
 let private setAccelOfProperty (): unit =
     try
         setAccelMultiplier(prop.GetString "accelMultiplier")
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found: %s" e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error: %s" e.Message)
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
 
 let private setCustomAccelOfProperty (): unit =
     try
@@ -1079,53 +1033,53 @@ let private setCustomAccelOfProperty (): unit =
             Accel.CustomMultiplier <- cam
             Accel.CustomDisabled <- false
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found: %s" e.Message)
-        | :? FormatException as e -> Debug.WriteLine(sprintf "Parse error: %s" e.Message)
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
+        | :? FormatException as e -> Debug.WriteLine("Parse error: " + e.Message)
 
 let private setPriorityOfProperty (): unit =
     try
         setPriority (prop.GetString "processPriority")
     with
         | :? KeyNotFoundException as e ->
-            Debug.WriteLine(sprintf "Not found %s" e.Message)
+            Debug.WriteLine("Not found " + e.Message)
             setDefaultPriority()
         | :? ArgumentException as e ->
-            Debug.WriteLine(sprintf "Match error: %s" e.Message)
+            Debug.WriteLine("Match error: " + e.Message)
             setDefaultPriority()
 
 let private setVKCodeOfProperty (): unit =
     try
         setTargetVKCode (prop.GetString "targetVKCode")
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message)
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
 
 let private setVhAdjusterMethodOfProperty (): unit =
     try
         setVhAdjusterMethod (prop.GetString "vhAdjusterMethod")
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine(sprintf "Match error %s" e.Message)
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
+        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
 
 let private setBooleanOfProperty (name: string): unit =
     try
         setBooleanOfName name (prop.GetBool name)
     with
-        | :? KeyNotFoundException -> Debug.WriteLine(sprintf "Not found %s" name)
-        | :? FormatException -> Debug.WriteLine(sprintf "Parse error: %s" name)
-        | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
+        | :? KeyNotFoundException -> Debug.WriteLine("Not found: " + name)
+        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
+        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
 
 let private setNumberOfProperty (name:string) (low:int) (up:int) =
     try
         let n = prop.GetInt name
         if n < low || n > up then
-            Debug.WriteLine(sprintf "Nomber out of bounds: %s" name)
+            Debug.WriteLine("Nomber out of bounds: " + name)
         else
             setNumberOfName name n
     with
-        | :? KeyNotFoundException -> Debug.WriteLine(sprintf "Not fund: %s" name)
-        | :? FormatException -> Debug.WriteLine(sprintf "Parse error: %s" name)
-        | :? ArgumentException -> Debug.WriteLine(sprintf "Match error: %s" name)
+        | :? KeyNotFoundException -> Debug.WriteLine("Not fund: " + name)
+        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
+        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
 
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
@@ -1136,7 +1090,6 @@ let loadProperties (): unit =
     loaded <- true
     try
         prop.Load(getSelectedPropertiesPath())
-
         Debug.WriteLine("Start load")
 
         setTriggerOfProperty()
@@ -1166,7 +1119,7 @@ let loadProperties (): unit =
             Debug.WriteLine("Properties file not found")
             setDefaultPriority()
             setDefaultTrigger()
-        | e -> Debug.WriteLine(sprintf "load: %s" (e.ToString()))
+        | e -> Debug.WriteLine("load: " + (e.ToString()))
 
 let private isChangedProperties () =
     try
@@ -1190,8 +1143,8 @@ let private isChangedProperties () =
         isChangedBoolean() || isChangedNumber() 
     with
         | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
-        | :? KeyNotFoundException as e -> Debug.WriteLine(sprintf "Not found %s" e.Message); true
-        | e -> Debug.WriteLine(sprintf "isChanged: %s" (e.ToString())); true
+        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message); true
+        | e -> Debug.WriteLine("isChanged: " + (e.ToString())); true
 
 let storeProperties () =
     try
@@ -1210,29 +1163,23 @@ let storeProperties () =
 
             prop.Store(getSelectedPropertiesPath())
     with
-        | e -> Debug.WriteLine(sprintf "store: %s" (e.ToString()))
+        | e -> Debug.WriteLine("store: " + (e.ToString()))
+
+let reloadProperties () =
+    loadProperties()
+    resetAllMenuItems()
 
 let private createReloadPropertiesMenuItem () =
     let item = new ToolStripMenuItem("Reload")
-
-    item.Click.Add (fun _ ->
-        loadProperties()
-        resetMenuItems()
-    )
-
-    item
+    addClick item (fun _ -> reloadProperties ())
 
 let private createSavePropertiesMenuItem () =
     let item = new ToolStripMenuItem("Save")
-    item.Click.Add (fun _ -> storeProperties())
-    item
+    addClick item (fun _ -> storeProperties())
 
 let private createOpenDirMenuItem (dir: string) =
     let item = new ToolStripMenuItem("Open Dir")
-    item.Click.Add(fun _ ->
-        Process.Start(dir) |> ignore
-    )
-    item
+    addClick item (fun _ -> Process.Start(dir) |> ignore)
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
@@ -1241,7 +1188,7 @@ let private isValidPropertiesName name =
 
 let private createAddPropertiesMenuItem () =
     let item = new ToolStripMenuItem("Add")
-    item.Click.Add(fun _ ->
+    addClick item (fun _ ->
         let res = Dialog.openTextInputBox "Properties Name" "Add Properties"
 
         try
@@ -1256,7 +1203,6 @@ let private createAddPropertiesMenuItem () =
         with
             | e -> Dialog.errorMessageE e 
     )
-    item
 
 let private openYesNoMessage msg =
     let res = MessageBox.Show(msg, "Question", MessageBoxButtons.YesNo, MessageBoxIcon.Information)
@@ -1264,17 +1210,17 @@ let private openYesNoMessage msg =
 
 let private setProperties name =
     if getSelectedProperties() <> name then
-        Debug.WriteLine(sprintf "setProperties: %s" name)
+        Debug.WriteLine("setProperties: " + name)
 
         setSelectedProperties name
         loadProperties()
-        resetMenuItems()
+        resetAllMenuItems()
 
 let private createDeletePropertiesMenuItem () =
     let item = new ToolStripMenuItem("Delete")
     let name = getSelectedProperties()
     item.Enabled <- (name <> DEFAULT_DEF)
-    item.Click.Add(fun _ ->
+    addClick item (fun _ ->
         try
             if openYesNoMessage (sprintf "Delete the '%s' properties?" name) then
                 Properties.delete name
@@ -1282,7 +1228,6 @@ let private createDeletePropertiesMenuItem () =
         with
             | e -> Dialog.errorMessageE e
     )
-    item
 
 let private createPropertiesMenuItem (name: string) =
     let item = new ToolStripMenuItem(name)
@@ -1292,11 +1237,10 @@ let private createPropertiesMenuItem (name: string) =
         else
             CheckState.Unchecked
 
-    item.Click.Add(fun _ ->
+    addClick item (fun _ ->
         storeProperties()
         setProperties name
     )
-    item
 
 let private createPropertiesMenu () =
     let menu = new ToolStripMenuItem("Properties")
@@ -1352,7 +1296,7 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createInfoMenuItem())
     add (createExitMenuItem())
 
-    resetMenuItems()
+    resetAllMenuItems()
 
     menu
 
@@ -1367,3 +1311,18 @@ let setSystemTray (): unit =
     ni.Visible <- true
     ni.ContextMenuStrip <- menu
     ni.DoubleClick.Add (fun _ -> Pass.toggleMode())
+
+let mutable private initStateMEH: unit -> unit = (fun () -> ())
+let mutable private initStateKEH: unit -> unit = (fun () -> ())
+let mutable private offerEW: MouseEvent -> bool = (fun me -> false)
+
+let setInitStateMEH f = initStateMEH <- f
+let setInitStateKEH f = initStateKEH <- f
+let setOfferEW f = offerEW <- f
+
+let initState () =
+    initStateMEH()
+    initStateKEH()
+    LastFlags.Init()
+    exitScrollMode()
+    offerEW(Cancel) |> ignore

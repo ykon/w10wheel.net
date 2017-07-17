@@ -74,8 +74,8 @@
     <Compile Include="src\WinHook.fs" />
     <Compile Include="src\Ctx.fs" />
     <Compile Include="src\Windows.fs" />
-    <Compile Include="src\W10Message.fs" />
     <Compile Include="src\EventWaiter.fs" />
+    <Compile Include="src\W10Message.fs" />
     <Compile Include="src\KEventHandler.fs" />
     <Compile Include="src\EventHandler.fs" />
     <Compile Include="src\Dispatcher.fs" />

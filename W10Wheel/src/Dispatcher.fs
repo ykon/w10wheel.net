@@ -15,16 +15,7 @@ let private procCommand (info: HookInfo): bool =
     else
         Debug.WriteLine("receive (mouseData >>> 16) = 1")
         let msg = int (info.dwExtraInfo.ToUInt32())
-        match W10Message.getFlag(msg) with
-        | x when x = W10Message.W10_MESSAGE_EXIT ->
-            Debug.WriteLine("receive W10_MESSAGE_EXIT")
-            Ctx.exitAction()
-            true
-        | x when x = W10Message.W10_MESSAGE_PASSMODE ->
-            Debug.WriteLine("receive W10_MESSAGE_PASSMODE")
-            Ctx.setPassMode (W10Message.getBoolBit msg)
-            true
-        | _ -> false
+        W10Message.procMessage msg
 
 let private mouseProc nCode wParam info: nativeint =
     //Debug.WriteLine("mouseProc")
@@ -54,7 +45,10 @@ let private mouseProc nCode wParam info: nativeint =
                 if procCommand info then IntPtr(1) else callNextHook()
             | _ -> raise (InvalidOperationException())
 
-let getMouseDispatcher () = new WinAPI.LowLevelMouseProc(mouseProc)
+let private getMouseDispatcher () = new WinAPI.LowLevelMouseProc(mouseProc)
+
+let setMouseDispatcher () =
+    WinHook.setMouseDispatcher (getMouseDispatcher ())
 
 let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
     let callNextHook = (fun _ -> WinHook.callNextKeyboardHook nCode wParam info)
@@ -67,5 +61,8 @@ let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
         | WM_KEYUP | WM_SYSKEYUP -> KEventHandler.keyUp info
         | _ -> callNextHook()
 
-let getKeyboardDispatcher () = new WinAPI.LowLevelKeyboardProc(keyboardProc)
+let private getKeyboardDispatcher () = new WinAPI.LowLevelKeyboardProc(keyboardProc)
+
+let setKeyboardDispatcher () =
+    WinHook.setKeyboardDispatcher (getKeyboardDispatcher ())
 

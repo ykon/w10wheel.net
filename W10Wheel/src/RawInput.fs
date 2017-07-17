@@ -28,7 +28,8 @@ let private procRawInput (lParam: nativeint): unit =
         if (getRawInputData buf) = pcbSize then
             let ri = Marshal.PtrToStructure(buf, typeof<WinAPI.RAWINPUT>) :?> WinAPI.RAWINPUT
             if isMouseMoveRelative ri then
-                sendWheelRaw ri.mouse.lLastX ri.mouse.lLastY
+                let rm = ri.mouse
+                sendWheelRaw rm.lLastX rm.lLastY
 
 type MessageWindow() =
     inherit NativeWindow()

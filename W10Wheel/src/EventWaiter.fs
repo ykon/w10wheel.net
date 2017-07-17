@@ -80,6 +80,9 @@ let offer me: bool =
     else
         false
 
+let setOfferEW () =
+    Ctx.setOfferEW offer
+
 let private fromMove (down: MouseEvent) =
     //Ctx.LastFlags.SetResent down
     Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)

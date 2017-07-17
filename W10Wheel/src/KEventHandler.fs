@@ -17,19 +17,25 @@ let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NoneEvent
 
-let initState () =
+let private initState () =
     lastEvent <- NoneEvent
+
+let setInitStateKEH () =
+    Ctx.setInitStateKEH initState
+
+let private debug (msg: string) (ke: KeyboardEvent) =
+    Debug.WriteLine(msg + ": " + ke.Name)
 
 let private skipFirstUp (ke: KeyboardEvent): nativeint option =
     if lastEvent.IsNone then
-        Debug.WriteLine(sprintf "skip first Up: %s" ke.Name)
+        debug "skip first Up" ke
         callNextHook()
     else
         None
 
 let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
     if ke.Same lastEvent && Ctx.isScrollMode() then
-        Debug.WriteLine(sprintf "same last event: %s" ke.Name)
+        debug "same last event" ke
         suppress()
     else
         lastEvent <- ke
@@ -37,14 +43,14 @@ let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
 
 let private passNotTrigger (ke: KeyboardEvent): nativeint option =
     if not (Ctx.isTriggerKey ke) then
-        Debug.WriteLine(sprintf "pass not trigger: %s" ke.Name)
+        debug "pass not trigger" ke
         callNextHook()
     else
         None
 
 let private checkTriggerScrollStart (ke: KeyboardEvent): nativeint option =
     if Ctx.isTriggerKey ke then
-        Debug.WriteLine(sprintf "start scroll mode: %s" ke.Name)
+        debug "start scroll mode" ke
         Ctx.startScrollModeK ke.Info
         suppress()
     else
@@ -52,7 +58,7 @@ let private checkTriggerScrollStart (ke: KeyboardEvent): nativeint option =
 
 let private checkExitScrollDown (ke: KeyboardEvent): nativeint option =
     if Ctx.isReleasedScrollMode() then
-        Debug.WriteLine(sprintf "exit scroll mode (Released): %s" ke.Name)
+        debug "exit scroll mode (Released)" ke
         Ctx.exitScrollMode()
         Ctx.LastFlags.SetSuppressed ke
         suppress()
@@ -62,10 +68,10 @@ let private checkExitScrollDown (ke: KeyboardEvent): nativeint option =
 let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
     if Ctx.isPressedScrollMode() then
         if Ctx.checkExitScroll ke.Info.time then
-            Debug.WriteLine(sprintf "exit scroll mode (Pressed): %s" ke.Name)
+            debug "exit scroll mode (Pressed)" ke
             Ctx.exitScrollMode()
         else
-            Debug.WriteLine(sprintf "continue scroll mode (Released): %s" ke.Name)
+            debug "continue scroll mode (Released)" ke
             Ctx.setReleasedScrollMode()
 
         suppress()
@@ -74,7 +80,7 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
 
 let private checkSuppressedDown (up: KeyboardEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_SuppressedDown up then
-        Debug.WriteLine(sprintf "suppress (checkSuppressedDown): %s" up.Name)
+        debug "suppress (checkSuppressedDown)" up
         suppress()
     else
         None
@@ -84,10 +90,10 @@ let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
     callNextHook()
 
 let private endPass (ke: KeyboardEvent): nativeint option =
-    endCallNextHook ke (sprintf "endPass: %s" ke.Name)
+    endCallNextHook ke ("endPass: " + ke.Name)
 
 let private endIllegalState (ke: KeyboardEvent): nativeint option =
-    Debug.WriteLine(sprintf "illegal state: %s" ke.Name)
+    debug "illegal state" ke
     suppress()
 
 type Checkers = (KeyboardEvent -> nativeint option) list
