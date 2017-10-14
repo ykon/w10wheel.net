@@ -136,7 +136,7 @@ let getSwitchingThreshold () =
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
 
 [<AbstractClass>]
-type AccelMultiplier(name: string, dArray: double array) =
+type AccelMultiplier(name: string, dArray: double[]) =
     member self.Name = name
     member self.DArray = dArray
 
@@ -158,14 +158,14 @@ let private getAccelMultiplierOfName name: AccelMultiplier =
 let private DefaultAccelThreshold = [|1; 2; 3; 5; 7; 10; 14; 20; 30; 43; 63; 91|]
 
 type private Accel() =
-    [<VolatileField>] static let mutable table = false
-    [<VolatileField>] static let mutable threshold: int array = DefaultAccelThreshold
+    [<VolatileField>] static let mutable table = true
+    [<VolatileField>] static let mutable threshold: int[] = DefaultAccelThreshold
     [<VolatileField>] static let mutable multiplier: AccelMultiplier = M5() :> AccelMultiplier
 
     [<VolatileField>] static let mutable customDisabled = true
     [<VolatileField>] static let mutable customTable = false
-    [<VolatileField>] static let mutable customThreshold: int array = null
-    [<VolatileField>] static let mutable customMultiplier: double array = null
+    [<VolatileField>] static let mutable customThreshold: int[] = null
+    [<VolatileField>] static let mutable customMultiplier: double[] = null
 
     static member Table
         with get() = table
@@ -240,7 +240,7 @@ let isNoneTrigger () =
 
 type private Threshold() =
     [<VolatileField>] static let mutable vertical = 0
-    [<VolatileField>] static let mutable horizontal = 50
+    [<VolatileField>] static let mutable horizontal = 75
 
     static member Vertical
         with get() = vertical
@@ -930,13 +930,13 @@ let private setDefaultPriority () =
 let private setDefaultTrigger () =
     setTrigger(getFirstTrigger().Name)
 
-let private NumberNames: string array =
+let private NumberNames: string[] =
     [|"pollTimeout"; "scrollLocktime";
       "verticalThreshold"; "horizontalThreshold";
       "wheelDelta"; "vWheelMove"; "hWheelMove";
       "firstMinThreshold"; "switchingThreshold"|]
 
-let private BooleanNames: string array =
+let private BooleanNames: string[] =
     [|"realWheelMode"; "cursorChange";
      "horizontalScroll"; "reverseScroll";
      "quickFirst"; "quickTurn";
@@ -945,7 +945,7 @@ let private BooleanNames: string array =
      "sendMiddleClick"; "keyboardHook";
      "vhAdjusterMode"; "firstPreferVertical"|]
 
-let private OnOffNames: string array =
+let private OnOffNames: string[] =
     [|"realWheelMode"; "accelTable"; "keyboardHook"; "vhAdjusterMode"|]
 
 let private resetDictMenuItems (dict: Dictionary<string, ToolStripMenuItem>) pred =
