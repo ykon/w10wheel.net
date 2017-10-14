@@ -19,9 +19,11 @@ let private procExit () =
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
 
-let private getBool (argv: string array) i =
+let private getBool (sl: string list): bool =
     try
-        if argv.Length = 1 then true else Boolean.Parse(argv.[i])
+        match sl with
+        | s :: _ -> Boolean.Parse(s)
+        | _ -> true
     with
         | :? FormatException as e ->
             Dialog.errorMessageE e
@@ -38,21 +40,22 @@ let private unknownCommand name =
     Dialog.errorMessage ("Unknown Command: " + name) "Command Error"
     Environment.Exit(0)
 
-let private procArgv (argv: string array) =
+let private procArgv (argv: string[]) =
     Debug.WriteLine("procArgv")
 
-    if argv.Length > 0 then
-        match argv.[0] with
-        | "--sendExit" -> W10Message.sendExit ()
-        | "--sendPassMode" -> W10Message.sendPassMode (getBool argv 1)
-        | "--sendReloadProp" -> W10Message.sendReloadProp ()
-        | "--sendInitState" -> W10Message.sendInitState ()
-        | name when name.StartsWith("--") -> unknownCommand name
-        | name -> setSelectedProperties name
+    match argv |> Array.toList with
+    | "--sendExit" :: _ -> W10Message.sendExit ()
+    | "--sendPassMode" :: rest -> W10Message.sendPassMode (getBool(rest))
+    | "--sendReloadProp" :: _ -> W10Message.sendReloadProp ()
+    | "--sendInitState" :: _ -> W10Message.sendInitState ()
+    | name :: _ when name.StartsWith("--") -> unknownCommand name
+    | name :: _ -> setSelectedProperties name
+    | _ -> ()
 
-        if argv.[0].StartsWith("--send") then
-            Thread.Sleep(1000)
-            Environment.Exit(0)
+    if argv.Length > 0 && argv.[0].StartsWith("--send") then
+        Thread.Sleep(1000)
+        Environment.Exit(0)
+
 
 let private initSetFunctions () =
     Dispatcher.setMouseDispatcher ()
