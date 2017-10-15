@@ -101,8 +101,9 @@ type Checkers = (KeyboardEvent -> nativeint option) list
 let rec private getResult (cs:Checkers) (ke:KeyboardEvent) =
     match cs with
     | f :: fs ->
-        let res = f ke
-        if res.IsSome then res.Value else getResult fs ke
+        match f ke with
+        | Some(res) -> res
+        | None -> getResult fs ke
     | _ -> raise (ArgumentException())
 
 let private singleDown (ke: KeyboardEvent): nativeint =

@@ -47,13 +47,15 @@ let callNextKeyboardHook nCode wParam info =
     let hhk = Volatile.Read(keyboardHhk)
     WinAPI.CallNextHookExK(hhk, nCode, wParam, info)
 
-let setMouseHook () =
+let setMouseHook (): bool =
     let hhk = __setMouseHook()
     Volatile.Write(mouseHhk, hhk)
+    hhk <> IntPtr.Zero
 
-let setKeyboardHook () =
+let setKeyboardHook (): bool =
     let hhk = __setKeyboardHook()
     Volatile.Write(keyboardHhk, hhk)
+    hhk <> IntPtr.Zero
 
 let unhookMouse () =
     let hhk = Volatile.Read(mouseHhk)
@@ -69,7 +71,11 @@ let unhookKeyboard () =
         
 let setOrUnsetKeyboardHook (b: bool): unit =
     Debug.WriteLine(sprintf "setOrUnsetKeyboardHook: %b" b)
-    if b then setKeyboardHook() else unhookKeyboard()
+    if b then
+        if not (setKeyboardHook()) then
+            Dialog.errorMessage ("Failed keyboard hook install: " + WinError.getLastErrorMessage()) "Error"
+    else
+        unhookKeyboard()
 
 let unhook () =
     unhookMouse()

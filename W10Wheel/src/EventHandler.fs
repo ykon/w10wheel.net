@@ -339,11 +339,12 @@ let private endIllegalState (me: MouseEvent): nativeint option =
 
 type Checkers = (MouseEvent -> nativeint option) list
 
-let rec private getResult (cs:Checkers) (me:MouseEvent) =
+let rec private getResult (cs:Checkers) (me:MouseEvent): nativeint =
     match cs with
     | f :: fs ->
-        let res = f me
-        if res.IsSome then res.Value else getResult fs me
+        match f me with
+        | Some(res) -> res
+        | None -> getResult fs me
     | _ -> raise (ArgumentException())
 
 let private lrDown (me: MouseEvent): nativeint =

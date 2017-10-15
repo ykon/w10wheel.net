@@ -20,7 +20,7 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-let private inputQueue = new BlockingCollection<WinAPI.MINPUT array>(128)
+let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>(128)
 
 let private senderThread = new Thread(fun () ->
     while true do
@@ -71,7 +71,7 @@ let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extr
     let input = createInput pt data flags time extra
     WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
 
-let private sendInputArray (msgs: WinAPI.MINPUT array) =
+let private sendInputArray (msgs: WinAPI.MINPUT[]) =
     //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
     inputQueue.Add msgs
 
@@ -91,22 +91,21 @@ let private swapIfOff (x: int) (y: int) = (x, y)
 let mutable private swapIf = swapIfOff
 
 // d == Not Zero
-let private getNearestIndex (d:int) (thr:int array): int =
+let private getNearestIndex (d:int) (thr:int[]): int =
     let ad = Math.Abs(d)
 
     let rec loop i =
-        let n = thr.[i]
-        if n = ad then
-            i
-        elif n > ad then
+        match thr.[i] with
+        | n when n = ad -> i
+        | n when n > ad ->
             if n - ad < Math.Abs(thr.[i - 1] - ad) then i else i - 1
-        else
+        | _ ->
             if i <> thr.Length - 1 then loop (i + 1) else i
 
     loop 0
 
-let mutable private accelThreshold: int array = null
-let mutable private accelMultiplier: double array = null
+let mutable private accelThreshold: int[] = null
+let mutable private accelMultiplier: double[] = null
 
 let private addAccel (d:int) =
     let i = getNearestIndex d (accelThreshold)

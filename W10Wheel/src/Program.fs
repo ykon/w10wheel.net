@@ -27,7 +27,7 @@ let private getBool (sl: string list): bool =
     with
         | :? FormatException as e ->
             Dialog.errorMessageE e
-            Environment.Exit(0)
+            Environment.Exit(1)
             false
 
 let private setSelectedProperties name =
@@ -38,7 +38,7 @@ let private setSelectedProperties name =
 
 let private unknownCommand name =
     Dialog.errorMessage ("Unknown Command: " + name) "Command Error"
-    Environment.Exit(0)
+    Environment.Exit(1)
 
 let private procArgv (argv: string[]) =
     Debug.WriteLine("procArgv")
@@ -74,14 +74,16 @@ let main argv =
 
     if not (PreventMultiInstance.tryLock()) then
         messageDoubleLaunch()
-        Environment.Exit(0)
+        Environment.Exit(1)
 
     SystemEvents.SessionEnding.Add (fun _ -> procExit())
     initSetFunctions ()
 
     Ctx.loadProperties ()
     Ctx.setSystemTray ()
-    WinHook.setMouseHook ()
+    if not (WinHook.setMouseHook ()) then
+        Dialog.errorMessage ("Failed mouse hook install: " + WinError.getLastErrorMessage()) "Error"
+        Environment.Exit(1)
 
     Application.Run()
     Debug.WriteLine("Exit message loop")

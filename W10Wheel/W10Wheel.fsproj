@@ -64,9 +64,10 @@
     <Compile Include="src\AssemblyInfo.fs" />
     <Compile Include="src\PreventMultiInstance.fs" />
     <Compile Include="src\WinAPI.fs" />
+    <Compile Include="src\WinError.fs" />
     <Compile Include="src\WinCursor.fs" />
-    <Compile Include="src\RawInput.fs" />
     <Compile Include="src\Dialog.fs" />
+    <Compile Include="src\RawInput.fs" />
     <Compile Include="src\Mouse.fs" />
     <Compile Include="src\Keyboard.fs" />
     <Compile Include="src\ProcessPriority.fs" />
