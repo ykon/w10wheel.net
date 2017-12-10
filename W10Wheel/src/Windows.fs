@@ -20,7 +20,7 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>(128)
+let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
 
 let private senderThread = new Thread(fun () ->
     while true do
