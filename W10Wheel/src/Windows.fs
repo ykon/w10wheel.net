@@ -186,10 +186,33 @@ let mutable private sendHWheel = sendDirectHWheel
 type VHDirection =
     | Vertical
     | Horizontal
-    | Init
+    | NonDirection
 
-let mutable private vhDirection: VHDirection = Init
+//let mutable private vhDirection: VHDirection = NonDirection
+let mutable private fixedVHD: VHDirection = NonDirection
+let mutable private latestVHD: VHDirection = NonDirection
 
+(*
+let private setVHA vha =
+    match vha with
+    | Vertical ->
+        vhDirection <- Vertical
+        if Ctx.isCursorChange() then WinCursor.changeV()
+    | Horizontal ->
+        vhDirection <- Horizontal
+        if Ctx.isCursorChange() then WinCursor.changeH()
+    | NonDirection -> ()
+*)
+
+let private changeCursorVHD vhd =
+    match vhd with
+    | Vertical ->
+        if Ctx.isCursorChange() then WinCursor.changeV()
+    | Horizontal ->
+        if Ctx.isCursorChange() then WinCursor.changeH()
+    | NonDirection -> ()
+
+(*
 let private setVerticalVHA () =
     vhDirection <- Vertical
     if Ctx.isCursorChange() then WinCursor.changeV()
@@ -197,36 +220,49 @@ let private setVerticalVHA () =
 let private setHorizontalVHA () =
     vhDirection <- Horizontal
     if Ctx.isCursorChange() then WinCursor.changeH()
+*)
 
-let private checkFirstVHA adx ady =
+let private getFirstVHD (adx: int) (ady: int): VHDirection =
     let mthr = Ctx.getFirstMinThreshold()
     if adx > mthr || ady > mthr then
         let y = if Ctx.isFirstPreferVertical() then ady * 2 else ady
-        if y >= adx then setVerticalVHA() else setHorizontalVHA()
+        if y >= adx then Vertical else Horizontal
+    else
+        NonDirection
 
 let mutable private switchingThreshold = 0
 
-let private checkSwitchVHA adx ady =
+let private switchVHD adx ady =
     let sthr = switchingThreshold
-    if ady > sthr then setVerticalVHA() elif adx > sthr then setHorizontalVHA()
+    if ady > sthr then
+        Vertical
+    elif adx > sthr then
+        Horizontal
+    else
+        NonDirection
 
-let private checkSwitchVHAifNone adx ady = ()
-
-let mutable private checkSwitchVHAif = checkSwitchVHA
+let private switchVHDifNone adx ady = fixedVHD
+let mutable private switchVHDif = switchVHD
 
 let private sendWheelVHA (wspt:WinAPI.POINT) (dx:int) (dy:int) =
     let adx = Math.Abs(dx)
     let ady = Math.Abs(dy)
 
-    if vhDirection = Init then // first
-        checkFirstVHA adx ady
-    else
-        checkSwitchVHAif adx ady
+    let curVHD =
+        match fixedVHD with
+        | NonDirection ->
+            fixedVHD <- getFirstVHD adx ady
+            fixedVHD
+        | _ -> switchVHDif adx ady
 
-    match vhDirection with
-    | Init -> ()
+    if curVHD <> NonDirection && curVHD <> latestVHD then
+        changeCursorVHD curVHD
+        latestVHD <- curVHD
+
+    match latestVHD with
     | Vertical -> if dy <> 0 then sendVWheel wspt dy
     | Horizontal -> if dx <> 0 then sendHWheel wspt dx
+    | _ -> ()
 
 let mutable private verticalThreshold = 0
 let mutable private horizontalThreshold = 0
@@ -335,9 +371,10 @@ let private initRealWheelMode () =
     startWheelCount()
 
 let private initVhAdjusterMode () =
-    vhDirection <- Init
+    fixedVHD <- NonDirection
+    latestVHD <- NonDirection
     switchingThreshold <- Ctx.getSwitchingThreshold()
-    checkSwitchVHAif <- if Ctx.isVhAdjusterSwitching() then checkSwitchVHA else checkSwitchVHAifNone
+    switchVHDif <- if Ctx.isVhAdjusterSwitching() then switchVHD else switchVHDifNone
 
 let private initStdMode () =
     verticalThreshold <- Ctx.getVerticalThreshold()

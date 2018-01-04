@@ -33,7 +33,19 @@ let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
 
 let private keyboardHook = ref false
-let private targetVKCode = ref (Keyboard.getVKCode("VK_NONCONVERT"))
+let private targetVKCode = ref (Keyboard.getVKCode(DataID.VK_NONCONVERT))
+let private uiLanguage = ref (Locale.getLanguage())
+
+type MenuDict = Dictionary<string, ToolStripMenuItem>
+
+let private boolMenuDict = new MenuDict()
+let private triggerMenuDict = new MenuDict()
+let private accelMenuDict = new MenuDict()
+let private priorityMenuDict = new MenuDict()
+let private languageMenuDict = new MenuDict()
+let private numberMenuDict = new MenuDict()
+let private keyboardMenuDict = new MenuDict()
+let private vhAdjusterMenuDict = new MenuDict()
 
 let isKeyboardHook () =
     Volatile.Read(keyboardHook)
@@ -51,10 +63,70 @@ let isSendMiddleClick () =
     Volatile.Read(sendMiddleClick)
 
 let private notifyIcon = new System.Windows.Forms.NotifyIcon()
+
+let private isSeparator (item: ToolStripItem): bool =
+    item :? ToolStripSeparator
+
+let getUILanguage () =
+    Volatile.Read(uiLanguage)
+
+let convLang msg =
+    Debug.WriteLine("convLang: " + msg)
+    Locale.convLang (getUILanguage()) msg
+
+type MenuData = { engText: string; id: string option }
+
+(*
+let private tagToEngText (item: ToolStripMenuItem): string =
+    match item.Tag with
+    | :? MenuData as tag -> tag.engText
+    | _ -> raise (ArgumentException("Tag is not MenuTag."))
+*)
+
+let private tagToEngText (item: ToolStripMenuItem): string =
+    match item.Tag with
+    | :? string as engText -> engText
+    | _ -> raise (ArgumentException("Tag is not string."))
+
+let private getFirstWord (s: string): string =
+    s.Split([|' '|]).[0]
+
+let private isNumberMenuItem (item: ToolStripItem): bool =
+     match item.Tag with
+     | :? string as engText -> numberMenuDict.ContainsKey(getFirstWord engText)
+     | _ -> false
+
+let private resetMenuText (): unit =        
+    let toList = fun (mc: ToolStripItemCollection) ->
+        if mc.Count = 0 then
+            List.empty
+        else
+            let array = Array.zeroCreate mc.Count
+            mc.CopyTo(array, 0)
+            List.ofArray array
+            |> List.filter (not << isSeparator)
+            |> List.filter (not << isNumberMenuItem)
+            |> List.map (fun item -> item :?> ToolStripMenuItem)
+
+    let rec loop (list: ToolStripMenuItem list): unit =
+        match list with
+        | [] -> ()
+        | item :: rest ->
+            item.Text <- convLang (tagToEngText item)
+
+            match (toList item.DropDownItems) with
+            | [] -> ()
+            | dropDownItems -> loop dropDownItems 
+
+            loop rest
+    
+    let menu = notifyIcon.ContextMenuStrip
+    loop (toList menu.Items)
+
 let mutable private passModeMenuItem: ToolStripMenuItem = null
 
 let private getTrayText b =
-    sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (if b then "Stopped" else "Runnable")
+    sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
 
 let private getIcon (name: string) =
     let stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
@@ -80,58 +152,6 @@ type private Pass() =
     static member toggleMode () =
         Pass.Mode <- not mode
 
-type VHAdjusterMethod =
-    | Fixed
-    | Switching
-
-    member self.Name =
-        Mouse.getUnionCaseName(self)
-
-type private VHAdjuster() =
-    [<VolatileField>] static let mutable mode = false
-    [<VolatileField>] static let mutable _method: VHAdjusterMethod = Switching
-    [<VolatileField>] static let mutable firstPreferVertical = true
-    [<VolatileField>] static let mutable firstMinThreshold = 5
-    [<VolatileField>] static let mutable switchingThreshold = 50
-
-    static member Mode
-        with get() = mode
-        and set b = mode <- b
-        
-    static member Method
-        with get() = _method
-        and set m = _method <- m
-        
-    static member FirstPreferVertical
-        with get() = firstPreferVertical
-        and set b = firstPreferVertical <- b
-        
-    static member FirstMinThreshold
-        with get() = firstMinThreshold
-        and set n = firstMinThreshold <- n
-        
-    static member SwitchingThreshold
-        with get() = switchingThreshold
-        and set n = switchingThreshold <- n    
-
-let isVhAdjusterMode () =
-    VHAdjuster.Mode
-
-let private getVhAdjusterMethod () =
-    VHAdjuster.Method
-
-let isVhAdjusterSwitching () =
-    getVhAdjusterMethod() = Switching
-
-let isFirstPreferVertical () =
-    VHAdjuster.FirstPreferVertical
-
-let getFirstMinThreshold () =
-    VHAdjuster.FirstMinThreshold
-
-let getSwitchingThreshold () =
-    VHAdjuster.SwitchingThreshold
-
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
 
@@ -140,19 +160,19 @@ type AccelMultiplier(name: string, dArray: double[]) =
     member self.Name = name
     member self.DArray = dArray
 
-type M5() = inherit AccelMultiplier("M5", [|1.0; 1.3; 1.7; 2.0; 2.4; 2.7; 3.1; 3.4; 3.8; 4.1; 4.5; 4.8|])
-type M6() = inherit AccelMultiplier("M6", [|1.2; 1.6; 2.0; 2.4; 2.8; 3.3; 3.7; 4.1; 4.5; 4.9; 5.4; 5.8|])
-type M7() = inherit AccelMultiplier("M7", [|1.4; 1.8; 2.3; 2.8; 3.3; 3.8; 4.3; 4.8; 5.3; 5.8; 6.3; 6.7|])
-type M8() = inherit AccelMultiplier("M8", [|1.6; 2.1; 2.7; 3.2; 3.8; 4.4; 4.9; 5.5; 6.0; 6.6; 7.2; 7.7|])
-type M9() = inherit AccelMultiplier("M9", [|1.8; 2.4; 3.0; 3.6; 4.3; 4.9; 5.5; 6.2; 6.8; 7.4; 8.1; 8.7|])
+type M5() = inherit AccelMultiplier(DataID.M5, [|1.0; 1.3; 1.7; 2.0; 2.4; 2.7; 3.1; 3.4; 3.8; 4.1; 4.5; 4.8|])
+type M6() = inherit AccelMultiplier(DataID.M6, [|1.2; 1.6; 2.0; 2.4; 2.8; 3.3; 3.7; 4.1; 4.5; 4.9; 5.4; 5.8|])
+type M7() = inherit AccelMultiplier(DataID.M7, [|1.4; 1.8; 2.3; 2.8; 3.3; 3.8; 4.3; 4.8; 5.3; 5.8; 6.3; 6.7|])
+type M8() = inherit AccelMultiplier(DataID.M8, [|1.6; 2.1; 2.7; 3.2; 3.8; 4.4; 4.9; 5.5; 6.0; 6.6; 7.2; 7.7|])
+type M9() = inherit AccelMultiplier(DataID.M9, [|1.8; 2.4; 3.0; 3.6; 4.3; 4.9; 5.5; 6.2; 6.8; 7.4; 8.1; 8.7|])
 
 let private getAccelMultiplierOfName name: AccelMultiplier =
     match name with
-    | "M5" -> (M5() :> AccelMultiplier)
-    | "M6" -> (M6() :> AccelMultiplier)
-    | "M7" -> (M7() :> AccelMultiplier)
-    | "M8" -> (M8() :> AccelMultiplier)
-    | "M9" -> (M9() :> AccelMultiplier)
+    | DataID.M5 -> (M5() :> AccelMultiplier)
+    | DataID.M6 -> (M6() :> AccelMultiplier)
+    | DataID.M7 -> (M7() :> AccelMultiplier)
+    | DataID.M8 -> (M8() :> AccelMultiplier)
+    | DataID.M9 -> (M9() :> AccelMultiplier)
     | e -> raise (ArgumentException(e))
 
 let private DefaultAccelThreshold = [|1; 2; 3; 5; 7; 10; 14; 20; 30; 43; 63; 91|]
@@ -417,6 +437,58 @@ let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 let setStartingScrollMode () = Scroll.SetStarting()
 let isStartingScrollMode () = Scroll.IsStarting
 
+type VHAdjusterMethod =
+    | Fixed
+    | Switching
+
+    member self.Name =
+        Mouse.getUnionCaseName(self)
+
+type private VHAdjuster() =
+    [<VolatileField>] static let mutable mode = false
+    [<VolatileField>] static let mutable _method: VHAdjusterMethod = Switching
+    [<VolatileField>] static let mutable firstPreferVertical = true
+    [<VolatileField>] static let mutable firstMinThreshold = 5
+    [<VolatileField>] static let mutable switchingThreshold = 50
+
+    static member Mode
+        with get() = mode
+        and set b = mode <- b
+        
+    static member Method
+        with get() = _method
+        and set m = _method <- m
+        
+    static member FirstPreferVertical
+        with get() = firstPreferVertical
+        and set b = firstPreferVertical <- b
+        
+    static member FirstMinThreshold
+        with get() = firstMinThreshold
+        and set n = firstMinThreshold <- n
+        
+    static member SwitchingThreshold
+        with get() = switchingThreshold
+        and set n = switchingThreshold <- n    
+
+let isVhAdjusterMode () =
+    (isHorizontalScroll()) && VHAdjuster.Mode
+
+let private getVhAdjusterMethod () =
+    VHAdjuster.Method
+
+let isVhAdjusterSwitching () =
+    getVhAdjusterMethod() = Switching
+
+let isFirstPreferVertical () =
+    VHAdjuster.FirstPreferVertical
+
+let getFirstMinThreshold () =
+    VHAdjuster.FirstMinThreshold
+
+let getSwitchingThreshold () =
+    VHAdjuster.SwitchingThreshold
+
 type LastFlags() =
     // R = Resent
     [<VolatileField>] static let mutable ldR = false
@@ -518,77 +590,112 @@ let setPassMode b =
 type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
-let private boolMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private triggerMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private accelMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private priorityMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private numberMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private keyboardMenuDict = new Dictionary<string, ToolStripMenuItem>()
-let private vhAdjusterMenuDict = new Dictionary<string, ToolStripMenuItem>()
+let private createMenuItem (data: MenuData): ToolStripMenuItem =
+    let item = new ToolStripMenuItem(convLang(data.engText))
+    //item.Tag <- data
+    item.Tag <- data.engText
+    item
+
+let private createMenuItem_NonID text: ToolStripMenuItem =
+    createMenuItem {engText = text; id = None}
+
+(*
+let private createMenuItem (text: string): ToolStripMenuItem =
+    __createMenuItem text text
+
+let private createMenuItem_id (text: string) (id: string): ToolStripMenuItem =
+    __createMenuItem text id
+*)
+
+(*
+let private createMenuItem_event (text: String) (onClick: EventHandler): ToolStripMenuItem =
+    //new ToolStripMenuItem(text, null, onClick)
+    let item = createMenuItem text
+    item.Click.AddHandler(onClick)
+    item
+*)
+
+(*
+let private tagToID (item: ToolStripMenuItem): string =
+    match item.Tag with
+    | :? MenuData as data ->
+        match data.id with
+        | Some id -> id
+        | None -> raise (ArgumentException("id is None."))
+    | _ -> raise (ArgumentException("Tag is not MenuTag."))
+*)
 
 let private getBooleanOfName (name: string): bool =
     match name with
-    | "realWheelMode" -> RealWheel.Mode
-    | "cursorChange" -> Scroll.CursorChange
-    | "horizontalScroll" -> Scroll.Horizontal
-    | "reverseScroll" -> Scroll.Reverse
-    | "quickFirst" -> RealWheel.QuickFirst
-    | "quickTurn" -> RealWheel.QuickTurn
-    | "accelTable" -> Accel.Table
-    | "customAccelTable" -> Accel.CustomTable
-    | "draggedLock" -> Scroll.DraggedLock
-    | "swapScroll" -> Scroll.Swap
-    | "sendMiddleClick" -> Volatile.Read(sendMiddleClick)
-    | "keyboardHook" -> Volatile.Read(keyboardHook)
-    | "vhAdjusterMode" -> VHAdjuster.Mode
-    | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical
-    | "passMode" -> Pass.Mode
+    | DataID.realWheelMode -> RealWheel.Mode
+    | DataID.cursorChange -> Scroll.CursorChange
+    | DataID.horizontalScroll -> Scroll.Horizontal
+    | DataID.reverseScroll -> Scroll.Reverse
+    | DataID.quickFirst -> RealWheel.QuickFirst
+    | DataID.quickTurn -> RealWheel.QuickTurn
+    | DataID.accelTable -> Accel.Table
+    | DataID.customAccelTable -> Accel.CustomTable
+    | DataID.draggedLock -> Scroll.DraggedLock
+    | DataID.swapScroll -> Scroll.Swap
+    | DataID.sendMiddleClick -> Volatile.Read(sendMiddleClick)
+    | DataID.keyboardHook -> Volatile.Read(keyboardHook)
+    | DataID.vhAdjusterMode -> VHAdjuster.Mode
+    | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
+    | DataID.passMode -> Pass.Mode
     | e -> raise (ArgumentException(e))
 
 let private setBooleanOfName (name:string) (b:bool) =
     Debug.WriteLine(sprintf "setBoolean: %s = %s" name (b.ToString()))
     match name with
-    | "realWheelMode" -> RealWheel.Mode <- b
-    | "cursorChange" -> Scroll.CursorChange <- b
-    | "horizontalScroll" -> Scroll.Horizontal <- b
-    | "reverseScroll" -> Scroll.Reverse <- b
-    | "quickFirst" -> RealWheel.QuickFirst <- b
-    | "quickTurn" -> RealWheel.QuickTurn <- b
-    | "accelTable" -> Accel.Table <- b
-    | "customAccelTable" -> Accel.CustomTable <- b
-    | "draggedLock" -> Scroll.DraggedLock <- b
-    | "swapScroll" -> Scroll.Swap <- b
-    | "sendMiddleClick" -> Volatile.Write(sendMiddleClick, b)
-    | "keyboardHook" -> Volatile.Write(keyboardHook, b)
-    | "vhAdjusterMode" -> VHAdjuster.Mode <- b
-    | "firstPreferVertical" -> VHAdjuster.FirstPreferVertical <- b
-    | "passMode" -> Pass.Mode <- b
+    | DataID.realWheelMode -> RealWheel.Mode <- b
+    | DataID.cursorChange -> Scroll.CursorChange <- b
+    | DataID.horizontalScroll -> Scroll.Horizontal <- b
+    | DataID.reverseScroll -> Scroll.Reverse <- b
+    | DataID.quickFirst -> RealWheel.QuickFirst <- b
+    | DataID.quickTurn -> RealWheel.QuickTurn <- b
+    | DataID.accelTable -> Accel.Table <- b
+    | DataID.customAccelTable -> Accel.CustomTable <- b
+    | DataID.draggedLock -> Scroll.DraggedLock <- b
+    | DataID.swapScroll -> Scroll.Swap <- b
+    | DataID.sendMiddleClick -> Volatile.Write(sendMiddleClick, b)
+    | DataID.keyboardHook -> Volatile.Write(keyboardHook, b)
+    | DataID.vhAdjusterMode -> VHAdjuster.Mode <- b
+    | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical <- b
+    | DataID.passMode -> Pass.Mode <- b
     | e -> raise (ArgumentException(e))
 
-let private makeSetBooleanEvent (name: String) =
-    fun (sender:obj) event ->
+(*
+let private makeSetBooleanEvent (id: String): EventHandler =
+    new EventHandler(
+        fun (sender:obj) _ ->
+            let item = sender :?> ToolStripMenuItem
+            let b = item.Checked
+            setBooleanOfName id b
+    )
+*)
+
+let private makeSetBooleanEvent id =
+    fun (sender: obj) (evt: EventArgs) ->
         let item = sender :?> ToolStripMenuItem
         let b = item.Checked
-        setBooleanOfName name b
+        setBooleanOfName id b
 
-let private createBoolMenuItem vName mName enabled =
-    let item = new ToolStripMenuItem(mName, null, makeSetBooleanEvent(vName))
+let private createBoolMenuItem (data: MenuData) enabled =
+    let item = createMenuItem data
+    item.Click.AddHandler(new EventHandler(makeSetBooleanEvent data.id.Value))
     item.CheckOnClick <- true
     item.Enabled <- enabled
-    boolMenuDict.[vName] <- item
+    boolMenuDict.[data.id.Value] <- item
     item
 
-let private createBoolMenuItemS vName =
-    createBoolMenuItem vName vName true
+let private createBoolMenuItemS name =
+    createBoolMenuItem ({engText = name; id = Some(name)}) true
 
-let private textToName (s: string): string =
-    s.Split([|' '|]).[0]
-
-let private uncheckAllItems (dict: Dictionary<string, ToolStripMenuItem>) =
+let private uncheckAllItems (dict: MenuDict) =
     for KeyValue(name, item) in dict do
         item.CheckState <- CheckState.Unchecked
 
-let private setMenuEnabled (dict:Dictionary<string, ToolStripMenuItem>) key enabled =
+let private setMenuEnabled (dict:MenuDict) key enabled =
     if dict.ContainsKey(key) then
         dict.[key].Enabled <- enabled
 
@@ -602,8 +709,8 @@ let private setTrigger (text: string) =
     Debug.WriteLine("setTrigger: " + res.Name)
     Volatile.Write(firstTrigger, res)
 
-    setMenuEnabled boolMenuDict "sendMiddleClick" res.IsSingle
-    setMenuEnabled boolMenuDict "draggedLock" res.IsDrag
+    setMenuEnabled boolMenuDict DataID.sendMiddleClick res.IsSingle
+    setMenuEnabled boolMenuDict DataID.draggedLock res.IsDrag
 
     changeTrigger()
 
@@ -611,6 +718,7 @@ let private addClick (item: ToolStripMenuItem) f =
     item.Click.Add (fun e -> f (e))
     item
 
+(*
 let private addClickDictMenuItem (item: ToolStripMenuItem) dict f =
     Debug.WriteLine("addClickDictMenuItem")
 
@@ -620,89 +728,99 @@ let private addClickDictMenuItem (item: ToolStripMenuItem) dict f =
             item.CheckState <- CheckState.Indeterminate
             f (e)
     )
+*)
 
-let private createTriggerMenuItem text =
-    let item = new ToolStripMenuItem(text, null)
-    let name = textToName text
-    triggerMenuDict.[name] <- item
-    addClickDictMenuItem item triggerMenuDict (fun _ -> setTrigger name)
+let private createDictMenuItem (data: MenuData) (dict: MenuDict) (setID: (string -> unit)): ToolStripMenuItem =
+    let item = createMenuItem data
+    let id = data.id.Value
+    dict.[id] <- item
+
+    addClick item (fun _ -> 
+        if item.CheckState = CheckState.Unchecked then
+            uncheckAllItems dict
+            item.CheckState <- CheckState.Indeterminate
+            setID(id)
+    )
 
 let private addSeparator (col: ToolStripItemCollection) =
     col.Add(new ToolStripSeparator()) |> ignore
 
 let private createTriggerMenu () =
-    let menu = new ToolStripMenuItem("Trigger")
+    let menu = createMenuItem_NonID "Trigger"
     let items = menu.DropDownItems
-    let add name = items.Add(createTriggerMenuItem name) |> ignore
+    let create = fun text ->
+        let data = {engText = text; id = Some(getFirstWord text)}
+        createDictMenuItem data triggerMenuDict setTrigger
+    let add = fun text -> items.Add(create text) |> ignore
 
-    add "LR (Left <<-->> Right)"
-    add "Left (Left -->> Right)"
-    add "Right (Right -->> Left)"
+    add (DataID.LR + " (Left <<-->> Right)")
+    add (DataID.Left + " (Left -->> Right)")
+    add (DataID.Right + " (Right -->> Left)")
     addSeparator items
 
-    add "Middle"
-    add "X1"
-    add "X2"
+    add DataID.Middle
+    add DataID.X1
+    add DataID.X2
     addSeparator items
 
-    add "LeftDrag"
-    add "RightDrag"
-    add "MiddleDrag"
-    add "X1Drag"
-    add "X2Drag"
+    add DataID.LeftDrag
+    add DataID.RightDrag
+    add DataID.MiddleDrag
+    add DataID.X1Drag
+    add DataID.X2Drag
     addSeparator items
 
-    add "None"
+    add DataID.None
     addSeparator items
 
-    items.Add(createBoolMenuItem "sendMiddleClick" "Send MiddleClick" (isSingleTrigger())) |> ignore
-    items.Add(createBoolMenuItem "draggedLock" "Dragged Lock" (isDragTrigger())) |> ignore
+    items.Add(createBoolMenuItem {engText = "Send MiddleClick"; id = Some(DataID.sendMiddleClick)} (isSingleTrigger())) |> ignore
+    items.Add(createBoolMenuItem {engText = "Dragged Lock"; id = Some(DataID.draggedLock)} (isDragTrigger())) |> ignore
 
     menu
 
-let private getOnOffText (b: bool) = if b then "ON" else "OFF"
+let private getOnOffText (b: bool) =
+    //if b then "ON (-->> OFF)" else "OFF (-->> ON)"
+    "ON / OFF"
 
-let private createOnOffMenuItem (vname:string) (action: bool -> unit) =
-    let item = new ToolStripMenuItem(getOnOffText(getBooleanOfName vname))
+let private createOnOffMenuItem (id:string) (action: bool -> unit) =
+    //let item = new ToolStripMenuItem(getOnOffText(getBooleanOfName id))
+    let item = createMenuItem {engText = getOnOffText(getBooleanOfName id); id = Some(id)}
     item.CheckOnClick <- true
-    boolMenuDict.[vname] <- item
+    boolMenuDict.[id] <- item
 
     addClick item (fun _ ->
         let b  = item.Checked
-        item.Text <- getOnOffText b
-        setBooleanOfName vname b
+        item.Text <- convLang(getOnOffText b)
+        setBooleanOfName id b
         action(b)
     )
 
-let private createOnOffMenuItemNA (vname:string) =
-    createOnOffMenuItem vname (fun _ -> ())
+let private createOnOffMenuItemNA (id:string) =
+    createOnOffMenuItem id (fun _ -> ())
 
 let private setAccelMultiplier name =
     Debug.WriteLine("setAccelMultiplier " + name)
     Accel.Multiplier <- getAccelMultiplierOfName name
 
-let private createAccelMenuItem text =
-    let item = new ToolStripMenuItem(text, null)
-    let name = textToName text
-    accelMenuDict.[name] <- item
-    addClickDictMenuItem item accelMenuDict (fun _ -> setAccelMultiplier name)
-
 let private createAccelTableMenu () =
-    let menu = new ToolStripMenuItem("Accel Table")
+    let menu = createMenuItem_NonID "Accel Table"
     let items = menu.DropDownItems
-    let add name = items.Add(createAccelMenuItem name) |> ignore
+    let create = fun text ->
+        let data = {engText = text; id = Some(getFirstWord text)}
+        createDictMenuItem data accelMenuDict setAccelMultiplier
+    let add = fun text -> items.Add(create text) |> ignore
 
-    items.Add(createOnOffMenuItemNA "accelTable") |> ignore
+    items.Add(createOnOffMenuItemNA DataID.accelTable) |> ignore
     addSeparator items
 
-    add "M5 (1.0 ... 4.8)"
-    add "M6 (1.2 ... 5.8)"
-    add "M7 (1.4 ... 6.7)"
-    add "M8 (1.6 ... 7.7)"
-    add "M9 (1.8 ... 8.7)"
+    add (DataID.M5 + " (1.0 ... 4.8)")
+    add (DataID.M6 + " (1.2 ... 5.8)")
+    add (DataID.M7 + " (1.4 ... 6.7)")
+    add (DataID.M8 + " (1.6 ... 7.7)")
+    add (DataID.M9 + " (1.8 ... 8.7)")
     addSeparator items
 
-    items.Add(createBoolMenuItem "customAccelTable" "Custom Table" (not Accel.CustomDisabled)) |> ignore
+    items.Add(createBoolMenuItem {engText = "Custom Table"; id = Some(DataID.customAccelTable)} (not Accel.CustomDisabled)) |> ignore
     
     menu
 
@@ -712,129 +830,135 @@ let private setPriority name =
     Volatile.Write(processPriority, p)
     ProcessPriority.setPriority p
 
-let private createPriorityMenuItem name =
-    let item = new ToolStripMenuItem(name, null)
-    priorityMenuDict.[name] <- item
-    addClickDictMenuItem item priorityMenuDict (fun _ -> setPriority name)
-
 let private createPriorityMenu () =
-    let menu = new ToolStripMenuItem("Priority")
-    let add name = menu.DropDownItems.Add(createPriorityMenuItem name) |> ignore
+    let menu = createMenuItem_NonID "Priority"
+    let create = fun name id ->
+        let data = {engText = name; id = Some(id)}
+        createDictMenuItem data priorityMenuDict setPriority
+    let add = fun name id -> menu.DropDownItems.Add(create name id) |> ignore
 
-    add "High"
-    add "Above Normal"
-    add "Normal"
+    add "High" DataID.High
+    add "Above Normal" DataID.AboveNormal
+    add "Normal" DataID.Normal
 
     menu
 
 let private getNumberOfName (name: string): int =
     match name with
-    | "pollTimeout" -> Volatile.Read(pollTimeout)
-    | "scrollLocktime" -> Scroll.LockTime
-    | "verticalThreshold" -> Threshold.Vertical
-    | "horizontalThreshold" -> Threshold.Horizontal
-    | "wheelDelta" -> RealWheel.WheelDelta
-    | "vWheelMove" -> RealWheel.VWheelMove
-    | "hWheelMove" -> RealWheel.HWheelMove
-    | "firstMinThreshold" -> VHAdjuster.FirstMinThreshold
-    | "switchingThreshold" -> VHAdjuster.SwitchingThreshold
+    | DataID.pollTimeout -> Volatile.Read(pollTimeout)
+    | DataID.scrollLocktime -> Scroll.LockTime
+    | DataID.verticalThreshold -> Threshold.Vertical
+    | DataID.horizontalThreshold -> Threshold.Horizontal
+    | DataID.wheelDelta -> RealWheel.WheelDelta
+    | DataID.vWheelMove -> RealWheel.VWheelMove
+    | DataID.hWheelMove -> RealWheel.HWheelMove
+    | DataID.firstMinThreshold -> VHAdjuster.FirstMinThreshold
+    | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold
     | e -> raise (ArgumentException(e))
 
 let private setNumberOfName (name: string) (n: int): unit =
     Debug.WriteLine(sprintf "setNumber: %s = %d" name n)
     match name with
-    | "pollTimeout" -> Volatile.Write(pollTimeout, n)
-    | "scrollLocktime" -> Scroll.LockTime <- n
-    | "verticalThreshold" -> Threshold.Vertical <- n
-    | "horizontalThreshold" -> Threshold.Horizontal <- n
-    | "wheelDelta" -> RealWheel.WheelDelta <- n
-    | "vWheelMove" -> RealWheel.VWheelMove <- n
-    | "hWheelMove" -> RealWheel.HWheelMove <- n
-    | "firstMinThreshold" -> VHAdjuster.FirstMinThreshold <- n
-    | "switchingThreshold" -> VHAdjuster.SwitchingThreshold <- n
+    | DataID.pollTimeout -> Volatile.Write(pollTimeout, n)
+    | DataID.scrollLocktime -> Scroll.LockTime <- n
+    | DataID.verticalThreshold -> Threshold.Vertical <- n
+    | DataID.horizontalThreshold -> Threshold.Horizontal <- n
+    | DataID.wheelDelta -> RealWheel.WheelDelta <- n
+    | DataID.vWheelMove -> RealWheel.VWheelMove <- n
+    | DataID.hWheelMove -> RealWheel.HWheelMove <- n
+    | DataID.firstMinThreshold -> VHAdjuster.FirstMinThreshold <- n
+    | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold <- n
     | e -> raise (ArgumentException(e))
 
 let private makeNumberText (name: string) (num: int) =
-    sprintf "%s = %d" name num
+    sprintf "%s = %d" (convLang name) num
 
 let private createNumberMenuItem name low up =
-    let item = new ToolStripMenuItem(name, null)
+    let item = createMenuItem {engText = name; id = Some(name)}
     numberMenuDict.[name] <- item
 
     addClick item (fun _ ->
         let cur = getNumberOfName name
-        let num = Dialog.openNumberInputBox name low up cur
-        num |> Option.iter (fun n ->
+        let num = Dialog.openNumberInputBox (convLang name) (convLang "Set Number") low up cur
+        match num with
+        | Ok n ->
             setNumberOfName name n
             item.Text <- makeNumberText name n
-        )
+        | Error s ->
+            if s <> "" then
+                Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Number") s) (convLang "Error")
     )
 
 let private createSetNumberMenu () =
-    let menu = new ToolStripMenuItem("Set Number")
-    let add name low up = menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
+    let menu = createMenuItem_NonID "Set Number"
+    let add = fun name low up ->
+        menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
 
-    add "pollTimeout" 150 500
-    add "scrollLocktime" 150 500
+    add DataID.pollTimeout 150 500
+    add DataID.scrollLocktime 150 500
     addSeparator menu.DropDownItems
 
-    add "verticalThreshold" 0 500
-    add "horizontalThreshold" 0 500
+    add DataID.verticalThreshold 0 500
+    add DataID.horizontalThreshold 0 500
 
     menu
 
 let private createRealWheelModeMenu () =
-    let menu = new ToolStripMenuItem("Real Wheel Mode")
+    let menu = createMenuItem_NonID "Real Wheel Mode"
     let items = menu.DropDownItems
-    let addNum name low up = items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool name = items.Add(createBoolMenuItemS name) |> ignore
+    let addNum = fun name low up ->
+        items.Add(createNumberMenuItem name low up) |> ignore
+    let addBool = fun name ->
+        items.Add(createBoolMenuItemS name) |> ignore
 
-    items.Add(createOnOffMenuItemNA "realWheelMode") |> ignore
+    items.Add(createOnOffMenuItemNA DataID.realWheelMode) |> ignore
     addSeparator items
 
-    addNum "wheelDelta" 10 500
-    addNum "vWheelMove" 10 500
-    addNum "hWheelMove" 10 500
+    addNum DataID.wheelDelta 10 500
+    addNum DataID.vWheelMove 10 500
+    addNum DataID.hWheelMove 10 500
     addSeparator items
         
-    addBool "quickFirst"
-    addBool "quickTurn"
+    addBool DataID.quickFirst
+    addBool DataID.quickTurn
         
     menu
 
 let private getVhAdjusterMethodOfName name =
     match name with
-    | "Fixed" -> Fixed
-    | "Switching" -> Switching
+    | DataID.Fixed -> Fixed
+    | DataID.Switching -> Switching
     | _ -> raise (ArgumentException())
 
 let private setVhAdjusterMethod name =
     Debug.WriteLine("setVhAdjusterMethod: " + name)
     VHAdjuster.Method <- (getVhAdjusterMethodOfName name)
 
-let private createVhAdjusterMenuItem name =
-    let item = new ToolStripMenuItem(name, null)
-    vhAdjusterMenuDict.[name] <- item
-    addClickDictMenuItem item vhAdjusterMenuDict (fun _ -> setVhAdjusterMethod name)
-
 let private createVhAdjusterMenu () =
-    let menu = new ToolStripMenuItem("VH Adjuster")
+    let menu = createMenuItem_NonID "VH Adjuster"
     let items = menu.DropDownItems
-    let add name = items.Add(createVhAdjusterMenuItem name) |> ignore
-    let addNum name low up = items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool name = items.Add(createBoolMenuItemS name) |> ignore
 
-    items.Add(createOnOffMenuItemNA "vhAdjusterMode") |> ignore
-    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
+    let create = fun text ->
+        let data = {engText = text; id = Some(text)}
+        createDictMenuItem data vhAdjusterMenuDict setVhAdjusterMethod
+    let add = fun name -> items.Add(create name) |> ignore
+
+    let addNum = fun name low up ->
+        items.Add(createNumberMenuItem name low up) |> ignore
+    let addBool = fun name ->
+        items.Add(createBoolMenuItemS name) |> ignore
+
+    items.Add(createOnOffMenuItemNA DataID.vhAdjusterMode) |> ignore
+    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
     addSeparator items
 
-    add "Fixed"
-    add "Switching"
+    add DataID.Fixed
+    add DataID.Switching
     addSeparator items
 
-    addBool "firstPreferVertical"
-    addNum "firstMinThreshold" 1 10
-    addNum "switchingThreshold" 10 500
+    addBool DataID.firstPreferVertical
+    addNum DataID.firstMinThreshold 1 10
+    addNum DataID.switchingThreshold 10 500
 
     menu
 
@@ -842,76 +966,78 @@ let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
     Volatile.Write(targetVKCode, Keyboard.getVKCode name)
 
-let private createKeyboardMenuItem text =
-    let item = new ToolStripMenuItem(text, null)
-    let name = textToName text
-    keyboardMenuDict.[name] <- item
-    addClickDictMenuItem item keyboardMenuDict (fun _ -> setTargetVKCode name)
+
 
 let private createKeyboardMenu () =
-    let menu = new ToolStripMenuItem("Keyboard")
+    let menu = createMenuItem_NonID "Keyboard"
     let items = menu.DropDownItems
-    let add text = items.Add(createKeyboardMenuItem text) |> ignore
 
-    items.Add(createOnOffMenuItem "keyboardHook" WinHook.setOrUnsetKeyboardHook) |> ignore
+    let create = fun text ->
+        let data = {engText = text; id = Some(getFirstWord(text))}
+        createDictMenuItem data keyboardMenuDict setTargetVKCode
+    let add = fun text -> items.Add(create text) |> ignore
+
+    items.Add(createOnOffMenuItem DataID.keyboardHook WinHook.setOrUnsetKeyboardHook) |> ignore
     addSeparator items
 
-    add "VK_TAB (Tab)"
-    add "VK_PAUSE (Pause)"
-    add "VK_CAPITAL (Caps Lock)"
-    add "VK_CONVERT (Henkan)"
-    add "VK_NONCONVERT (Muhenkan)"
-    add "VK_PRIOR (Page Up)"
-    add "VK_NEXT (Page Down)"
-    add "VK_END (End)"
-    add "VK_HOME (Home)"
-    add "VK_SNAPSHOT (Print Screen)"
-    add "VK_INSERT (Insert)"
-    add "VK_DELETE (Delete)"
-    add "VK_LWIN (Left Windows)"
-    add "VK_RWIN (Right Windows)"
-    add "VK_APPS (Application)"
-    add "VK_NUMLOCK (Number Lock)"
-    add "VK_SCROLL (Scroll Lock)"
-    add "VK_LSHIFT (Left Shift)"
-    add "VK_RSHIFT (Right Shift)"
-    add "VK_LCONTROL (Left Ctrl)"
-    add "VK_RCONTROL (Right Ctrl)"
-    add "VK_LMENU (Left Alt)"
-    add "VK_RMENU (Right Alt)"
+    add (DataID.VK_TAB + " (Tab)")
+    add (DataID.VK_PAUSE + " (Pause)")
+    add (DataID.VK_CAPITAL + " (Caps Lock)")
+    add (DataID.VK_CONVERT + " (Henkan)")
+    add (DataID.VK_NONCONVERT + " (Muhenkan)")
+    add (DataID.VK_PRIOR + " (Page Up)")
+    add (DataID.VK_NEXT + " (Page Down)")
+    add (DataID.VK_END + " (End)")
+    add (DataID.VK_HOME + " (Home)")
+    add (DataID.VK_SNAPSHOT + " (Print Screen)")
+    add (DataID.VK_INSERT + " (Insert)")
+    add (DataID.VK_DELETE + " (Delete)")
+    add (DataID.VK_LWIN + " (Left Windows)")
+    add (DataID.VK_RWIN + " (Right Windows)")
+    add (DataID.VK_APPS + " (Application)")
+    add (DataID.VK_NUMLOCK + " (Number Lock)")
+    add (DataID.VK_SCROLL + " (Scroll Lock)")
+    add (DataID.VK_LSHIFT + " (Left Shift)")
+    add (DataID.VK_RSHIFT + " (Right Shift)")
+    add (DataID.VK_LCONTROL + " (Left Ctrl)")
+    add (DataID.VK_RCONTROL + " (Right Ctrl)")
+    add (DataID.VK_LMENU + " (Left Alt)")
+    add (DataID.VK_RMENU + " (Right Alt)")
+
     addSeparator items
-    add "None"
+    add DataID.None
 
     menu
 
 let private createCursorChangeMenuItem () =
-    createBoolMenuItem "cursorChange" "Cursor Change" true
+    createBoolMenuItem {engText = "Cursor Change"; id = Some(DataID.cursorChange)} true
 
 let private createHorizontalScrollMenuItem () =
-    let item = createBoolMenuItem "horizontalScroll" "Horizontal Scroll" true
+    let item = createBoolMenuItem {engText = "Horizontal Scroll"; id = Some(DataID.horizontalScroll)} true
     addClick item (fun _ ->
-        boolMenuDict.["vhAdjusterMode"].Enabled <- item.Checked
+        boolMenuDict.[DataID.vhAdjusterMode].Enabled <- item.Checked
     )
 
 let private createReverseScrollMenuItem () =
-    createBoolMenuItem "reverseScroll" "Reverse Scroll (Flip)" true
+    createBoolMenuItem {engText = "Reverse Scroll (Flip)"; id = Some(DataID.reverseScroll)} true
 
 let private createSwapScrollMenuItem () =
-    createBoolMenuItem "swapScroll" "Swap Scroll (V.H)" true
+    createBoolMenuItem {engText = "Swap Scroll (V.H)"; id = Some(DataID.swapScroll)} true
 
 let private createPassModeMenuItem () =
-    let event = makeSetBooleanEvent "passMode"
-    let item = new ToolStripMenuItem("Pass Mode", null, event)
+    let id = DataID.passMode
+    let item = createMenuItem {engText = "Pass Mode"; id = Some(id)}
+    item.Click.AddHandler(new EventHandler(makeSetBooleanEvent id))
     item.CheckOnClick <- true
     passModeMenuItem <- item
     item
 
 let private createInfoMenuItem () =
-    let item = new ToolStripMenuItem("Info")
+    let item = createMenuItem_NonID "Info"
 
     addClick item (fun _ ->
-        let msg = sprintf "Name: %s / Version: %s" AppDef.PROGRAM_NAME_NET AppDef.PROGRAM_VERSION
-        MessageBox.Show(msg, "Info", MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
+        let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
+        MessageBox.Show(msg, convLang("Info"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
 
 let exitAction () =
@@ -919,7 +1045,8 @@ let exitAction () =
     Application.Exit()
 
 let private createExitMenuItem (): ToolStripMenuItem =
-    let item = new ToolStripMenuItem("Exit", null, fun _ _ -> exitAction())
+    let item = createMenuItem_NonID "Exit"
+    item.Click.AddHandler(new EventHandler(fun _ _ -> exitAction()))
     item
 
 let private setDefaultPriority () =
@@ -931,57 +1058,85 @@ let private setDefaultTrigger () =
     setTrigger(getFirstTrigger().Name)
 
 let private NumberNames: string[] =
-    [|"pollTimeout"; "scrollLocktime";
-      "verticalThreshold"; "horizontalThreshold";
-      "wheelDelta"; "vWheelMove"; "hWheelMove";
-      "firstMinThreshold"; "switchingThreshold"|]
+    [|DataID.pollTimeout; DataID.scrollLocktime;
+      DataID.verticalThreshold; DataID.horizontalThreshold;
+      DataID.wheelDelta; DataID.vWheelMove; DataID.hWheelMove;
+      DataID.firstMinThreshold; DataID.switchingThreshold|]
 
 let private BooleanNames: string[] =
-    [|"realWheelMode"; "cursorChange";
-     "horizontalScroll"; "reverseScroll";
-     "quickFirst"; "quickTurn";
-     "accelTable"; "customAccelTable";
-     "draggedLock"; "swapScroll";
-     "sendMiddleClick"; "keyboardHook";
-     "vhAdjusterMode"; "firstPreferVertical"|]
+    [|DataID.realWheelMode; DataID.cursorChange;
+     DataID.horizontalScroll; DataID.reverseScroll;
+     DataID.quickFirst; DataID.quickTurn;
+     DataID.accelTable; DataID.customAccelTable;
+     DataID.draggedLock; DataID.swapScroll;
+     DataID.sendMiddleClick; DataID.keyboardHook;
+     DataID.vhAdjusterMode; DataID.firstPreferVertical|]
 
 let private OnOffNames: string[] =
-    [|"realWheelMode"; "accelTable"; "keyboardHook"; "vhAdjusterMode"|]
+    [|DataID.realWheelMode; DataID.accelTable; DataID.keyboardHook; DataID.vhAdjusterMode|]
 
-let private resetDictMenuItems (dict: Dictionary<string, ToolStripMenuItem>) pred =
+let private resetDictMenuItems (dict: MenuDict) pred =
     Debug.WriteLine("resetDictMenuItems")
-    for KeyValue(name, item) in dict do
+    for KeyValue(id, item) in dict do
         item.CheckState <-
-            if pred name then
+            if pred id then
                 CheckState.Indeterminate
             else
                 CheckState.Unchecked
 
 let private resetTriggerMenuItems () =
     resetDictMenuItems triggerMenuDict
-        (fun name -> Mouse.getTriggerOfStr name = getFirstTrigger())
+        (fun id -> Mouse.getTriggerOfStr id = getFirstTrigger())
 
 let private resetAccelMenuItems () =
     resetDictMenuItems accelMenuDict
-        (fun name -> name = Accel.Multiplier.Name)
+        (fun id -> id = Accel.Multiplier.Name)
 
 let private resetPriorityMenuItems () =
     resetDictMenuItems priorityMenuDict
-        (fun name -> ProcessPriority.getPriority name = getProcessPriority())
+        (fun id -> ProcessPriority.getPriority id = getProcessPriority())
+
+let private resetLanguageMenuItems () =
+    resetDictMenuItems languageMenuDict
+        (fun id -> id = getUILanguage())
 
 let private resetKeyboardMenuItems () =
     resetDictMenuItems keyboardMenuDict
-        (fun name -> Keyboard.getVKCode name = getTargetVKCode())
+        (fun id -> Keyboard.getVKCode id = getTargetVKCode())
 
 let private resetVhAdjusterMenuItems () =
-    boolMenuDict.["vhAdjusterMode"].Enabled <- Scroll.Horizontal
+    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
     resetDictMenuItems vhAdjusterMenuDict
-        (fun name -> getVhAdjusterMethodOfName name = getVhAdjusterMethod())
+        (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod())
 
 let private resetNumberMenuItems () =
-    for KeyValue(name, item) in numberMenuDict do
-        let num = getNumberOfName name
-        item.Text <- makeNumberText name num
+    for KeyValue(id, item) in numberMenuDict do
+        let num = getNumberOfName id
+        item.Text <- makeNumberText id num
+
+let private isCreatedMenuItems (): bool =
+    notifyIcon.ContextMenuStrip <> null
+
+let private setUILanguage lang =
+    Debug.WriteLine("setUILanguage: " + lang)
+    let reset = lang <> getUILanguage()
+    Volatile.Write(uiLanguage, lang)
+
+    if reset && isCreatedMenuItems() then
+        resetMenuText()
+        resetNumberMenuItems()
+
+let private createLanguageMenu () =
+    let menu = createMenuItem_NonID "Language"
+    let create = fun text id ->
+        createDictMenuItem {engText = text; id = Some(id)} languageMenuDict setUILanguage
+    let add = fun text id ->
+        menu.DropDownItems.Add(create text id) |> ignore
+
+    add "English" DataID.English
+    add "Japanese" DataID.Japanese
+
+    menu 
 
 let private resetBoolNumberMenuItems () =
     for KeyValue(name, item) in boolMenuDict do
@@ -990,7 +1145,7 @@ let private resetBoolNumberMenuItems () =
 let private resetOnOffMenuItems () =
     OnOffNames |> Array.iter (fun name ->
         let item = boolMenuDict.[name]
-        item.Text <- getOnOffText(getBooleanOfName name)
+        item.Text <- convLang(getOnOffText(getBooleanOfName name))
     )
 
 let private resetAllMenuItems () =
@@ -999,6 +1154,7 @@ let private resetAllMenuItems () =
     resetKeyboardMenuItems()
     resetAccelMenuItems()
     resetPriorityMenuItems()
+    resetLanguageMenuItems()
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
     resetVhAdjusterMenuItems()
@@ -1006,24 +1162,23 @@ let private resetAllMenuItems () =
 
 let private prop = Properties.Properties()
 
-let private setTriggerOfProperty (): unit =
+let private setStringOfProperty name setFunc =
     try
-        setTrigger(prop.GetString("firstTrigger"))
+        setFunc(prop.GetString(name))
     with
         | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
         | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
 
+let private setTriggerOfProperty (): unit =
+    setStringOfProperty DataID.firstTrigger setTrigger
+
 let private setAccelOfProperty (): unit =
-    try
-        setAccelMultiplier(prop.GetString "accelMultiplier")
-    with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
+    setStringOfProperty DataID.accelMultiplier setAccelMultiplier
 
 let private setCustomAccelOfProperty (): unit =
     try
-        let cat = prop.GetIntArray("customAccelThreshold")
-        let cam = prop.GetDoubleArray("customAccelMultiplier")
+        let cat = prop.GetIntArray(DataID.customAccelThreshold)
+        let cam = prop.GetDoubleArray(DataID.customAccelMultiplier)
 
         if cat.Length <> 0 && cat.Length = cam.Length then
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
@@ -1038,7 +1193,7 @@ let private setCustomAccelOfProperty (): unit =
 
 let private setPriorityOfProperty (): unit =
     try
-        setPriority (prop.GetString "processPriority")
+        setPriority (prop.GetString DataID.processPriority)
     with
         | :? KeyNotFoundException as e ->
             Debug.WriteLine("Not found " + e.Message)
@@ -1048,18 +1203,13 @@ let private setPriorityOfProperty (): unit =
             setDefaultPriority()
 
 let private setVKCodeOfProperty (): unit =
-    try
-        setTargetVKCode (prop.GetString "targetVKCode")
-    with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
+    setStringOfProperty DataID.targetVKCode setTargetVKCode
 
 let private setVhAdjusterMethodOfProperty (): unit =
-    try
-        setVhAdjusterMethod (prop.GetString "vhAdjusterMethod")
-    with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
+    setStringOfProperty DataID.vhAdjusterMethod setVhAdjusterMethod
+
+let private setUILanguageOfProperty (): unit =
+    setStringOfProperty DataID.uiLanguage setUILanguage
 
 let private setBooleanOfProperty (name: string): unit =
     try
@@ -1072,6 +1222,7 @@ let private setBooleanOfProperty (name: string): unit =
 let private setNumberOfProperty (name:string) (low:int) (up:int) =
     try
         let n = prop.GetInt name
+        Debug.WriteLine(sprintf "setNumberOfProperty: %s: %d" name n)
         if n < low || n > up then
             Debug.WriteLine("Nomber out of bounds: " + name)
         else
@@ -1098,22 +1249,24 @@ let loadProperties (): unit =
         setPriorityOfProperty()
         setVKCodeOfProperty()
         setVhAdjusterMethodOfProperty()
+        setUILanguageOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
         WinHook.setOrUnsetKeyboardHook (Volatile.Read(keyboardHook))
 
+        Debug.WriteLine("setNumberOfProperties")
         let setNum = setNumberOfProperty
-        setNum "pollTimeout" 50 500
-        setNum "scrollLocktime" 150 500
-        setNum "verticalThreshold" 0 500
-        setNum "horizontalThreshold" 0 500
-            
-        setNum "wheelDelta" 10 500
-        setNum "vWheelMove" 10 500
-        setNum "hWheelMove" 10 500
+        setNum DataID.pollTimeout 50 500
+        setNum DataID.scrollLocktime 150 500
+        setNum DataID.verticalThreshold 0 500
+        setNum DataID.horizontalThreshold 0 500
 
-        setNum "firstMinThreshold" 1 10
-        setNum "switchingThreshold" 10 500
+        setNum DataID.wheelDelta 10 500
+        setNum DataID.vWheelMove 10 500
+        setNum DataID.hWheelMove 10 500
+
+        setNum DataID.firstMinThreshold 1 10
+        setNum DataID.switchingThreshold 10 500
     with
         | :? FileNotFoundException ->
             Debug.WriteLine("Properties file not found")
@@ -1134,12 +1287,14 @@ let private isChangedProperties () =
             Array.map (fun n -> (prop.GetInt n) <> getNumberOfName n) |>
             Array.contains true
 
-        let check n v = prop.GetString(n) <> v
-        check "firstTrigger" (getFirstTrigger().Name) ||
-        check "accelMultiplier" (Accel.Multiplier.Name) ||
-        check "processPriority" (getProcessPriority().Name) ||
-        check "targetVKCode" (Keyboard.getName(getTargetVKCode())) ||
-        check "vhAdjusterMethod" (getVhAdjusterMethod().Name) ||
+        let check = fun n v -> prop.GetString(n) <> v
+
+        check DataID.firstTrigger (getFirstTrigger().Name) ||
+        check DataID.accelMultiplier (Accel.Multiplier.Name) ||
+        check DataID.processPriority (getProcessPriority().Name) ||
+        check DataID.targetVKCode (Keyboard.getName(getTargetVKCode())) ||
+        check DataID.vhAdjusterMethod (getVhAdjusterMethod().Name) ||
+        check DataID.uiLanguage (getUILanguage()) ||
         isChangedBoolean() || isChangedNumber() 
     with
         | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
@@ -1151,12 +1306,14 @@ let storeProperties () =
         if not loaded || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
-            let set key value = prop.[key] <- value
-            set "firstTrigger" (getFirstTrigger().Name)
-            set "accelMultiplier" (Accel.Multiplier.Name)
-            set "processPriority" (getProcessPriority().Name)
-            set "targetVKCode" (Keyboard.getName (getTargetVKCode()))
-            set "vhAdjusterMethod" (getVhAdjusterMethod().Name)
+            let set = fun key value -> prop.[key] <- value
+
+            set DataID.firstTrigger (getFirstTrigger().Name)
+            set DataID.accelMultiplier (Accel.Multiplier.Name)
+            set DataID.processPriority (getProcessPriority().Name)
+            set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
+            set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
+            set DataID.uiLanguage (getUILanguage())
 
             BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
             NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
@@ -1170,15 +1327,15 @@ let reloadProperties () =
     resetAllMenuItems()
 
 let private createReloadPropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Reload")
+    let item = createMenuItem_NonID "Reload"
     addClick item (fun _ -> reloadProperties ())
 
 let private createSavePropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Save")
+    let item = createMenuItem_NonID "Save"
     addClick item (fun _ -> storeProperties())
 
 let private createOpenDirMenuItem (dir: string) =
-    let item = new ToolStripMenuItem("Open Dir")
+    let item = createMenuItem_NonID "Open Dir"
     addClick item (fun _ -> Process.Start(dir) |> ignore)
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
@@ -1187,9 +1344,9 @@ let private isValidPropertiesName name =
     (name <> DEFAULT_DEF) && not (name.StartsWith("--"))
 
 let private createAddPropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Add")
+    let item = createMenuItem_NonID "Add"
     addClick item (fun _ ->
-        let res = Dialog.openTextInputBox "Properties Name" "Add Properties"
+        let res = Dialog.openTextInputBox (convLang "Properties Name") (convLang "Add Properties")
 
         try
             res |> Option.iter (fun name ->
@@ -1198,14 +1355,14 @@ let private createAddPropertiesMenuItem () =
                     Properties.copy (getSelectedProperties()) name
                     setSelectedProperties name
                 else
-                    Dialog.errorMessage ("Invalid Name: " + name) "Name Error"
+                    Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
             )
         with
             | e -> Dialog.errorMessageE e 
     )
 
 let private openYesNoMessage msg =
-    let res = MessageBox.Show(msg, "Question", MessageBoxButtons.YesNo, MessageBoxIcon.Information)
+    let res = MessageBox.Show(msg, (convLang "Question"), MessageBoxButtons.YesNo, MessageBoxIcon.Information)
     res = DialogResult.Yes
 
 let private setProperties name =
@@ -1217,12 +1374,12 @@ let private setProperties name =
         resetAllMenuItems()
 
 let private createDeletePropertiesMenuItem () =
-    let item = new ToolStripMenuItem("Delete")
+    let item = createMenuItem_NonID "Delete"
     let name = getSelectedProperties()
     item.Enabled <- (name <> DEFAULT_DEF)
     addClick item (fun _ ->
         try
-            if openYesNoMessage (sprintf "Delete the '%s' properties?" name) then
+            if openYesNoMessage (sprintf "%s: %s" (convLang "Delete properties") name) then
                 Properties.delete name
                 setProperties DEFAULT_DEF
         with
@@ -1230,7 +1387,7 @@ let private createDeletePropertiesMenuItem () =
     )
 
 let private createPropertiesMenuItem (name: string) =
-    let item = new ToolStripMenuItem(name)
+    let item = createMenuItem_NonID name
     item.CheckState <-
         if name = getSelectedProperties() then
             CheckState.Indeterminate
@@ -1243,13 +1400,13 @@ let private createPropertiesMenuItem (name: string) =
     )
 
 let private createPropertiesMenu () =
-    let menu = new ToolStripMenuItem("Properties")
+    let menu = createMenuItem_NonID "Properties"
     let items = menu.DropDownItems
     addSeparator items
 
-    let addItem (menuItem: ToolStripMenuItem) = items.Add(menuItem) |> ignore
-    let addDefault () = addItem (createPropertiesMenuItem DEFAULT_DEF)
-    let add path = addItem (createPropertiesMenuItem (Properties.getUserDefName path))
+    let addItem = fun (menuItem: ToolStripMenuItem) -> items.Add(menuItem) |> ignore
+    let addDefault = fun () -> addItem (createPropertiesMenuItem DEFAULT_DEF)
+    let add = fun path -> addItem (createPropertiesMenuItem (Properties.getUserDefName path))
 
     menu.DropDownOpening.Add(fun _ ->
         items.Clear()
@@ -1273,7 +1430,7 @@ let private createPropertiesMenu () =
 
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
-    let add (item: ToolStripMenuItem) = menu.Items.Add(item) |> ignore
+    let add = fun (item: ToolStripMenuItem) -> menu.Items.Add(item) |> ignore
     add (createTriggerMenu())
     add (createKeyboardMenu())
     addSeparator menu.Items
@@ -1293,6 +1450,9 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createReverseScrollMenuItem())
     add (createSwapScrollMenuItem())
     add (createPassModeMenuItem())
+    addSeparator menu.Items
+
+    add (createLanguageMenu())
     add (createInfoMenuItem())
     add (createExitMenuItem())
 
@@ -1303,15 +1463,13 @@ let private createContextMenuStrip (): ContextMenuStrip =
 let mutable private contextMenu: ContextMenuStrip = null
 
 let setSystemTray (): unit =
-    let menu = createContextMenuStrip()
-
     let ni = notifyIcon
     ni.Icon <- getTrayIcon false
     ni.Text <- getTrayText false
     ni.Visible <- true
-    ni.ContextMenuStrip <- menu
+    ni.ContextMenuStrip <- createContextMenuStrip()
     ni.DoubleClick.Add (fun _ -> Pass.toggleMode())
-
+    
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
 let mutable private offerEW: MouseEvent -> bool = (fun me -> false)

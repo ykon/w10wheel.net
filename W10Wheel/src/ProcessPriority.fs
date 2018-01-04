@@ -16,9 +16,9 @@ type Priority =
     member self.Name = Mouse.getUnionCaseName(self)
 
 let getPriority = function
-    | "High" -> High
-    | "AboveNormal" | "Above Normal" -> AboveNormal
-    | "Normal" -> Normal
+    | DataID.High -> High
+    | DataID.AboveNormal | "Above Normal" -> AboveNormal
+    | DataID.Normal -> Normal
     | e -> raise (ArgumentException(e))
 
 let setPriority p =

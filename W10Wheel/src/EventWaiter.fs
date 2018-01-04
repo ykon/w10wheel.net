@@ -23,7 +23,7 @@ type private SynchronousQueue() =
 
     member self.poll (timeout: int): MouseEvent option =
         let ts = new TimeSpan(0, 0, 0, 0, timeout)
-        let mutable res = NoneEvent
+        let mutable res = NonEvent
 
         try
             if sync.TryTake(&res, ts) then Some(res) else None
@@ -31,7 +31,7 @@ type private SynchronousQueue() =
             waiting <- false
 
     member self.offer (e: MouseEvent): bool =
-        let mutable res = NoneEvent
+        let mutable res = NonEvent
 
         if waiting then
             if not (sync.TryAdd(e)) then
@@ -52,7 +52,7 @@ type private SynchronousQueue() =
 let private THREAD_PRIORITY = ThreadPriority.AboveNormal
 
 //let private waiting = ref false
-let mutable private waitingEvent = NoneEvent
+let mutable private waitingEvent = NonEvent
 
 let private sync = new SynchronousQueue()
 

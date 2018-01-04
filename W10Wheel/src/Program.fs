@@ -9,8 +9,11 @@ open System.Threading
 open System.Windows.Forms
 open Microsoft.Win32
 
+let private convLang msg =
+    Ctx.convLang msg
+
 let private messageDoubleLaunch () =
-    MessageBox.Show("Double Launch?", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
+    MessageBox.Show(convLang "Double Launch?", convLang "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
 let private procExit () =
     Debug.WriteLine("procExit")
@@ -34,10 +37,10 @@ let private setSelectedProperties name =
     if Properties.exists(name) then
         Ctx.setSelectedProperties name
     else
-        Dialog.errorMessage (sprintf "'%s' properties does not exist." name) "Error"
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Properties does not exist") name) (convLang "Error")
 
 let private unknownCommand name =
-    Dialog.errorMessage ("Unknown Command: " + name) "Command Error"
+    Dialog.errorMessage (sprintf "%s: %s" (convLang "Unknown Command") name) (convLang "Command Error")
     Environment.Exit(1)
 
 let private procArgv (argv: string[]) =
@@ -82,7 +85,7 @@ let main argv =
     Ctx.loadProperties ()
     Ctx.setSystemTray ()
     if not (WinHook.setMouseHook ()) then
-        Dialog.errorMessage ("Failed mouse hook install: " + WinError.getLastErrorMessage()) "Error"
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") (WinError.getLastErrorMessage())) (convLang "Error")
         Environment.Exit(1)
 
     Application.Run()

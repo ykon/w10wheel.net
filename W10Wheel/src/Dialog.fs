@@ -20,14 +20,14 @@ let private isValidNumber input low up =
     | (true, res) -> res >= low && res <= up 
     | _ -> false
 
-let openNumberInputBox name low up cur: int option =
+let openNumberInputBox name title low up cur =
     let msg = sprintf "%s (%d - %d)" name low up
     let dvalue = cur.ToString()
-    let input = Interaction.InputBox(msg, "Set Number", dvalue)
+    let input = Interaction.InputBox(msg, title, dvalue)
     if isValidNumber input low up then
-        Some(Int32.Parse(input))
+        Ok (Int32.Parse(input))
     else
-        None
+        Error (input)
 
 let openTextInputBox msg title: string option =
     let input = Interaction.InputBox(msg, title)

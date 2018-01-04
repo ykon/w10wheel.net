@@ -15,10 +15,10 @@ let setCallNextHook (f: unit -> nativeint): unit = __callNextHook <- f
 let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
-let mutable private lastEvent: KeyboardEvent = NoneEvent
+let mutable private lastEvent: KeyboardEvent = NonEvent
 
 let private initState () =
-    lastEvent <- NoneEvent
+    lastEvent <- NonEvent
 
 let setInitStateKEH () =
     Ctx.setInitStateKEH initState

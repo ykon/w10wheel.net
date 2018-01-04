@@ -19,18 +19,18 @@ let setCallNextHook (f: unit -> nativeint): unit = __callNextHook <- f
 let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
-let mutable private lastEvent: MouseEvent = NoneEvent
-let private lastResendLeftEvent: MouseEvent ref = ref NoneEvent
-let private lastResendRightEvent: MouseEvent ref = ref NoneEvent
+let mutable private lastEvent: MouseEvent = NonEvent
+let private lastResendLeftEvent: MouseEvent ref = ref NonEvent
+let private lastResendRightEvent: MouseEvent ref = ref NonEvent
 
 let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
 let private initState () =
-    lastEvent <- NoneEvent
-    lastResendLeftEvent := NoneEvent
-    lastResendRightEvent := NoneEvent
+    lastEvent <- NonEvent
+    lastResendLeftEvent := NonEvent
+    lastResendRightEvent := NonEvent
     resentDownUp <- false
     secondTriggerUp <- false
     dragged <- false
@@ -50,7 +50,7 @@ let private getLastResendEvent me =
 
 let private isCorrectOrder pre cur =
     match pre, cur with
-    | NoneEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NoneEvent, RightUp(_) | RightUp(_), RightUp(_) ->
+    | NonEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NonEvent, RightUp(_) | RightUp(_), RightUp(_) ->
         false
     | _ -> true
 

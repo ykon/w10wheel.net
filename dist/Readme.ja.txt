@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.6.5
+        2.7
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2018-01-04: v2.7.0: メニューとダイアログテキストの日本語化、水平スクロールバグ修正、他
         2017-12-10: v2.6.5: IOの高負荷状態に、入力キューが溢れていた問題を修正
         2017-10-15: v2.6.1: 細かい改良 (設定ファイル、コマンドライン引数、エラーハンドリング、デフォルト値変更)
         2017-07-17: v2.6.0: コマンド追加 (--sendReloadProp, --sendInitState)
@@ -58,7 +59,7 @@ URL:
         
 移植:
         Java版 (Scala) を .NET Framework (F#) に移植しました。
-        実行環境が違うだけで、ほとんどの動作は同一になります。
+        実行環境が違うだけで、ほとんどの動作は同一となります。
         また、設定ファイルも共有します。
         
 対応環境:
@@ -77,6 +78,7 @@ URL:
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
+        # 環境によっては駄目な場合もあるようです。
         「ボタンの切り替え」などをしてもうまく動きます。
         フィルタドライバのレベルで動いているものは、恐らく安全です。
         
@@ -179,6 +181,7 @@ URL:
         Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
         Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
         Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
+        Language: 言語設定
         Info: バージョン番号を表示
         Exit: 終了
         
@@ -292,7 +295,10 @@ URL:
         keyboardHook: bool (default: false) # Keyboard
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
-                トリガーに使うキー 
+                トリガーに使うキー
+          
+        uiLanguage: string (default: by system) # Language
+                UIの表示に使う言語設定
                 
 ライセンス:
         The MIT License

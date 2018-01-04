@@ -12,13 +12,13 @@ type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 type KeyboardEvent =
     | KeyDown of KHookInfo
     | KeyUp of KHookInfo
-    | NoneEvent
+    | NonEvent
 
     member self.Name = Mouse.getUnionCaseName(self) + (sprintf " (%d)" self.VKCode)
 
     member self.IsNone =
         match self with
-        | NoneEvent -> true
+        | NonEvent -> true
         | _ -> false
 
     member self.Info =
@@ -44,30 +44,30 @@ type KeyboardEvent =
 // https://msdn.microsoft.com/library/windows/desktop/dd375731
 let private vkCodeMap =
     Map.ofList <| [
-        ("None", 0)
-        ("VK_TAB", 0x09)
-        ("VK_PAUSE", 0x13)
-        ("VK_CAPITAL", 0x14)
-        ("VK_CONVERT", 0x1C)
-        ("VK_NONCONVERT", 0x1D)
-        ("VK_PRIOR", 0x21)
-        ("VK_NEXT", 0x22)
-        ("VK_END", 0x23)
-        ("VK_HOME", 0x24)
-        ("VK_SNAPSHOT", 0x2C)
-        ("VK_INSERT", 0x2D)
-        ("VK_DELETE", 0x2E)
-        ("VK_LWIN", 0x5B)
-        ("VK_RWIN", 0x5C)
-        ("VK_APPS", 0x5D)
-        ("VK_NUMLOCK", 0x90)
-        ("VK_SCROLL", 0x91)
-        ("VK_LSHIFT", 0xA0)
-        ("VK_RSHIFT", 0xA1)
-        ("VK_LCONTROL", 0xA2)
-        ("VK_RCONTROL", 0xA3)
-        ("VK_LMENU", 0xA4)
-        ("VK_RMENU", 0xA5) 
+        (DataID.None, 0)
+        (DataID.VK_TAB, 0x09)
+        (DataID.VK_PAUSE, 0x13)
+        (DataID.VK_CAPITAL, 0x14)
+        (DataID.VK_CONVERT, 0x1C)
+        (DataID.VK_NONCONVERT, 0x1D)
+        (DataID.VK_PRIOR, 0x21)
+        (DataID.VK_NEXT, 0x22)
+        (DataID.VK_END, 0x23)
+        (DataID.VK_HOME, 0x24)
+        (DataID.VK_SNAPSHOT, 0x2C)
+        (DataID.VK_INSERT, 0x2D)
+        (DataID.VK_DELETE, 0x2E)
+        (DataID.VK_LWIN, 0x5B)
+        (DataID.VK_RWIN, 0x5C)
+        (DataID.VK_APPS, 0x5D)
+        (DataID.VK_NUMLOCK, 0x90)
+        (DataID.VK_SCROLL, 0x91)
+        (DataID.VK_LSHIFT, 0xA0)
+        (DataID.VK_RSHIFT, 0xA1)
+        (DataID.VK_LCONTROL, 0xA2)
+        (DataID.VK_RCONTROL, 0xA3)
+        (DataID.VK_LMENU, 0xA4)
+        (DataID.VK_RMENU, 0xA5) 
     ]
 
 // http://stackoverflow.com/questions/30258611/swap-key-and-value-in-a-map-in-fsharp

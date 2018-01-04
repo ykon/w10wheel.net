@@ -62,6 +62,7 @@
     <EmbeddedResource Include="icon\TrayIcon-Stop.ico" />
     <Compile Include="src\AppDef.fs" />
     <Compile Include="src\AssemblyInfo.fs" />
+    <Compile Include="src\DataID.fs" />
     <Compile Include="src\PreventMultiInstance.fs" />
     <Compile Include="src\WinAPI.fs" />
     <Compile Include="src\WinError.fs" />
@@ -73,6 +74,8 @@
     <Compile Include="src\ProcessPriority.fs" />
     <Compile Include="src\Properties.fs" />
     <Compile Include="src\WinHook.fs" />
+    <Compile Include="src\LocaleData.fs" />
+    <Compile Include="src\Locale.fs" />
     <Compile Include="src\Ctx.fs" />
     <Compile Include="src\Windows.fs" />
     <Compile Include="src\EventWaiter.fs" />

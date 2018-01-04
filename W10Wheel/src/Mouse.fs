@@ -28,7 +28,7 @@ type MouseEvent =
     | X2Up of HookInfo
     | Move of HookInfo
     | Cancel
-    | NoneEvent
+    | NonEvent
 
     member self.Name = getUnionCaseName(self)
 
@@ -66,7 +66,7 @@ type MouseEvent =
 
     member self.IsNone =
         match self with
-        | NoneEvent -> true
+        | NonEvent -> true
         | _ -> false
 
     member self.SameEvent me2 =
@@ -175,18 +175,18 @@ let getTrigger = function
     | _ -> raise (ArgumentException())
 
 let getTriggerOfStr = function
-    | "LR" | "LRTrigger" -> LRTrigger
-    | "Left" | "LeftTrigger"  -> LeftTrigger
-    | "Right" | "RightTrigger" -> RightTrigger
-    | "Middle" | "MiddleTrigger" -> MiddleTrigger
-    | "X1" | "X1Trigger" -> X1Trigger
-    | "X2" | "X2Trigger" -> X2Trigger
-    | "LeftDrag" | "LeftDragTrigger" -> LeftDragTrigger
-    | "RightDrag" | "RightDragTrigger" -> RightDragTrigger
-    | "MiddleDrag" | "MiddleDragTrigger" -> MiddleDragTrigger
-    | "X1Drag" | "X1DragTrigger" -> X1DragTrigger
-    | "X2Drag" | "X2DragTrigger" -> X2DragTrigger
-    | "None" | "NoneTrigger" -> NoneTrigger
+    | DataID.LR | "LRTrigger" -> LRTrigger
+    | DataID.Left | "LeftTrigger"  -> LeftTrigger
+    | DataID.Right | "RightTrigger" -> RightTrigger
+    | DataID.Middle | "MiddleTrigger" -> MiddleTrigger
+    | DataID.X1 | "X1Trigger" -> X1Trigger
+    | DataID.X2 | "X2Trigger" -> X2Trigger
+    | DataID.LeftDrag | "LeftDragTrigger" -> LeftDragTrigger
+    | DataID.RightDrag | "RightDragTrigger" -> RightDragTrigger
+    | DataID.MiddleDrag | "MiddleDragTrigger" -> MiddleDragTrigger
+    | DataID.X1Drag | "X1DragTrigger" -> X1DragTrigger
+    | DataID.X2Drag | "X2DragTrigger" -> X2DragTrigger
+    | DataID.None | "NoneTrigger" -> NoneTrigger
     | e -> raise (ArgumentException(e))
 
 let samePoint (me1:MouseEvent) (me2:MouseEvent) =

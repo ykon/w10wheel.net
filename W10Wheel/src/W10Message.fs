@@ -24,7 +24,6 @@ let sendExit () =
 let private recvExit () =
     Debug.WriteLine("recv W10_MESSAGE_EXIT")
     Ctx.exitAction()
-    true
 
 let private setBoolBit msg b =
     msg ||| if b then 0x10000000 else 0x00000000
@@ -43,7 +42,6 @@ let sendPassMode b =
 let private recvPassMode msg =
     Debug.WriteLine("recv W10_MESSAGE_PASSMODE")
     Ctx.setPassMode (getBoolBit msg)
-    true
 
 let sendReloadProp () =
     Debug.WriteLine("send W10_MESSAGE_RELOAD_PROP")
@@ -52,7 +50,6 @@ let sendReloadProp () =
 let private recvReloadProp () =
     Debug.WriteLine("recv W10_MESSAGE_RELOAD_PROP")
     Ctx.reloadProperties ()
-    true
 
 let sendInitState () =
     Debug.WriteLine("send W10_MESSAGE_INIT_STATE")
@@ -61,16 +58,15 @@ let sendInitState () =
 let private recvInitState () =
     Debug.WriteLine("recv W10_MESSAGE_INIT_STATE")
     Ctx.initState ()
-    true
 
 let procMessage msg =
     match getFlag(msg) with
     | n when n = W10_MESSAGE_EXIT ->
-        recvExit ()
+        recvExit (); true
     | n when n = W10_MESSAGE_PASSMODE ->
-        recvPassMode msg
+        recvPassMode msg; true
     | n when n = W10_MESSAGE_RELOAD_PROP ->
-        recvReloadProp ()
+        recvReloadProp (); true
     | n when n = W10_MESSAGE_INIT_STATE ->
-        recvInitState ()
+        recvInitState (); true
     | _ -> false
