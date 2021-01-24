@@ -8,12 +8,35 @@ open System.Diagnostics
 open System.Threading
 open System.Windows.Forms
 open Microsoft.Win32
+open System.Security.Principal
+
+[<Literal>]
+let WikiUrl = "https://github.com/ykon/w10wheel.net/wiki"
 
 let private convLang msg =
     Ctx.convLang msg
 
 let private messageDoubleLaunch () =
     MessageBox.Show(convLang "Double Launch?", convLang "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
+
+let private checkDoubleLaunch () =
+    if not (PreventMultiInstance.tryLock()) then
+        messageDoubleLaunch()
+        Environment.Exit(1)
+
+let private isAdmin () =
+    let myDomain = Thread.GetDomain();
+    myDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
+    let myPrincipal = Thread.CurrentPrincipal :?> WindowsPrincipal
+    myPrincipal.IsInRole(WindowsBuiltInRole.Administrator)
+
+let private showAdminMesssage (): DialogResult =
+    MessageBox.Show(convLang LocaleData.AdminMessage, convLang "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
+
+let private checkAdmin () =
+    if not (isAdmin ()) then
+        if (showAdminMesssage ()) = DialogResult.OK then
+            Process.Start(WikiUrl) |> ignore
 
 let private procExit () =
     Debug.WriteLine("procExit")
@@ -75,9 +98,8 @@ let private initSetFunctions () =
 let main argv =
     procArgv argv
 
-    if not (PreventMultiInstance.tryLock()) then
-        messageDoubleLaunch()
-        Environment.Exit(1)
+    checkDoubleLaunch ()
+    checkAdmin ()
 
     SystemEvents.SessionEnding.Add (fun _ -> procExit())
     initSetFunctions ()
@@ -92,4 +114,3 @@ let main argv =
     Debug.WriteLine("Exit message loop")
     procExit()
     0
-        

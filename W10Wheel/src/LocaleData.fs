@@ -1,8 +1,14 @@
 ﻿module LocaleData
 
+[<Literal>]
+let AdminMessage =
+    "W10Wheel is not running in admin mode, so it won't work in certain windows. It's highly recommended to run it as administrator. Click OK for more info."
+
 let private JapaneseMessage =
     [
         "Double Launch?", "二重起動していませんか？";
+        AdminMessage, "W10Wheelは管理者モードで実行されていないため、\n一部のプログラムでは機能しません。\nそのため、管理者として実行することを推奨します。\n詳細を確認するには、「OK」を押してください。";
+
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
         "Properties does not exist", "設定ファイルが存在しません";
         "Unknown Command", "不明なコマンド";
@@ -68,8 +74,8 @@ let private JapaneseMessage =
         "wheelDelta", "ホイール回転値";
         "vWheelMove", "垂直ホイール移動値";
         "hWheelMove", "水平ホイール移動値";
-        "quickFirst", "初回の素早い反応";
-        "quickTurn", "折り返しの素早い反応";
+        "quickFirst", "初回の反応を速くする";
+        "quickTurn", "折り返しの反応を速くする";
         
         "VH Adjuster", "垂直/水平スクロール調整";
         "Fixed", "固定";
