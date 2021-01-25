@@ -70,7 +70,7 @@ let private isSeparator (item: ToolStripItem): bool =
 let getUILanguage () =
     Volatile.Read(uiLanguage)
 
-let convLang msg =
+let convLang (msg: string) =
     Debug.WriteLine("convLang: " + msg)
     Locale.convLang (getUILanguage()) msg
 
@@ -1237,10 +1237,21 @@ let private getSelectedPropertiesPath () =
 
 let mutable private loaded = false
 
-let loadProperties (): unit =
+let loadPropertiesFileOnly (): unit =
+    try
+        prop.Load(getSelectedPropertiesPath(), true)
+    with
+        | _ -> ()
+
+let convLangWithProp (msg: string) =
+    let lang = prop.GetPropertyOption(DataID.uiLanguage) |> Option.defaultValue (getUILanguage())
+    Debug.WriteLine((sprintf "convLangWithProp: lang:[%s], msg:[%s]" lang msg))
+    Locale.convLang lang msg
+
+let loadProperties (update:bool): unit =
     loaded <- true
     try
-        prop.Load(getSelectedPropertiesPath())
+        prop.Load(getSelectedPropertiesPath(), update)
         Debug.WriteLine("Start load")
 
         setTriggerOfProperty()
@@ -1276,7 +1287,7 @@ let loadProperties (): unit =
 
 let private isChangedProperties () =
     try
-        prop.Load(getSelectedPropertiesPath())
+        prop.Load(getSelectedPropertiesPath(), true)
 
         let isChangedBoolean () =
             BooleanNames |>
@@ -1323,7 +1334,7 @@ let storeProperties () =
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
 let reloadProperties () =
-    loadProperties()
+    loadProperties true
     resetAllMenuItems()
 
 let private createReloadPropertiesMenuItem () =
@@ -1370,7 +1381,7 @@ let private setProperties name =
         Debug.WriteLine("setProperties: " + name)
 
         setSelectedProperties name
-        loadProperties()
+        loadProperties true
         resetAllMenuItems()
 
 let private createDeletePropertiesMenuItem () =
