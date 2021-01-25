@@ -16,8 +16,12 @@ let WikiUrl = "https://github.com/ykon/w10wheel.net/wiki"
 let private convLang msg =
     Ctx.convLang msg
 
+// Before loadProperties()
+let private convLangP msg =
+    Ctx.convLangWithProp msg
+
 let private messageDoubleLaunch () =
-    MessageBox.Show(convLang "Double Launch?", convLang "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
+    MessageBox.Show(convLangP "Double Launch?", convLangP "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
 let private checkDoubleLaunch () =
     if not (PreventMultiInstance.tryLock()) then
@@ -31,7 +35,7 @@ let private isAdmin () =
     myPrincipal.IsInRole(WindowsBuiltInRole.Administrator)
 
 let private showAdminMesssage (): DialogResult =
-    MessageBox.Show(convLang LocaleData.AdminMessage, convLang "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
+    MessageBox.Show(convLangP LocaleData.AdminMessage, convLangP "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
 
 let private checkAdmin () =
     if not (isAdmin ()) then
@@ -98,13 +102,14 @@ let private initSetFunctions () =
 let main argv =
     procArgv argv
 
+    Ctx.loadPropertiesFileOnly ()
     checkDoubleLaunch ()
     checkAdmin ()
 
     SystemEvents.SessionEnding.Add (fun _ -> procExit())
     initSetFunctions ()
 
-    Ctx.loadProperties ()
+    Ctx.loadProperties false
     Ctx.setSystemTray ()
     if not (WinHook.setMouseHook ()) then
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") (WinError.getLastErrorMessage())) (convLang "Error")

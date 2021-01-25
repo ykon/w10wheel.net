@@ -17,27 +17,28 @@ type Properties() =
     let sdict = SortedDictionary<string, string>()
     let trims (ss:string[]) = ss |> Array.map (fun s -> s.Trim())
 
-    member self.Load (path:string): unit =
-        let removeComment (l:string) =
-            match l.IndexOf('#') with
-            | -1 -> l
-            | n -> l.Substring(0, n)
+    let removeComment (l:string) =
+        match l.IndexOf('#') with
+        | -1 -> l
+        | n -> l.Substring(0, n)
 
-        let isPropLine l = propLineRegex.Match(l).Success
+    let isPropLine l = propLineRegex.Match(l).Success
 
-        let getKeyValue (l:string) =
-            match l.Split('=') |> trims with
-            | [|k; v|] -> (k, v)
-            | _ -> invalidArg "l" "Invalid property line"
+    let getKeyValue (l:string) =
+        match l.Split('=') |> trims with
+        | [|k; v|] -> (k, v)
+        | _ -> invalidArg "l" "Invalid property line"
 
-        let setDict (k, v) =
-            Debug.WriteLine(sprintf "Load property: %s = %s" k v)
-            sdict.[k] <- v
+    let setDict (k, v) =
+        Debug.WriteLine(sprintf "Load property: %s = %s" k v)
+        sdict.[k] <- v
 
-        File.ReadAllLines(path) |>
-        Array.map removeComment |> trims |>
-        Array.filter isPropLine |> Array.map getKeyValue |>
-        Array.iter setDict
+    member self.Load (path:string, update:bool): unit =
+        if update || sdict.Count = 0 then
+            File.ReadAllLines(path) |>
+            Array.map removeComment |> trims |>
+            Array.filter isPropLine |> Array.map getKeyValue |>
+            Array.iter setDict
 
     member self.Store (path:string): unit =
         let makePropLine k = (sprintf "%s=%s" k sdict.[k])
@@ -49,6 +50,11 @@ type Properties() =
             sdict.[key]
         with
             | :? KeyNotFoundException as e -> raise (KeyNotFoundException(key))
+
+    member self.GetPropertyOption (key:string): string option =
+        match sdict.TryGetValue key with
+        | true, value -> Some(value)
+        | _ -> None
 
     member self.SetProperty (key:string, value:string): unit =
         sdict.[key] <- value
@@ -87,6 +93,7 @@ type Properties() =
 
     member self.SetBool (key:string, b:bool): unit =
         self.SetProperty(key, b.ToString())
+
         
 let USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
 let PROGRAM_NAME = AppDef.PROGRAM_NAME

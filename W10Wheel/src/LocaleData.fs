@@ -2,7 +2,7 @@
 
 [<Literal>]
 let AdminMessage =
-    "W10Wheel is not running in admin mode, so it won't work in certain windows. It's highly recommended to run it as administrator. Click OK for more info."
+    "W10Wheel is not running in admin mode, so it won't work in certain windows. It's highly recommended to run it as administrator. Click 'OK' for more info."
 
 let private JapaneseMessage =
     [
