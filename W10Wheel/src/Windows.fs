@@ -397,5 +397,29 @@ let initScroll () =
 
 let setInitScroll () =
     Ctx.setInitScroll initScroll
-     
 
+let private getFullPathFromWindow (hWnd: nativeint): string option =
+    if hWnd = IntPtr.Zero then
+        None
+    else
+        let mutable processId = 0u
+        let _ = WinAPI.GetWindowThreadProcessId(hWnd, &processId)
+        let hProcess = WinAPI.OpenProcess(0x0400u, false, processId)
+        if hProcess = IntPtr.Zero then
+            None
+        else
+            let buffer = System.Text.StringBuilder(1024);
+            let mutable bufferSize = buffer.Capacity;
+            let success = WinAPI.QueryFullProcessImageName(hProcess, 0, buffer, &bufferSize)
+            WinAPI.CloseHandle(hProcess) |> ignore
+            if success then Some(buffer.ToString()) else None
+
+let getFullPathFromForegroundWindow (): string option =
+    getFullPathFromWindow (WinAPI.GetForegroundWindow())
+
+let getFullPathFromPoint (pt: WinAPI.POINT): string option =
+    getFullPathFromWindow (WinAPI.WindowFromPoint(pt))
+
+let getFullPathFromCursorPos (): string option =
+    let mutable pt = WinAPI.POINT()
+    if WinAPI.GetCursorPos(&pt) then getFullPathFromPoint(pt) else None

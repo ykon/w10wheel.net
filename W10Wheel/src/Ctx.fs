@@ -152,6 +152,16 @@ type private Pass() =
     static member toggleMode () =
         Pass.Mode <- not mode
 
+type private Exclusion() =
+    [<VolatileField>] static let mutable avast = false
+
+    static member Avast
+        with get() = avast
+        and set b =
+            avast <- b
+
+let isExcludeAvast () = Exclusion.Avast
+
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
 
@@ -642,6 +652,7 @@ let private getBooleanOfName (name: string): bool =
     | DataID.vhAdjusterMode -> VHAdjuster.Mode
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
     | DataID.passMode -> Pass.Mode
+    | DataID.excludeAvast -> Exclusion.Avast
     | e -> raise (ArgumentException(e))
 
 let private setBooleanOfName (name:string) (b:bool) =
@@ -662,6 +673,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | DataID.vhAdjusterMode -> VHAdjuster.Mode <- b
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical <- b
     | DataID.passMode -> Pass.Mode <- b
+    | DataID.excludeAvast -> Exclusion.Avast <- b
     | e -> raise (ArgumentException(e))
 
 (*
@@ -1070,7 +1082,8 @@ let private BooleanNames: string[] =
      DataID.accelTable; DataID.customAccelTable;
      DataID.draggedLock; DataID.swapScroll;
      DataID.sendMiddleClick; DataID.keyboardHook;
-     DataID.vhAdjusterMode; DataID.firstPreferVertical|]
+     DataID.vhAdjusterMode; DataID.firstPreferVertical;
+     DataID.excludeAvast|]
 
 let private OnOffNames: string[] =
     [|DataID.realWheelMode; DataID.accelTable; DataID.keyboardHook; DataID.vhAdjusterMode|]
@@ -1215,7 +1228,10 @@ let private setBooleanOfProperty (name: string): unit =
     try
         setBooleanOfName name (prop.GetBool name)
     with
-        | :? KeyNotFoundException -> Debug.WriteLine("Not found: " + name)
+        | :? KeyNotFoundException ->
+            Debug.WriteLine("Not found: " + name)
+            if name = DataID.excludeAvast then
+                setBooleanOfName name false
         | :? FormatException -> Debug.WriteLine("Parse error: " + name)
         | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
 
@@ -1224,7 +1240,7 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         let n = prop.GetInt name
         Debug.WriteLine(sprintf "setNumberOfProperty: %s: %d" name n)
         if n < low || n > up then
-            Debug.WriteLine("Nomber out of bounds: " + name)
+            Debug.WriteLine("Number out of bounds: " + name)
         else
             setNumberOfName name n
     with
@@ -1334,6 +1350,7 @@ let storeProperties () =
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
 let reloadProperties () =
+    prop.Clear()
     loadProperties true
     resetAllMenuItems()
 

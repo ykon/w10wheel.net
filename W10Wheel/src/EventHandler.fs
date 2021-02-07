@@ -141,6 +141,25 @@ let private passPressedScrollMode (down: MouseEvent): nativeint option =
     else
         None
 
+let private matchAvastUI (pathOpt: string option): bool =
+    match pathOpt with
+    | Some (path) -> path.EndsWith("\\AvastUI.exe")
+    //| Some (path) -> path.EndsWith("\\chrome.exe") // for Debug
+    | None -> false
+
+let private skipExcludeWindow (down: MouseEvent): nativeint option =
+    if Ctx.isExcludeAvast() then
+        //let pt_match = matchAvastUI(Windows.getFullPathFromCursorPos()) // for DPI scaling
+        let fw_match = matchAvastUI(Windows.getFullPathFromForegroundWindow())
+        if fw_match then
+            debug "pass avast" down
+            Ctx.LastFlags.SetPassed(down)
+            callNextHook()
+        else
+            None
+    else
+        None
+
 let private checkExitScrollUp (me: MouseEvent): nativeint option =
     if Ctx.isPressedScrollMode() then
         if Ctx.checkExitScroll me.Info.time then
@@ -353,6 +372,7 @@ let private lrDown (me: MouseEvent): nativeint =
         skipResendEventLR
         checkSameLastEvent
         resetLastFlagsLR
+        skipExcludeWindow
         checkExitScrollDown
         passPressedScrollMode
         //passSingleEvent

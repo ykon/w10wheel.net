@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.7.2
+        2.7.3
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2021-02-07: v2.7.3: Avast(\\AvastUI.exe)を除外する設定を追加 (excludeAvast)
         2021-01-25: v2.7.2: 起動時のメッセージがuiLanguageに従わないことを修正
         2021-01-25: v2.7.1: 管理者権限で実行されているか確認、日本語テキストの変更
         2018-01-04: v2.7.0: メニューとダイアログテキストの日本語化、水平スクロールバグ修正、他
@@ -298,10 +299,13 @@ URL:
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー
-          
+                
         uiLanguage: string (default: by system) # Language
                 UIの表示に使う言語設定
                 
+        excludeAvast: bool (default: false) # LR, Left*, Right*
+                \\AvastUI.exeがフォアグラウンドの場合は処理を行わない
+        
 ライセンス:
         The MIT License
         詳しくは License.txt を参照

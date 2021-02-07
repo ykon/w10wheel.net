@@ -289,4 +289,29 @@ extern bool RegisterRawInputDevices([<MarshalAs(UnmanagedType.LPArray, SizeParam
 [<DllImport("user32.dll", SetLastError = true)>]
 extern uint32 GetRawInputData([<In>]nativeint hRawInput, [<In>]uint32 uiCommand, [<Out>]nativeint pData, [<In; Out>]uint32& pcbSize, [<In>]uint32 cbSizeHeader)
 
+[<DllImport("user32.dll", SetLastError = true)>]
+extern nativeint WindowFromPoint(POINT point)
 
+[<DllImport("user32.dll", SetLastError = true)>]
+extern uint32 GetWindowThreadProcessId(nativeint hWnd, [<Out>]uint32& lpdwProcessId)
+
+[<DllImport("kernel32.dll")>]
+extern nativeint OpenProcess(uint32 dwDesiredAccess, bool bInheritHandle, uint32 dwProcessId)
+
+[<DllImport("kernel32.dll")>]
+extern bool CloseHandle(nativeint handle)
+
+[<DllImport("psapi.dll", CharSet = CharSet.Ansi)>]
+extern uint32 GetModuleBaseName(nativeint hWnd, nativeint hModule, [<MarshalAs(UnmanagedType.LPStr); Out>] System.Text.StringBuilder lpBaseName, uint32 nSize)
+
+[<DllImport("psapi.dll")>]
+extern uint32 GetModuleFileNameEx(nativeint hProcess, nativeint hModule, [<Out>] System.Text.StringBuilder lpBaseName, [<In>] [<MarshalAs(UnmanagedType.U4)>] int32 nSize)
+
+[<DllImport("kernel32.dll", SetLastError=true)>]
+extern bool QueryFullProcessImageName([<In>]nativeint hProcess, [<In>]int32 dwFlags, [<Out>]System.Text.StringBuilder lpExeName, int32& lpdwSize)
+
+[<DllImport("user32.dll")>]
+extern nativeint GetForegroundWindow()
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool GetCursorPos(POINT& lpPoint);

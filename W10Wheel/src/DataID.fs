@@ -50,6 +50,8 @@
     let firstPreferVertical = "firstPreferVertical"
     [<Literal>]
     let passMode = "passMode"
+    [<Literal>]
+    let excludeAvast = "excludeAvast"
     
     // String
     [<Literal>]

@@ -33,6 +33,9 @@ type Properties() =
         Debug.WriteLine(sprintf "Load property: %s = %s" k v)
         sdict.[k] <- v
 
+    member self.Clear (): unit =
+        sdict.Clear()
+
     member self.Load (path:string, update:bool): unit =
         if update || sdict.Count = 0 then
             File.ReadAllLines(path) |>
