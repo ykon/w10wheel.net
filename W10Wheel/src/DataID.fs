@@ -18,6 +18,8 @@
     let firstMinThreshold = "firstMinThreshold"
     [<Literal>]
     let switchingThreshold = "switchingThreshold"
+    [<Literal>]
+    let dragThreshold = "dragThreshold"
         
     // Boolean
     [<Literal>]

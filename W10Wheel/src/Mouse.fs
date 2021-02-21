@@ -42,6 +42,9 @@ type MouseEvent =
         | Move(info) -> info
         | _ -> raise (ArgumentException())
 
+    member self.Point =
+        (self.Info.pt.x, self.Info.pt.y)
+
     member self.IsDown =
         match self with
         | LeftDown(_) | RightDown(_) | MiddleDown(_) | X1Down(_) | X2Down(_) -> true

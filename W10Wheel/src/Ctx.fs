@@ -36,6 +36,8 @@ let private keyboardHook = ref false
 let private targetVKCode = ref (Keyboard.getVKCode(DataID.VK_NONCONVERT))
 let private uiLanguage = ref (Locale.getLanguage())
 
+let private dragThreshold = ref 0
+
 type MenuDict = Dictionary<string, ToolStripMenuItem>
 
 let private boolMenuDict = new MenuDict()
@@ -46,6 +48,9 @@ let private languageMenuDict = new MenuDict()
 let private numberMenuDict = new MenuDict()
 let private keyboardMenuDict = new MenuDict()
 let private vhAdjusterMenuDict = new MenuDict()
+
+let getDragThreshold () =
+    Volatile.Read(dragThreshold)
 
 let isKeyboardHook () =
     Volatile.Read(keyboardHook)
@@ -866,6 +871,7 @@ let private getNumberOfName (name: string): int =
     | DataID.hWheelMove -> RealWheel.HWheelMove
     | DataID.firstMinThreshold -> VHAdjuster.FirstMinThreshold
     | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold
+    | DataID.dragThreshold -> Volatile.Read(dragThreshold)
     | e -> raise (ArgumentException(e))
 
 let private setNumberOfName (name: string) (n: int): unit =
@@ -880,6 +886,7 @@ let private setNumberOfName (name: string) (n: int): unit =
     | DataID.hWheelMove -> RealWheel.HWheelMove <- n
     | DataID.firstMinThreshold -> VHAdjuster.FirstMinThreshold <- n
     | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold <- n
+    | DataID.dragThreshold -> Volatile.Write(dragThreshold, n)
     | e -> raise (ArgumentException(e))
 
 let private makeNumberText (name: string) (num: int) =
@@ -1073,7 +1080,8 @@ let private NumberNames: string[] =
     [|DataID.pollTimeout; DataID.scrollLocktime;
       DataID.verticalThreshold; DataID.horizontalThreshold;
       DataID.wheelDelta; DataID.vWheelMove; DataID.hWheelMove;
-      DataID.firstMinThreshold; DataID.switchingThreshold|]
+      DataID.firstMinThreshold; DataID.switchingThreshold;
+      DataID.dragThreshold|]
 
 let private BooleanNames: string[] =
     [|DataID.realWheelMode; DataID.cursorChange;
@@ -1244,7 +1252,10 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
         else
             setNumberOfName name n
     with
-        | :? KeyNotFoundException -> Debug.WriteLine("Not fund: " + name)
+        | :? KeyNotFoundException ->
+            Debug.WriteLine("Not fund: " + name)
+            if name = DataID.dragThreshold then
+                setNumberOfName name 0
         | :? FormatException -> Debug.WriteLine("Parse error: " + name)
         | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
 
@@ -1294,6 +1305,7 @@ let loadProperties (update:bool): unit =
 
         setNum DataID.firstMinThreshold 1 10
         setNum DataID.switchingThreshold 10 500
+        setNum DataID.dragThreshold 0 500
     with
         | :? FileNotFoundException ->
             Debug.WriteLine("Properties file not found")

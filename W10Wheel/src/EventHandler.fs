@@ -25,7 +25,15 @@ let private lastResendRightEvent: MouseEvent ref = ref NonEvent
 
 let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
+
+let private dragDefault info = ()
+
+let mutable private drag: HookInfo -> unit = dragDefault
 let mutable private dragged = false
+let mutable private dragPreScrollMode = false
+let mutable private dragStartPoint = (0, 0)
+let mutable private dragMoveX = 0
+let mutable private dragMoveY = 0
 
 let private initState () =
     lastEvent <- NonEvent
@@ -33,7 +41,12 @@ let private initState () =
     lastResendRightEvent := NonEvent
     resentDownUp <- false
     secondTriggerUp <- false
+    drag <- dragDefault
     dragged <- false
+    dragPreScrollMode <- false
+    dragStartPoint <- (0, 0)
+    dragMoveX <- 0
+    dragMoveY <- 0
 
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
@@ -267,19 +280,31 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     else
         None
 
-let private dragDefault info = ()
-let mutable private drag: HookInfo -> unit = dragDefault
+let private dragStart (info: HookInfo) =
+    dragMoveX <- dragMoveX + (Math.Abs (info.pt.x - (fst dragStartPoint)))
+    dragMoveY <- dragMoveY + (Math.Abs (info.pt.y - (snd dragStartPoint)))
+    Debug.WriteLine (sprintf "dragStart: %d, %d" dragMoveX dragMoveY)
 
-let private dragStart info =
-    if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
-        WinCursor.changeV()
+    let dragThreshold = Ctx.getDragThreshold()
+    //Debug.WriteLine (sprintf "dragThreshold: %d" dragThreshold)
+    if dragMoveX > dragThreshold || dragMoveY > dragThreshold then
+        Ctx.startScrollMode info
+        dragPreScrollMode <- false
+        if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
+            WinCursor.changeV()
 
-    drag <- dragDefault
-    dragged <- true
+        drag <- dragDefault
+        dragged <- true
 
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
-    Ctx.startScrollMode me.Info
+
+    dragPreScrollMode <- true
+    dragStartPoint <- me.Point
+    Debug.WriteLine (sprintf "startScrollDrag: %d, %d" me.Info.pt.x me.Info.pt.y)
+
+    dragMoveX <- 0
+    dragMoveY <- 0
 
     drag <- dragStart
     dragged <- false
@@ -296,6 +321,8 @@ let private continueScrollDrag (me: MouseEvent): nativeint option =
 
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
     debug "exit scroll mode (Drag)" me
+    drag <- dragDefault
+    dragPreScrollMode <- false
     Ctx.exitScrollMode()
 
     if not dragged then
@@ -535,7 +562,7 @@ let xUp (info: HookInfo) =
 
 let move (info: HookInfo) =
     //Debug.WriteLine "Move: test"
-    if Ctx.isScrollMode() then
+    if Ctx.isScrollMode() || dragPreScrollMode then
         drag info
         //Windows.sendWheel info.pt
         suppress().Value
