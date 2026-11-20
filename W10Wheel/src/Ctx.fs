@@ -150,11 +150,16 @@ let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 // be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
 let passModeLock = new Object()
 
-// Incremented under passModeLock whenever Pass Mode is turned on. Windows records it when
-// queuing and does not send a down queued before it, even if Pass Mode has been turned off
-// again by then (the physical up may have passed while Pass Mode was on).
+// Incremented under passModeLock whenever Pass Mode is turned on, and when the state is
+// initialized (initState). Windows records it when queuing and does not send a down queued
+// before it, even if Pass Mode has been turned off again by then: the physical up may have
+// passed W10Wheel since (in Pass Mode, or without the flags reset by initState).
 let private passModeGeneration = ref 0
 let getPassModeGeneration () = Volatile.Read(&passModeGeneration.contents)
+
+let private newPassModeGeneration () =
+    lock passModeLock (fun () ->
+        Volatile.Write(passModeGeneration, passModeGeneration.Value + 1))
 
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
@@ -1633,6 +1638,9 @@ let setOfferEW f = offerEW <- f
 let initState () =
     // Cancel the LR trigger wait first: its timeout could set the flags again after Init
     offerEW(Cancel) |> ignore
+    // The downs still queued are not sent: their physical up passes W10Wheel from now on and
+    // could come before them (also refuses a pending LR trigger start)
+    newPassModeGeneration ()
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
