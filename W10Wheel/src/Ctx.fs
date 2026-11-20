@@ -368,6 +368,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable releasedMode = false
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
     [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
+    [<VolatileField>] static let mutable byKeyboard = false // started by the keyboard trigger
 
     // The LR trigger start was canceled before Start ran on the EventWaiter thread: Exit was
     // called while starting (e.g. both buttons released), so Start must not start afterwards
@@ -408,6 +409,7 @@ type private Scroll() =
             if cursorChange && not (isDragTrigger()) then
                 WinCursor.changeV()
 
+            byKeyboard <- false
             mode <- true
             starting <- false
         else
@@ -438,6 +440,7 @@ type private Scroll() =
             if cursorChange then
                 WinCursor.changeV()
 
+            byKeyboard <- true
             mode <- true
             starting <- false
         else
@@ -480,6 +483,7 @@ type private Scroll() =
         dt > (uint32 locktime)
 
     static member IsMode with get() = mode
+    static member ByKeyboard with get() = byKeyboard
     static member StartTime with get() = stime
     static member StartPoint with get() = (sx, sy)
     static member LockTime
@@ -534,6 +538,12 @@ let isSwapScroll () = Scroll.Swap
 
 let isReleasedScrollMode () = Scroll.ReleasedMode
 let isPressedScrollMode () = Scroll.IsMode && not (Scroll.ReleasedMode)
+
+// Pressed scroll mode started by a mouse trigger: the ups of mouse triggers end only this one.
+// The keyboard trigger can start scroll mode while their downs are handled (e.g. while the LR
+// trigger start is pending); their ups are then suppressed like their downs.
+let isPressedMouseScrollMode () = isPressedScrollMode() && not Scroll.ByKeyboard
+let isKeyboardScrollMode () = Scroll.IsMode && Scroll.ByKeyboard
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 
 let setStartingScrollMode () = Scroll.SetStarting()

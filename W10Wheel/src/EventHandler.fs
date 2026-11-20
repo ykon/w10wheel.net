@@ -161,7 +161,7 @@ let private skipExcludeWindow (down: MouseEvent): nativeint option =
         None
 
 let private checkExitScrollUp (me: MouseEvent): nativeint option =
-    if Ctx.isPressedScrollMode() then
+    if Ctx.isPressedMouseScrollMode() then
         if Ctx.checkExitScroll me.Info.time then
             debug "exit scroll mode (Pressed)" me
             Ctx.exitScrollMode()
@@ -174,7 +174,7 @@ let private checkExitScrollUp (me: MouseEvent): nativeint option =
         None
 
 let private checkExitScrollUpLR (up: MouseEvent): nativeint option =
-    if Ctx.isPressedScrollMode() then
+    if Ctx.isPressedMouseScrollMode() then
         if not secondTriggerUp then
             debug "ignore first up" up
         elif Ctx.checkExitScroll up.Info.time then
@@ -285,6 +285,15 @@ let private startScrollDrag (me: MouseEvent): nativeint option =
     dragged <- false
 
     suppress()
+
+// Scroll mode started by the keyboard trigger after the drag trigger: its up neither continues
+// nor ends it (nor resends a click). Its down was suppressed, so is the up.
+let private suppressKeyboardScroll (up: MouseEvent): nativeint option =
+    if Ctx.isKeyboardScrollMode() then
+        debug "suppress (keyboard scroll mode)" up
+        suppress()
+    else
+        None
 
 let private continueScrollDrag (me: MouseEvent): nativeint option =
     if Ctx.isDraggedLock() && dragged then
@@ -456,6 +465,7 @@ let private dragUp (me: MouseEvent): nativeint =
         checkSameLastEvent
         checkSuppressedDown
         passNotDragTrigger
+        suppressKeyboardScroll
         continueScrollDrag
         exitAndResendDrag
     ]
