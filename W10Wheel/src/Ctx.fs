@@ -1258,6 +1258,12 @@ let private resetOnOffMenuItems () =
         item.Text <- convLang(getOnOffText(getBooleanOfName name))
     )
 
+// Reload or switching properties can add or remove the custom table
+let private resetCustomAccelMenuItem () =
+    match boolMenuDict.TryGetValue DataID.customAccelTable with
+    | true, item -> item.Enabled <- not Accel.CustomDisabled
+    | _ -> ()
+
 let private resetAllMenuItems () =
     Debug.WriteLine("resetAllMenuItems")
     resetTriggerMenuItems()
@@ -1267,6 +1273,7 @@ let private resetAllMenuItems () =
     resetLanguageMenuItems()
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
+    resetCustomAccelMenuItem()
     resetVhAdjusterMenuItems()
     resetOnOffMenuItems()
 
@@ -1286,6 +1293,9 @@ let private setAccelOfProperty (): unit =
     setStringOfProperty DataID.accelMultiplier setAccelMultiplier
 
 let private setCustomAccelOfProperty (): unit =
+    // Without a valid custom table in this file, do not keep the table of the previous file
+    Accel.CustomDisabled <- true
+
     try
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
         let cam = prop.GetDoubleArray(DataID.customAccelMultiplier)
@@ -1495,6 +1505,8 @@ let private setProperties name =
         Debug.WriteLine("setProperties: " + name)
 
         setSelectedProperties name
+        // Do not keep the keys of the previous file (they would be stored in this file)
+        prop.Clear()
         loadProperties true
         resetAllMenuItems()
 
