@@ -271,6 +271,7 @@ type RAWINPUTHEADER =
 [<Struct; StructLayout(LayoutKind.Sequential)>]
 type RAWMOUSE =
     val usFlags            : uint16
+    val _alignment         : uint16  // the native button union is 4-byte aligned
     val usButtonFlags      : uint16
     val usButtonData       : uint16
     val ulRawButtons       : uint32
@@ -284,7 +285,7 @@ type RAWINPUT =
     val mouse  : RAWMOUSE
 
 [<DllImport("user32.dll", SetLastError = true)>]
-extern bool RegisterRawInputDevices([<MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0s); In>]RAWINPUTDEVICE[] pRawInputDevices, [<In>]uint32 uiNumDevices, [<In>]uint32 cbSize)
+extern bool RegisterRawInputDevices([<MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1s); In>]RAWINPUTDEVICE[] pRawInputDevices, [<In>]uint32 uiNumDevices, [<In>]uint32 cbSize)
 
 [<DllImport("user32.dll", SetLastError = true)>]
 extern uint32 GetRawInputData([<In>]nativeint hRawInput, [<In>]uint32 uiCommand, [<Out>]nativeint pData, [<In; Out>]uint32& pcbSize, [<In>]uint32 cbSizeHeader)

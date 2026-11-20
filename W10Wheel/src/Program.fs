@@ -46,6 +46,18 @@ let private procExit () =
     Debug.WriteLine("procExit")
 
     WinHook.unhook()
+
+    // Cancel an LR trigger wait: after its timeout it would resend a down whose up does not
+    // come any more (the hook is removed)
+    EventWaiter.offer Mouse.Cancel |> ignore
+
+    // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
+    // This also waits for a scroll start in progress and refuses later ones.
+    Ctx.closeScrollMode()
+
+    // Wait for a resent click being sent (so that its up is sent) and stop sending
+    Windows.closeInput()
+
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
 

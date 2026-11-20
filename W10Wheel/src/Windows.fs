@@ -20,12 +20,115 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
+// (Pass Mode generation when queued, inputs): see sendDownOrOther
+let private inputQueue = new BlockingCollection<int * WinAPI.MINPUT[]>()
+
+// Interval between the inputs of one batch (the down and up of a resent click).
+// If they are sent in a single SendInput call, they arrive at the same moment, and
+// tools that remap injected input (e.g. X-Mouse Button Control) may miss the up,
+// leaving the remapped button pressed.
+let private BATCH_INPUT_INTERVAL_MS = 10
+
+// Held while a batch is being sent, so that closeInput can wait for it at exit
+let private sendLock = new Object()
+
+// Set by closeInput at exit: no more inputs are sent
+let private closing = ref false
+
+// The rest of a batch (the up) whose down was sent but which could not be sent even with
+// retries. It is tried again before the next batch and at exit, so that the button is not
+// left pressed.
+let private unsent: WinAPI.MINPUT[] ref = ref null
+
+let private sendOne (input: WinAPI.MINPUT): bool =
+    WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
+
+let private isDown (input: WinAPI.MINPUT): bool =
+    let downs =
+        WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_RIGHTDOWN |||
+        WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN
+    (input.mi.dwFlags &&& uint32 downs) <> 0u
+
+// A down resent by W10Wheel is not sent in Pass Mode, nor if Pass Mode has been turned on
+// since it was queued (generation changed): the physical up passes W10Wheel in Pass Mode and
+// could arrive before it, leaving the button pressed. Checked and sent under
+// Ctx.passModeLock, under which Pass Mode is switched (see there).
+let private sendDownOrOther (generation: int) (input: WinAPI.MINPUT): bool =
+    if isDown input then
+        lock Ctx.passModeLock (fun () ->
+            if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
+                Debug.WriteLine("sendBatch: dropped a down (Pass Mode)")
+                false
+            else
+                sendOne input)
+    else
+        sendOne input
+
+let private sendWithRetry (input: WinAPI.MINPUT): bool =
+    let rec loop n =
+        if sendOne input then
+            true
+        elif n > 0 then
+            Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            loop (n - 1)
+        else
+            Debug.WriteLine("SendInput failed")
+            false
+    loop 3
+
+// Sends the inputs in order (with retries if withRetry); returns the ones that could not be
+// sent (null if all were sent)
+let private sendInOrder (withRetry: bool) (inputs: WinAPI.MINPUT[]): WinAPI.MINPUT[] =
+    let send = if withRetry then sendWithRetry else sendOne
+    let rec loop i =
+        if i >= inputs.Length then
+            null
+        else
+            if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            if send inputs.[i] then loop (i + 1) else inputs.[i..]
+    loop 0
+
+let private retryUnsent (withRetry: bool) =
+    match unsent.Value with
+    | null -> ()
+    | rest -> unsent.Value <- sendInOrder withRetry rest
+
+let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
+    if not (Volatile.Read(&closing.contents)) then
+        // Without retries here: while SendInput keeps failing, retrying before every
+        // batch (wheel events while scrolling) would make the queue fall behind
+        retryUnsent false
+
+        match msgs.Length with
+        | 0 -> ()
+        | 1 -> sendDownOrOther generation msgs.[0] |> ignore
+        | _ when unsent.Value <> null ->
+            // Ups are still not sent: do not press another button, it could not be released
+            // either, and the old ups would be sent after the new click
+            Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
+        | _ ->
+            if sendDownOrOther generation msgs.[0] then
+                // The down was sent: the rest (the up) must be sent, or the button stays pressed
+                Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+                unsent.Value <- sendInOrder true msgs.[1..]
+)
+
+// Called at exit: stops sending, waits for a batch being sent (its up included) and
+// tries again an up that could not be sent.
+let closeInput () =
+    Volatile.Write(closing, true)
+    if Monitor.TryEnter(sendLock, 1000) then
+        try
+            retryUnsent true
+        finally
+            Monitor.Exit(sendLock)
+    else
+        Debug.WriteLine("closeInput: timeout")
 
 let private senderThread = new Thread(fun () ->
     while true do
-        let msgs = inputQueue.Take()
-        WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE) |> ignore
+        let generation, msgs = inputQueue.Take()
+        sendBatch generation msgs
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
 )
@@ -49,31 +152,34 @@ let private resendClickTag = createRandomNumber()
 
 // LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
 // https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
+// Events injected from a lower integrity level process have both bits set (flags = 3),
+// so test the bits instead of comparing the whole value.
 let isInjectedEvent (me: MouseEvent) =
-    me.Info.flags = 1u || me.Info.flags = 2u
+    (me.Info.flags &&& 0x3u) <> 0u
     
+// dwExtraInfo is pointer-sized: compare as 64-bit (ToUInt32() throws on 64-bit values)
 let isResendEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt32() = resendTag
+    me.Info.dwExtraInfo.ToUInt64() = uint64 resendTag
 
 let isResendClickEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt32() = resendClickTag
+    me.Info.dwExtraInfo.ToUInt64() = uint64 resendClickTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
     WinAPI.MINPUT(mi)
 
+// generation: the Pass Mode generation to check a down against (see sendDownOrOther)
+let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
+    inputQueue.Add((generation, msgs))
+
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
-    inputQueue.Add [|input|]
+    enqueue (Ctx.getPassModeGeneration()) [|input|]
 
 let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
     WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
-
-let private sendInputArray (msgs: WinAPI.MINPUT[]) =
-    //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
-    inputQueue.Add msgs
 
 open WinAPI.Event
 
@@ -98,7 +204,9 @@ let private getNearestIndex (d:int) (thr:int[]): int =
         match thr.[i] with
         | n when n = ad -> i
         | n when n > ad ->
-            if n - ad < Math.Abs(thr.[i - 1] - ad) then i else i - 1
+            // i = 0: smaller than the first threshold (custom tables may not start with 1)
+            if i = 0 then i
+            elif n - ad < Math.Abs(thr.[i - 1] - ad) then i else i - 1
         | _ ->
             if i <> thr.Length - 1 then loop (i + 1) else i
 
@@ -311,8 +419,15 @@ let private createClick (mc:MouseClick) =
     | X1Click(_) -> create WinAPI.XBUTTON1 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
     | X2Click(_) -> create WinAPI.XBUTTON2 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
 
+// The functions taking a generation are for EventWaiter, which resends on its own thread
+// some time after the physical down: it passes the Pass Mode generation recorded when the
+// physical down was received (EventWaiter.start), so that a down is dropped if Pass Mode was
+// turned on since then, even before it is queued.
+let resendClickWith (generation: int) (mc: MouseClick) =
+    enqueue generation (createClick mc)
+
 let resendClick (mc: MouseClick) =
-    sendInputArray (createClick mc)
+    resendClickWith (Ctx.getPassModeGeneration()) mc
 
 let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     match down, up with
@@ -320,10 +435,11 @@ let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     | RightDown(_), RightUp(_) -> resendClick(RightClick(down.Info))
     | _ -> raise (ArgumentException())
 
-let resendDown (me: MouseEvent) =
+let resendDown (generation: int) (me: MouseEvent) =
+    let send (info: HookInfo) flags = enqueue generation [| createInput info.pt 0 flags 0u resendTag |]
     match me with
-    | LeftDown(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTDOWN 0u resendTag
-    | RightDown(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTDOWN 0u resendTag
+    | LeftDown(info) -> send info MOUSEEVENTF_LEFTDOWN
+    | RightDown(info) -> send info MOUSEEVENTF_RIGHTDOWN
     | _ -> raise (ArgumentException())
 
 let private __resendUp (me: MouseEvent) (extra: uint32) =
@@ -335,10 +451,24 @@ let private __resendUp (me: MouseEvent) (extra: uint32) =
 let resendUp (me: MouseEvent) =
     __resendUp me resendTag
 
+// Resends a down and an up (at different points). The same button's down and up are sent
+// as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
+let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
+    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u resendTag
+    match down, up with
+    | LeftDown(d), LeftUp(u) ->
+        enqueue generation [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
+    | RightDown(d), RightUp(u) ->
+        enqueue generation [| input d MOUSEEVENTF_RIGHTDOWN; input u MOUSEEVENTF_RIGHTUP |]
+    | _ ->
+        // Different buttons: not a pair (the other button's up comes later)
+        resendDown generation down
+        resendUp up
+
 open WinAPI.VKey
 
 let private checkAsyncKeyState (vKey:int) =
-    (WinAPI.GetAsyncKeyState(vKey) &&& 0xf000s) <> 0s
+    (WinAPI.GetAsyncKeyState(vKey) &&& 0x8000s) <> 0s  // most significant bit: key is down
 
 let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
 let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
@@ -404,7 +534,7 @@ let private getFullPathFromWindow (hWnd: nativeint): string option =
     else
         let mutable processId = 0u
         let _ = WinAPI.GetWindowThreadProcessId(hWnd, &processId)
-        let hProcess = WinAPI.OpenProcess(0x0400u, false, processId)
+        let hProcess = WinAPI.OpenProcess(0x1000u, false, processId)  // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName
         if hProcess = IntPtr.Zero then
             None
         else

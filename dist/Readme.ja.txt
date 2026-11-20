@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.8.0
+        2.8.1
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2026-11-21: v2.8.1: X-Mouse Button Control との競合、メモリリーク、キーボードトリガーの二重登録などを修正
         2026-11-20: v2.8.0: .NET Framework 4.6.1 から .NET 11 に移行 (ランタイム同梱の単一 exe で配布、.NET のインストールは不要)
         2021-02-07: v2.7.3: Avast(\\AvastUI.exe)を除外する設定を追加 (excludeAvast)
         2021-01-25: v2.7.2: 起動時のメッセージがuiLanguageに従わないことを修正
@@ -248,7 +249,7 @@ URL:
                 AboveNormal: 通常以上
                 Normal: 通常
                 
-        pollTimeout: 150-500 (default: 200)
+        pollTimeout: 50-500 (default: 200)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 
         scrollLocktime: 150-500 (default: 200)
                 トリガーを離してスクロールモードに固定する時間(ミリ秒)

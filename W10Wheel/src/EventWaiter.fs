@@ -83,24 +83,25 @@ let offer me: bool =
 let setOfferEW () =
     Ctx.setOfferEW offer
 
-let private fromMove (down: MouseEvent) =
+// generation: the Pass Mode generation when the physical down was received (see start)
+
+let private fromMove (generation: int) (down: MouseEvent) =
     //Ctx.LastFlags.SetResent down
     Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)
-    Windows.resendDown down
+    Windows.resendDown generation down
 
-let private fromUp (down:MouseEvent) (up:MouseEvent) =
+let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
     //Ctx.LastFlags.SetResent down
 
     let resendC (mc: MouseClick) =
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s" down.Name up.Name mc.Name)
-        Windows.resendClick mc
+        Windows.resendClickWith generation mc
 
     let resendUD () =
         let wn = down.Name
         let rn = up.Name
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s, %s" wn rn wn rn)
-        Windows.resendDown down
-        Windows.resendUp up
+        Windows.resendDownUp generation down up
 
     match down, up with
     | LeftDown(_), LeftUp(_)  ->
@@ -117,35 +118,43 @@ let private fromUp (down:MouseEvent) (up:MouseEvent) =
     | RightDown(_), LeftUp(_) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
-let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
+let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
     //Ctx.LastFlags.SetSuppressed d1
     //Ctx.LastFlags.SetSuppressed d2
 
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
-    Ctx.startScrollMode d2.Info
+    Ctx.startScrollModeFor generation d2.Info
 
-let private dispatchEvent down res =
+let private dispatchEvent generation down res =
     match res with
-    | Move(_) -> fromMove down
-    | LeftUp(_) | RightUp(_) -> fromUp down res
-    | LeftDown(_) | RightDown(_) -> fromDown down res
+    | Move(_) -> fromMove generation down
+    | LeftUp(_) | RightUp(_) -> fromUp generation down res
+    | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
 
-let private fromTimeout down =
-    Ctx.LastFlags.SetResent down
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-    Windows.resendDown down
+let private fromTimeout (generation: int) (down: MouseEvent) =
+    // The resent flag is also seen by the up of a later press: if Pass Mode has been turned
+    // on since the physical down (and maybe off again, with a new press received), neither
+    // set it nor resend. Checked under Ctx.passModeLock, under which Pass Mode is switched.
+    lock Ctx.passModeLock (fun () ->
+        if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
+            Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): dropped (Pass Mode)" down.Name)
+        else
+            Ctx.LastFlags.SetResent down
+            Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
+            Windows.resendDown generation down)
 
-let private waiterQueue = new BlockingCollection<MouseEvent>(1)
+// (physical down, Pass Mode generation when it was received)
+let private waiterQueue = new BlockingCollection<MouseEvent * int>(1)
 
 let private waiterThread = new Thread(fun () ->
     while true do
-        let down = waiterQueue.Take()
+        let down, generation = waiterQueue.Take()
 
         match sync.poll(Ctx.getPollTimeout()) with
-        | Some(res) -> dispatchEvent down res
-        | None -> fromTimeout down
+        | Some(res) -> dispatchEvent generation down res
+        | None -> fromTimeout generation down
 )
         
 //let private waiterThread = new Thread(waiter)
@@ -158,7 +167,9 @@ let start (down: MouseEvent) =
         raise (ArgumentException())
 
     waitingEvent <- down
-    waiterQueue.Add(down)
+    // Called by the mouse hook when the physical down is received: record the Pass Mode
+    // generation now, the resend happens later on the waiter thread
+    waiterQueue.Add((down, Ctx.getPassModeGeneration()))
     sync.setWaiting()
 
 

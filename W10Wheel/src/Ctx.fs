@@ -139,13 +139,34 @@ let private changeNotifyIcon b =
     notifyIcon.Text <- (getTrayText b)
     notifyIcon.Icon <- (getTrayIcon b)
 
+// Set to Scroll.SetPassMode after Scroll is defined (see below)
+let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
+
+// Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
+let mutable private onPassModeOn: unit -> unit = (fun () -> ())
+
+// Pass Mode is switched under this lock, and Windows sends a resent down under it after
+// checking Pass Mode: the down is either sent before Pass Mode is on, or not sent at all
+// (in Pass Mode the physical up passes W10Wheel and could arrive before a queued down).
+let passModeLock = new Object()
+
+// Incremented under passModeLock whenever Pass Mode is turned on. Windows records it when
+// queuing and does not send a down queued before it, even if Pass Mode has been turned off
+// again by then (the physical up may have passed while Pass Mode was on).
+let private passModeGeneration = ref 0
+let getPassModeGeneration () = Volatile.Read(&passModeGeneration.contents)
+
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
 
     static member Mode
         with get() = mode
         and set b =
-            mode <- b
+            lock passModeLock (fun () ->
+                if b then Volatile.Write(passModeGeneration, passModeGeneration.Value + 1)
+                mode <- b)
+            setScrollPassMode b
+            if b then onPassModeOn()
             changeNotifyIcon b
             passModeMenuItem.Checked <- b
 
@@ -345,6 +366,8 @@ type private Scroll() =
     [<VolatileField>] static let mutable draggedLock = false
     [<VolatileField>] static let mutable swap = false
     [<VolatileField>] static let mutable releasedMode = false
+    [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
+    [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
 
     static let monitor = new Object()
 
@@ -352,35 +375,7 @@ type private Scroll() =
         sx <- x
         sy <- y
 
-    static member Start (info: HookInfo) = lock monitor (fun () ->
-        stime <- info.time
-        setStartPoint(info.pt.x, info.pt.y)
-        initScroll()
-
-        RawInput.register()
-
-        if cursorChange && not (isDragTrigger()) then
-            WinCursor.changeV()
-
-        mode <- true
-        starting <- false
-    )
-
-    static member Start (info: KHookInfo) = lock monitor (fun () ->
-        stime <- info.time
-        setStartPoint(Cursor.Position.X, Cursor.Position.Y)
-        initScroll()
-
-        RawInput.register()
-
-        if cursorChange then
-            WinCursor.changeV()
-
-        mode <- true
-        starting <- false
-    )
-
-    static member Exit () = lock monitor (fun () ->
+    static let exit () =
         RawInput.unregister()
 
         mode <- false
@@ -388,6 +383,71 @@ type private Scroll() =
 
         if cursorChange then
             WinCursor.restore() |> ignore
+
+    static let start (info: HookInfo) (generation: int option) =
+        let sameGeneration =
+            match generation with
+            | Some g -> g = Volatile.Read(&passModeGeneration.contents)
+            | None -> true
+
+        if not closed && not passMode && sameGeneration then
+            stime <- info.time
+            setStartPoint(info.pt.x, info.pt.y)
+            initScroll()
+
+            RawInput.register()
+
+            if cursorChange && not (isDragTrigger()) then
+                WinCursor.changeV()
+
+            mode <- true
+            starting <- false
+        else
+            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
+            starting <- false
+
+    static member Start (info: HookInfo) = lock monitor (fun () -> start info None)
+
+    // For the LR trigger, started on the EventWaiter thread some time after the physical downs:
+    // also refused if Pass Mode has been turned on since then (generation changed), even if it
+    // has been turned off again. Checked under the lock that SetPassMode takes, so that turning
+    // Pass Mode on after the check still leaves scroll mode.
+    static member Start (info: HookInfo, generation: int) = lock monitor (fun () -> start info (Some generation))
+
+    static member Start (info: KHookInfo) = lock monitor (fun () ->
+        if not closed && not passMode then
+            stime <- info.time
+            setStartPoint(Cursor.Position.X, Cursor.Position.Y)
+            initScroll()
+
+            RawInput.register()
+
+            if cursorChange then
+                WinCursor.changeV()
+
+            mode <- true
+            starting <- false
+        else
+            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
+            starting <- false
+    )
+
+    static member Exit () = lock monitor (fun () -> exit ())
+
+    // At exit: waits for a Start in progress (on the EventWaiter thread for LR triggers),
+    // leaves scroll mode and refuses later Starts, so that the cursor is restored and
+    // RawInput is not registered again afterwards.
+    static member Close () = lock monitor (fun () ->
+        closed <- true
+        if mode then exit ()
+    )
+
+    // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
+    // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
+    // lock, so that a Start in progress on the EventWaiter thread is not missed.
+    static member SetPassMode (b: bool) = lock monitor (fun () ->
+        passMode <- b
+        if b && mode then exit ()
     )
 
     static member CheckExit (time: uint32) =
@@ -421,16 +481,23 @@ type private Scroll() =
         and set b = releasedMode <- b
 
     static member SetStarting () = lock monitor (fun () ->
-        starting <- (not mode)
+        // Start refuses while closed or in Pass Mode, so do not wait for it then
+        starting <- (not mode) && (not closed) && (not passMode)
     )
 
     static member IsStarting with get() = starting
 
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
+let startScrollModeFor (generation: int) (info: HookInfo): unit = Scroll.Start(info, generation)
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
 
 let exitScrollMode (): unit = Scroll.Exit()
+let closeScrollMode (): unit = Scroll.Close()
+
+// Pass.Mode (menu, tray icon and --sendPassMode) tells Scroll about Pass Mode
+setScrollPassMode <- (fun b -> Scroll.SetPassMode b)
+
 let checkExitScroll (time: uint32) = Scroll.CheckExit time
 let getScrollStartPoint () = Scroll.StartPoint
 let getScrollLockTime () = Scroll.LockTime
@@ -906,7 +973,7 @@ let private createSetNumberMenu () =
     let add = fun name low up ->
         menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
 
-    add DataID.pollTimeout 150 500
+    add DataID.pollTimeout 50 500
     add DataID.scrollLocktime 150 500
     addSeparator menu.DropDownItems
 
@@ -1512,3 +1579,12 @@ let initState () =
     LastFlags.Init()
     exitScrollMode()
     offerEW(Cancel) |> ignore
+
+// Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
+// e.g. the LR trigger wait would resend a down after the timeout although the up has already
+// passed. Cancel the wait and reset their state (scroll mode is left by Scroll.SetPassMode).
+onPassModeOn <- (fun () ->
+    offerEW(Cancel) |> ignore
+    initStateMEH()
+    initStateKEH()
+    LastFlags.Init())

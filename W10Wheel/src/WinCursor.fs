@@ -16,7 +16,7 @@ open WinAPI.CursorID
 let private load (id: int) =
     //WinAPI.LoadCursor(IntPtr.Zero, IntPtr(id))
     WinAPI.LoadImage(IntPtr.Zero, IntPtr(id), uint32 WinAPI.IMAGE_CURSOR, 0, 0,
-                     uint32 (WinAPI.LR_DEFAULTSIZE ^^^ WinAPI.LR_SHARED))
+                     uint32 (WinAPI.LR_DEFAULTSIZE ||| WinAPI.LR_SHARED))
 
 let CURSOR_V = load OCR_SIZENS
 let CURSOR_H = load OCR_SIZEWE
