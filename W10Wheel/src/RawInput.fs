@@ -23,7 +23,8 @@ let private procRawInput (lParam:nativeint): unit =
         WinAPI.GetRawInputData(lParam, RID_INPUT, data, &pcbSize, cbSizeHeader)
 
     let isMouseMoveRelative (ri:WinAPI.RAWINPUT) =
-        (ri.header.dwType = RIM_TYPEMOUSE) && (ri.mouse.usFlags = MOUSE_MOVE_RELATIVE)
+        // usFlags can have other bits with a relative move (e.g. MOUSE_MOVE_NOCOALESCE)
+        (ri.header.dwType = RIM_TYPEMOUSE) && ((ri.mouse.usFlags &&& MOUSE_MOVE_ABSOLUTE) = 0us)
 
     if (getRawInputData IntPtr.Zero) = 0u then
         let buf = Marshal.AllocHGlobal(int pcbSize)

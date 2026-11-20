@@ -246,6 +246,7 @@ module RawInput =
     let HWND_MESSAGE = IntPtr(-3)
     let RID_INPUT = 0x10000003u
     let MOUSE_MOVE_RELATIVE = 0us
+    let MOUSE_MOVE_ABSOLUTE = 1us
     let RIM_TYPEMOUSE = 0u
     let HID_USAGE_PAGE_GENERIC = 0x01us
     let HID_USAGE_GENERIC_MOUSE = 0x02us

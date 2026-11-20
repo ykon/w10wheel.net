@@ -412,7 +412,8 @@ let sendWheel (movePt: WinAPI.POINT) =
 
 let private sendWheelRaw (x: int) (y: int): unit =
     let sx, sy = scrollStartPoint
-    if (sx <> x) && (sy <> y) then
+    // x and y are relative moves
+    if x <> 0 || y <> 0 then
         let dx, dy = swapIf x y
         let wspt = WinAPI.POINT(sx, sy)
         sendWheelIf wspt dx dy
