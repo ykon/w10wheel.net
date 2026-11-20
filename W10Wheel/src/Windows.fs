@@ -476,6 +476,16 @@ let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
         resendDown generation down
         resendUp up
 
+// Ups for downs resent earlier whose physical up W10Wheel will not handle (Pass Mode turned
+// on, see Ctx). Queued like the downs, so they are sent after them.
+let private releaseResent (left: bool) (right: bool) =
+    let pt = WinAPI.POINT(Cursor.Position.X, Cursor.Position.Y)
+    if left then sendInput pt 0 MOUSEEVENTF_LEFTUP 0u resendTag
+    if right then sendInput pt 0 MOUSEEVENTF_RIGHTUP 0u resendTag
+
+let setReleaseResent () =
+    Ctx.setReleaseResent releaseResent
+
 open WinAPI.VKey
 
 let private checkAsyncKeyState (vKey:int) =

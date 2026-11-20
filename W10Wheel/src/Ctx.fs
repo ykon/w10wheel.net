@@ -599,6 +599,12 @@ type LastFlags() =
         | RightDown(_) -> rdR <- true
         | _ -> raise (ArgumentException())
 
+    // (left, right) downs resent whose physical up W10Wheel has not handled yet; resets them
+    static member TakeResent () =
+        let res = (ldR, rdR)
+        ldR <- false; rdR <- false
+        res
+
     static member GetAndReset_ResentDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldR)
@@ -1568,6 +1574,9 @@ let setSystemTray (): unit =
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
 let mutable private offerEW: MouseEvent -> bool = (fun me -> false)
+let mutable private releaseResent: bool -> bool -> unit = (fun _ _ -> ())
+
+let setReleaseResent f = releaseResent <- f
 
 let setInitStateMEH f = initStateMEH <- f
 let setInitStateKEH f = initStateKEH <- f
@@ -1585,6 +1594,14 @@ let initState () =
 // passed. Cancel the wait and reset their state (scroll mode is left by Scroll.SetPassMode).
 onPassModeOn <- (fun () ->
     offerEW(Cancel) |> ignore
+
+    // A down resent by W10Wheel (LR trigger) waits for W10Wheel to resend its up when the
+    // physical up comes. In Pass Mode the physical up passes instead, and it may even be
+    // handled before the resent down (Windows input queue), leaving the button pressed. Send
+    // the up now: it is queued after the down, so it is always sent after it.
+    let left, right = LastFlags.TakeResent()
+    if left || right then releaseResent left right
+
     initStateMEH()
     initStateKEH()
     LastFlags.Init())
