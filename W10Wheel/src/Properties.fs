@@ -27,7 +27,8 @@ type Properties() =
     let isPropLine l = propLineRegex.Match(l).Success
 
     let getKeyValue (l:string) =
-        match l.Split('=') |> trims with
+        // At the first "=": the value can have "=" (a line with spaces is read too)
+        match l.Split([|'='|], 2) |> trims with
         | [|k; v|] -> (k, v)
         | _ -> invalidArg "l" "Invalid property line"
 
