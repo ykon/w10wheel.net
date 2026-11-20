@@ -24,6 +24,8 @@ let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
 type private SendItem =
     // (Pass Mode generation when queued, inputs): see sendUnlessPassMode
     | Inputs of int * WinAPI.MINPUT[]
+    // An up whose down was not resent alone (see resendOtherUp): always sent
+    | OtherUp of WinAPI.MINPUT
     // Pass Mode has been turned on: the ups (left, right) for the downs resent alone that are
     // not released yet (see sendReleaseResent)
     | ReleaseResent of WinAPI.MINPUT * WinAPI.MINPUT
@@ -50,8 +52,9 @@ let private unsent: WinAPI.MINPUT[] ref = ref null
 // The downs resent alone (the LR trigger resends a down, and its up when the physical up
 // comes), by button (0: left, 1: right). Pressed: sent and not released yet; ReleaseResent
 // releases them when Pass Mode is turned on (the physical up then passes W10Wheel).
-// Dropped: not sent (Pass Mode, unsent ups, SendInput failed); its up is not sent either
-// (an up without a down, e.g. a right up opens a context menu). Used under sendLock.
+// Dropped: not sent (Pass Mode, unsent ups, SendInput failed); its up (resendUp) is not sent
+// either (an up without a down, e.g. a right up opens a context menu). Reset when Pass Mode is
+// turned on, as the hook's flags (the physical up then passes W10Wheel). Used under sendLock.
 let private resentPressed = Array.create 2 false
 let private resentDropped = Array.create 2 false
 
@@ -178,10 +181,23 @@ let private sendReleaseResent (left: WinAPI.MINPUT) (right: WinAPI.MINPUT) = loc
         let ups = [| if resentPressed.[0] then left
                      if resentPressed.[1] then right |]
         Array.fill resentPressed 0 2 false
+        // The downs dropped before (queued before Pass Mode was turned on, which queues this
+        // after them): their physical up passes W10Wheel, so no up of theirs comes any more
+        Array.fill resentDropped 0 2 false
 
         if ups.Length > 0 then
             Debug.WriteLine(sprintf "sendReleaseResent: %d" ups.Length)
             sendUps ups
+)
+
+// An up whose down was not resent alone: sent whatever is known of those downs. The button
+// is released, so the tracking of its down resent alone ends too.
+let private sendOtherUp (up: WinAPI.MINPUT) = lock sendLock (fun () ->
+    if not (Volatile.Read(&closing.contents)) then
+        let i = lrIndex up
+        resentPressed.[i] <- false
+        resentDropped.[i] <- false
+        sendUps [| up |]
 )
 
 // Called at exit: stops sending, waits for a batch being sent (its up included) and
@@ -216,6 +232,7 @@ let private senderThread = new Thread(fun () ->
         if inputQueue.TryTake(&item, timeout) then
             match item with
             | Inputs(generation, msgs) -> sendBatch generation msgs
+            | OtherUp(up) -> sendOtherUp up
             | ReleaseResent(left, right) -> sendReleaseResent left right
         else
             retryUnsentIdle ()
@@ -550,6 +567,16 @@ let private __resendUp (me: MouseEvent) (extra: uint32) =
 let resendUp (me: MouseEvent) =
     __resendUp me resendTag
 
+// The up of the other button than a waiting down (resendDownUp). Its down was not resent
+// alone (the up of such a down is resent by checkResentDown before the wait is offered): it
+// passed W10Wheel (e.g. pressed in Pass Mode), so its up must be sent.
+let private resendOtherUp (me: MouseEvent) =
+    let up (info: HookInfo) flags = OtherUp(createInput info.pt 0 flags 0u resendTag)
+    match me with
+    | LeftUp(info) -> inputQueue.Add(up info MOUSEEVENTF_LEFTUP)
+    | RightUp(info) -> inputQueue.Add(up info MOUSEEVENTF_RIGHTUP)
+    | _ -> raise (ArgumentException())
+
 // Resends a down and an up (at different points). The same button's down and up are sent
 // as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
 let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
@@ -562,7 +589,7 @@ let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
     | _ ->
         // Different buttons: not a pair (the other button's up comes later)
         resendDown generation down
-        resendUp up
+        resendOtherUp up
 
 // Pass Mode turned on (see Ctx): releases the downs resent alone whose physical up W10Wheel
 // will not handle. Queued after the downs queued before; only the ones sent are released
