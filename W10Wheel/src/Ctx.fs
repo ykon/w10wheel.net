@@ -596,7 +596,9 @@ type LastFlags() =
     // S = Suppressed
     [<VolatileField>] static let mutable ldS = false
     [<VolatileField>] static let mutable rdS = false
-    [<VolatileField>] static let mutable sdS = false
+    [<VolatileField>] static let mutable mdS = false
+    [<VolatileField>] static let mutable x1S = false
+    [<VolatileField>] static let mutable x2S = false
 
     static let kdS = Array.create 256 false
 
@@ -608,7 +610,7 @@ type LastFlags() =
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
-        ldS <- false; rdS <- false; sdS <- false
+        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
 
     static member SetResent (down: MouseEvent): unit =
@@ -645,7 +647,9 @@ type LastFlags() =
         match down with
         | LeftDown(_) -> ldS <- true 
         | RightDown(_) -> rdS <- true
-        | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- true
+        | MiddleDown(_) -> mdS <- true
+        | X1Down(_) -> x1S <- true
+        | X2Down(_) -> x2S <- true
         | _ -> raise (ArgumentException())
 
     static member SetSuppressed (down: KeyboardEvent) =
@@ -657,7 +661,9 @@ type LastFlags() =
         match up with
         | LeftUp(_) -> getAndReset(&ldS)
         | RightUp(_) -> getAndReset(&rdS)
-        | MiddleUp(_) | X1Up(_) | X2Up(_) -> getAndReset(&sdS)
+        | MiddleUp(_) -> getAndReset(&mdS)
+        | X1Up(_) -> getAndReset(&x1S)
+        | X2Up(_) -> getAndReset(&x2S)
         | _ -> raise (ArgumentException())
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
