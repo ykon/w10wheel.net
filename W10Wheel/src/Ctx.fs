@@ -369,6 +369,10 @@ type private Scroll() =
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
     [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
 
+    // The LR trigger start was canceled before Start ran on the EventWaiter thread: Exit was
+    // called while starting (e.g. both buttons released), so Start must not start afterwards
+    [<VolatileField>] static let mutable startCanceled = false
+
     static let monitor = new Object()
 
     static let setStartPoint (x: int, y: int) =
@@ -390,7 +394,11 @@ type private Scroll() =
             | Some g -> g = Volatile.Read(&passModeGeneration.contents)
             | None -> true
 
-        if not closed && not passMode && sameGeneration then
+        // generation is given for the LR trigger only (see below)
+        let canceled = generation.IsSome && startCanceled
+        if generation.IsSome then startCanceled <- false
+
+        if not closed && not passMode && sameGeneration && not canceled then
             stime <- info.time
             setStartPoint(info.pt.x, info.pt.y)
             initScroll()
@@ -403,7 +411,8 @@ type private Scroll() =
             mode <- true
             starting <- false
         else
-            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
+            // Refused (exiting, Pass Mode or canceled): do not leave the LR trigger in the
+            // starting state
             starting <- false
 
     static member Start (info: HookInfo) = lock monitor (fun () -> start info None)
@@ -432,7 +441,15 @@ type private Scroll() =
             starting <- false
     )
 
-    static member Exit () = lock monitor (fun () -> exit ())
+    static member Exit () = lock monitor (fun () ->
+        // Exiting while the LR trigger start is pending (e.g. both buttons released before
+        // Start ran): cancel it, or scroll mode would start afterwards with no button pressed
+        if starting then
+            startCanceled <- true
+            starting <- false
+
+        exit ()
+    )
 
     // At exit: waits for a Start in progress (on the EventWaiter thread for LR triggers),
     // leaves scroll mode and refuses later Starts, so that the cursor is restored and
@@ -483,6 +500,7 @@ type private Scroll() =
     static member SetStarting () = lock monitor (fun () ->
         // Start refuses while closed or in Pass Mode, so do not wait for it then
         starting <- (not mode) && (not closed) && (not passMode)
+        if starting then startCanceled <- false
     )
 
     static member IsStarting with get() = starting
