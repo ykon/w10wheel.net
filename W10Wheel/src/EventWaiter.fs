@@ -118,25 +118,32 @@ let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
     | RightDown(_), LeftUp(_) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
-let private fromDown (d1:MouseEvent) (d2:MouseEvent) =
+let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
     //Ctx.LastFlags.SetSuppressed d1
     //Ctx.LastFlags.SetSuppressed d2
 
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
-    Ctx.startScrollMode d2.Info
+    Ctx.startScrollModeFor generation d2.Info
 
 let private dispatchEvent generation down res =
     match res with
     | Move(_) -> fromMove generation down
     | LeftUp(_) | RightUp(_) -> fromUp generation down res
-    | LeftDown(_) | RightDown(_) -> fromDown down res
+    | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
 
-let private fromTimeout generation down =
-    Ctx.LastFlags.SetResent down
-    Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-    Windows.resendDown generation down
+let private fromTimeout (generation: int) (down: MouseEvent) =
+    // The resent flag is also seen by the up of a later press: if Pass Mode has been turned
+    // on since the physical down (and maybe off again, with a new press received), neither
+    // set it nor resend. Checked under Ctx.passModeLock, under which Pass Mode is switched.
+    lock Ctx.passModeLock (fun () ->
+        if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
+            Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): dropped (Pass Mode)" down.Name)
+        else
+            Ctx.LastFlags.SetResent down
+            Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
+            Windows.resendDown generation down)
 
 // (physical down, Pass Mode generation when it was received)
 let private waiterQueue = new BlockingCollection<MouseEvent * int>(1)

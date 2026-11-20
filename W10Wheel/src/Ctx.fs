@@ -384,8 +384,13 @@ type private Scroll() =
         if cursorChange then
             WinCursor.restore() |> ignore
 
-    static member Start (info: HookInfo) = lock monitor (fun () ->
-        if not closed && not passMode then
+    static let start (info: HookInfo) (generation: int option) =
+        let sameGeneration =
+            match generation with
+            | Some g -> g = Volatile.Read(&passModeGeneration.contents)
+            | None -> true
+
+        if not closed && not passMode && sameGeneration then
             stime <- info.time
             setStartPoint(info.pt.x, info.pt.y)
             initScroll()
@@ -400,7 +405,14 @@ type private Scroll() =
         else
             // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
             starting <- false
-    )
+
+    static member Start (info: HookInfo) = lock monitor (fun () -> start info None)
+
+    // For the LR trigger, started on the EventWaiter thread some time after the physical downs:
+    // also refused if Pass Mode has been turned on since then (generation changed), even if it
+    // has been turned off again. Checked under the lock that SetPassMode takes, so that turning
+    // Pass Mode on after the check still leaves scroll mode.
+    static member Start (info: HookInfo, generation: int) = lock monitor (fun () -> start info (Some generation))
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
         if not closed && not passMode then
@@ -477,6 +489,7 @@ type private Scroll() =
 
 let isScrollMode () = Scroll.IsMode
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
+let startScrollModeFor (generation: int) (info: HookInfo): unit = Scroll.Start(info, generation)
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
 
 let exitScrollMode (): unit = Scroll.Exit()
