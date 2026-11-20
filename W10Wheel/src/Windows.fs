@@ -28,44 +28,72 @@ let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
 // leaving the remapped button pressed.
 let private BATCH_INPUT_INTERVAL_MS = 10
 
-// The rest of a batch (the up) whose first input (the down) has been sent.
-// releasePendingInput sends it at exit, so that the button is not left pressed.
-let private pendingInputs: WinAPI.MINPUT[] ref = ref null
+// Held while a batch is being sent, so that closeInput can wait for it at exit
+let private sendLock = new Object()
+
+// Set by closeInput at exit: no more inputs are sent
+let private closing = ref false
+
+// The rest of a batch (the up) whose down was sent but which could not be sent even with
+// retries. It is tried again before the next batch and at exit, so that the button is not
+// left pressed.
+let private unsent: WinAPI.MINPUT[] ref = ref null
 
 let private sendOne (input: WinAPI.MINPUT): bool =
     WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
 
-// If the up is not sent, the button stays pressed: retry a few times
-let private sendWithRetry (input: WinAPI.MINPUT): unit =
+let private sendWithRetry (input: WinAPI.MINPUT): bool =
     let rec loop n =
-        if not (sendOne input) then
-            if n > 0 then
-                Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-                loop (n - 1)
-            else
-                Debug.WriteLine("SendInput failed")
+        if sendOne input then
+            true
+        elif n > 0 then
+            Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            loop (n - 1)
+        else
+            Debug.WriteLine("SendInput failed")
+            false
     loop 3
 
-let private sendRest (rest: WinAPI.MINPUT[]) =
-    rest |> Array.iteri (fun i input ->
-        if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-        sendWithRetry input)
+// Sends the inputs in order; returns the ones that could not be sent (null if all were sent)
+let private sendRest (rest: WinAPI.MINPUT[]): WinAPI.MINPUT[] =
+    let rec loop i =
+        if i >= rest.Length then
+            null
+        else
+            if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            if sendWithRetry rest.[i] then loop (i + 1) else rest.[i..]
+    loop 0
 
-let private sendBatch (msgs: WinAPI.MINPUT[]) =
-    if msgs.Length = 1 then
-        sendOne msgs.[0] |> ignore
-    elif sendOne msgs.[0] then
-        Volatile.Write(pendingInputs, msgs.[1..])
-        Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-        match Interlocked.Exchange(&pendingInputs.contents, null) with
-        | null -> () // already sent by releasePendingInput (exiting)
-        | rest -> sendRest rest
-
-// Called at exit: sends the up of a click whose down has been sent
-let releasePendingInput () =
-    match Interlocked.Exchange(&pendingInputs.contents, null) with
+let private retryUnsent () =
+    match unsent.Value with
     | null -> ()
-    | rest -> sendRest rest
+    | rest -> unsent.Value <- sendRest rest
+
+let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
+    if not (Volatile.Read(&closing.contents)) then
+        retryUnsent ()
+
+        if msgs.Length = 1 then
+            sendOne msgs.[0] |> ignore
+        elif sendOne msgs.[0] then
+            // The down was sent: the rest (the up) must be sent, or the button stays pressed
+            Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            match sendRest msgs.[1..] with
+            | null -> ()
+            | rest -> unsent.Value <- rest
+)
+
+// Called at exit: stops sending, waits for a batch being sent (its up included) and
+// tries again an up that could not be sent.
+let closeInput () =
+    Volatile.Write(closing, true)
+    if Monitor.TryEnter(sendLock, 1000) then
+        try
+            retryUnsent ()
+        finally
+            Monitor.Exit(sendLock)
+    else
+        Debug.WriteLine("closeInput: timeout")
 
 let private senderThread = new Thread(fun () ->
     while true do

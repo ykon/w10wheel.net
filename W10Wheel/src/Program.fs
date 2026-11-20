@@ -51,8 +51,8 @@ let private procExit () =
     // This also waits for a scroll start in progress and refuses later ones.
     Ctx.closeScrollMode()
 
-    // Send the up of a resent click if only its down has been sent
-    Windows.releasePendingInput()
+    // Wait for a resent click being sent (so that its up is sent) and stop sending
+    Windows.closeInput()
 
     Ctx.storeProperties()
     PreventMultiInstance.unlock()

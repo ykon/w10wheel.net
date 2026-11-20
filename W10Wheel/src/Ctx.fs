@@ -139,8 +139,8 @@ let private changeNotifyIcon b =
     notifyIcon.Text <- (getTrayText b)
     notifyIcon.Icon <- (getTrayIcon b)
 
-// Set after Scroll is defined (see below)
-let mutable private exitScrollOnPassMode: unit -> unit = (fun () -> ())
+// Set to Scroll.SetPassMode after Scroll is defined (see below)
+let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
@@ -149,7 +149,7 @@ type private Pass() =
         with get() = mode
         and set b =
             mode <- b
-            if b then exitScrollOnPassMode()
+            setScrollPassMode b
             changeNotifyIcon b
             passModeMenuItem.Checked <- b
 
@@ -350,6 +350,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable swap = false
     [<VolatileField>] static let mutable releasedMode = false
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
+    [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
 
     static let monitor = new Object()
 
@@ -367,7 +368,7 @@ type private Scroll() =
             WinCursor.restore() |> ignore
 
     static member Start (info: HookInfo) = lock monitor (fun () ->
-        if not closed then
+        if not closed && not passMode then
             stime <- info.time
             setStartPoint(info.pt.x, info.pt.y)
             initScroll()
@@ -382,7 +383,7 @@ type private Scroll() =
     )
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
-        if not closed then
+        if not closed && not passMode then
             stime <- info.time
             setStartPoint(Cursor.Position.X, Cursor.Position.Y)
             initScroll()
@@ -404,6 +405,14 @@ type private Scroll() =
     static member Close () = lock monitor (fun () ->
         closed <- true
         if mode then exit ()
+    )
+
+    // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
+    // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
+    // lock, so that a Start in progress on the EventWaiter thread is not missed.
+    static member SetPassMode (b: bool) = lock monitor (fun () ->
+        passMode <- b
+        if b && mode then exit ()
     )
 
     static member CheckExit (time: uint32) =
@@ -449,9 +458,8 @@ let startScrollModeK (info: KHookInfo) = Scroll.Start info
 let exitScrollMode (): unit = Scroll.Exit()
 let closeScrollMode (): unit = Scroll.Close()
 
-// Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
-// Leave it when Pass Mode is turned on (menu, tray icon or --sendPassMode).
-exitScrollOnPassMode <- (fun () -> if isScrollMode() then exitScrollMode())
+// Pass.Mode (menu, tray icon and --sendPassMode) tells Scroll about Pass Mode
+setScrollPassMode <- (fun b -> Scroll.SetPassMode b)
 
 let checkExitScroll (time: uint32) = Scroll.CheckExit time
 let getScrollStartPoint () = Scroll.StartPoint
