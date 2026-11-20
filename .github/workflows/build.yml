@@ -57,10 +57,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # skip-decompress: keep the zip as a file (by default a downloaded .zip is extracted)
       - uses: actions/download-artifact@v8
         with:
           name: W10Wheel.NET-${{ needs.build.outputs.version }}.zip
           path: artifacts
+          skip-decompress: true
 
       - name: Create draft release
         env:
