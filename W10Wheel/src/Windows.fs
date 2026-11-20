@@ -49,8 +49,10 @@ let private resendClickTag = createRandomNumber()
 
 // LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
 // https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
+// Events injected from a lower integrity level process have both bits set (flags = 3),
+// so test the bits instead of comparing the whole value.
 let isInjectedEvent (me: MouseEvent) =
-    me.Info.flags = 1u || me.Info.flags = 2u
+    (me.Info.flags &&& 0x3u) <> 0u
     
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt32() = resendTag
