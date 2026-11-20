@@ -77,7 +77,10 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
         debug "pass resendClick event" me
         callNextHook()
     elif Windows.isResendEvent me then
-        if resentDownUp then
+        if me.IsDown && Windows.dropStaleResentDown() then
+            debug "drop stale resend down" me
+            suppress()
+        elif resentDownUp then
             debug "ResendEvent: resentDownUp" me
             resentDownUp <- false
 

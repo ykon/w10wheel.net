@@ -61,6 +61,12 @@ let private unsent: WinAPI.MINPUT[] ref = ref null
 let private resentPressed = Array.create 2 false
 let private resentDropped = Array.create 2 false
 
+// The generation of the down resent alone being sent (NO_DOWN_SENT if none), and whether the
+// hook dropped it: see sendResentDown and dropStaleResentDown
+let private NO_DOWN_SENT = Int32.MinValue
+let private sendingDownGeneration = ref NO_DOWN_SENT
+let private sendingDownDropped = ref false
+
 let private sendOne (input: WinAPI.MINPUT): bool =
     WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
 
@@ -92,6 +98,17 @@ let private sendUnlessPassMode (generation: int) (input: WinAPI.MINPUT): bool =
         false
     else
         sendOne input
+
+// Sends a down resent alone. The generation can change (initState) after it is checked and
+// before the down is sent, and its physical up then passes W10Wheel, maybe before it: the
+// hook drops it then (see dropStaleResentDown). SendInput returns after the hook handled it.
+let private sendResentDown (generation: int) (input: WinAPI.MINPUT): bool =
+    Volatile.Write(sendingDownDropped, false)
+    Volatile.Write(sendingDownGeneration, generation)
+    try
+        sendUnlessPassMode generation input && not (Volatile.Read(&sendingDownDropped.contents))
+    finally
+        Volatile.Write(sendingDownGeneration, NO_DOWN_SENT)
 
 let private sendWithRetry (input: WinAPI.MINPUT): bool =
     let rec loop n =
@@ -159,7 +176,7 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
             // A down resent alone (its up comes later). Not before unsent ups: they would be
             // sent after it, releasing it.
             let i = lrIndex msgs.[0]
-            let sent = isNull unsent.Value && sendUnlessPassMode generation msgs.[0]
+            let sent = isNull unsent.Value && sendResentDown generation msgs.[0]
             if sent then
                 resentPressed.[i] <- true
             else
@@ -278,6 +295,18 @@ let isInjectedEvent (me: MouseEvent) =
 // dwExtraInfo is pointer-sized: compare as 64-bit (ToUInt32() throws on 64-bit values)
 let isResendEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt64() = uint64 resendTag
+
+// Called by the hook for a resent down: true (drop it) if it is the down resent alone being
+// sent and the generation has changed since the sender checked it (e.g. the state has been
+// initialized): its physical up passes W10Wheel and may already have passed, before it.
+// Not called in Pass Mode: then the down is released by ReleaseResent.
+let dropStaleResentDown () =
+    let g = Volatile.Read(&sendingDownGeneration.contents)
+    if g <> NO_DOWN_SENT && g <> Ctx.getPassModeGeneration() then
+        Volatile.Write(sendingDownDropped, true)
+        true
+    else
+        false
 
 let isResendClickEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt64() = uint64 resendClickTag
