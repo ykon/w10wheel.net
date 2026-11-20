@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.8.0
+        2.8.1
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2026-11-21: v2.8.1: X-Mouse Button Control 併用時に中ボタンが押されたままになる問題、メモリリーク、キーボードトリガーの二重登録などを修正
         2026-11-20: v2.8.0: .NET Framework 4.6.1 から .NET 11 に移行 (ランタイム同梱の単一 exe で配布、.NET のインストールは不要)
         2021-02-07: v2.7.3: Avast(\\AvastUI.exe)を除外する設定を追加 (excludeAvast)
         2021-01-25: v2.7.2: 起動時のメッセージがuiLanguageに従わないことを修正
