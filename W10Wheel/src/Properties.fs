@@ -12,7 +12,8 @@ open System.Diagnostics
 open System.Globalization
 open System.Text.RegularExpressions
 
-let private propLineRegex = new Regex("^\s*\S+\s*=\s*\S+\s*$")
+// key=value: the value can have spaces (e.g. "1, 2, 3" as in AccelTable.txt)
+let private propLineRegex = new Regex("^\s*\S+\s*=\s*\S.*$")
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
