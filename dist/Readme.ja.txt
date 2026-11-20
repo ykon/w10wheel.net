@@ -61,19 +61,15 @@ URL:
         2016-07-22: v0.1.0: 初公開
         
 移植:
-        Java版 (Scala) を .NET Framework (F#) に移植しました。
+        Java版 (Scala) を .NET Framework (F#) に移植し、現在は .NET 11 で動作します。
         実行環境が違うだけで、ほとんどの動作は同一となります。
         また、設定ファイルも共有します。
         
 対応環境:
-        .NET Framework システム要件
-         https://msdn.microsoft.com/ja-jp/library/8z6watww(v=vs.110).aspx
-        
-        Windows 8.1:
-                最新の.NET Frameworkをインストールしてください。 
-                https://www.microsoft.com/ja-JP/download/details.aspx?id=49981
-                WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
-                http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
+        Windows 10 / Windows 11 (x64)
+        .NET 11 が対応する Windows のバージョンに準じます。
+         https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md
+        .NET のランタイムを同梱しているため、.NET のインストールは不要です。
         
         Windows 10:
                 オプションを有効にしてください。
