@@ -424,6 +424,10 @@ type private Scroll() =
     static member Start (info: HookInfo, generation: int) = lock monitor (fun () -> start info (Some generation))
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
+        // A pending LR trigger start is superseded: cancel it, or it would start scroll mode
+        // again after this one has ended
+        if starting then startCanceled <- true
+
         if not closed && not passMode then
             stime <- info.time
             setStartPoint(Cursor.Position.X, Cursor.Position.Y)
@@ -464,6 +468,9 @@ type private Scroll() =
     // lock, so that a Start in progress on the EventWaiter thread is not missed.
     static member SetPassMode (b: bool) = lock monitor (fun () ->
         passMode <- b
+        // A pending LR trigger start is refused (Pass Mode generation): do not leave it
+        // starting, the ups after Pass Mode is turned off would be taken for it
+        if b then starting <- false
         if b && mode then exit ()
     )
 
