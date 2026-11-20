@@ -93,7 +93,7 @@ let private skipResendEventLR (me: MouseEvent): nativeint option =
             else
                 debug "Bad: resendUp retry" me
                 Thread.Sleep(1)
-                Windows.resendUp me
+                Windows.resendUpAgain me
                 suppress()
         else
             pass()
