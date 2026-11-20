@@ -67,6 +67,7 @@ let private procMouse nCode wParam info: nativeint =
         match lrButton (wParam.ToInt32()) with
         | Some(button, isDown) when Windows.dropResent button isDown info -> IntPtr(1)
         | lr ->
+            lr |> Option.iter (fun (button, isDown) -> Windows.handlingButton button isDown info)
             let res = procMouseEvent wParam info callNextHook
             lr |> Option.iter (fun (button, isDown) ->
                 Windows.handledButton button isDown info passed.Value)

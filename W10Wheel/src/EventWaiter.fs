@@ -90,13 +90,14 @@ let setOfferEW () =
     Ctx.setOfferEW offer
 
 // generation: the Pass Mode generation when the physical down was received (see start)
+// pressId: the press of the physical down (Windows.pressIdOf), for the hook (Windows.dropResent)
 
-let private fromMove (generation: int) (down: MouseEvent) =
+let private fromMove (generation: int) (pressId: int) (down: MouseEvent) =
     //Ctx.LastFlags.SetResent down
     Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)
-    Windows.resendDown generation down
+    Windows.resendDown generation pressId down
 
-let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
+let private fromUp (generation: int) (pressId: int) (down:MouseEvent) (up:MouseEvent) =
     //Ctx.LastFlags.SetResent down
 
     let resendC (mc: MouseClick) =
@@ -107,7 +108,7 @@ let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
         let wn = down.Name
         let rn = up.Name
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s, %s" wn rn wn rn)
-        Windows.resendDownUp generation down up
+        Windows.resendDownUp generation pressId down up
 
     match down, up with
     | LeftDown(_), LeftUp(_)  ->
@@ -131,15 +132,15 @@ let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
     Ctx.startScrollModeFor generation d2.Info
 
-let private dispatchEvent generation down res =
+let private dispatchEvent generation pressId down res =
     match res with
-    | Move(_) -> fromMove generation down
-    | LeftUp(_) | RightUp(_) -> fromUp generation down res
+    | Move(_) -> fromMove generation pressId down
+    | LeftUp(_) | RightUp(_) -> fromUp generation pressId down res
     | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
 
-let private fromTimeout (generation: int) (down: MouseEvent) =
+let private fromTimeout (generation: int) (pressId: int) (down: MouseEvent) =
     // The resent flag is also seen by the up of a later press: if Pass Mode has been turned
     // on since the physical down (and maybe off again, with a new press received), neither
     // set it nor resend. Checked under Ctx.passModeLock, under which Pass Mode is switched.
@@ -149,15 +150,15 @@ let private fromTimeout (generation: int) (down: MouseEvent) =
         else
             Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
             // Queue the down first: the up of a hook seeing the flag is queued after it
-            Windows.resendDown generation down
+            Windows.resendDown generation pressId down
             Ctx.LastFlags.SetResent down)
 
-// (physical down, Pass Mode generation when it was received)
-let private waiterQueue = new BlockingCollection<MouseEvent * int>(1)
+// (physical down, Pass Mode generation when it was received, its press ID)
+let private waiterQueue = new BlockingCollection<MouseEvent * int * int>(1)
 
 let private waiterThread = new Thread(fun () ->
     while true do
-        let down, generation = waiterQueue.Take()
+        let down, generation, pressId = waiterQueue.Take()
 
         // The scroll start (second down) takes longer: it is done after the offer returns,
         // the hook handles the ups meanwhile as starting (see setFlagsOffer)
@@ -165,11 +166,11 @@ let private waiterThread = new Thread(fun () ->
         sync.poll (Ctx.getPollTimeout()) (fun res ->
             match res with
             | Some(LeftDown(_) | RightDown(_) as d2) -> second.Value <- d2
-            | Some(res) -> dispatchEvent generation down res
-            | None -> fromTimeout generation down)
+            | Some(res) -> dispatchEvent generation pressId down res
+            | None -> fromTimeout generation pressId down)
 
         if second.Value.IsDown then
-            dispatchEvent generation down second.Value
+            dispatchEvent generation pressId down second.Value
 )
         
 //let private waiterThread = new Thread(waiter)
@@ -186,7 +187,7 @@ let start (down: MouseEvent) =
     // waiting), leaving waiting set without a wait, so that the next offer would never return
     sync.setWaiting()
     // Called by the mouse hook when the physical down is received: record the Pass Mode
-    // generation now, the resend happens later on the waiter thread
-    waiterQueue.Add((down, Ctx.getPassModeGeneration()))
+    // generation and the press now, the resend happens later on the waiter thread
+    waiterQueue.Add((down, Ctx.getPassModeGeneration(), Windows.pressIdOf down))
 
 
