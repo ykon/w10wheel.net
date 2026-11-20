@@ -134,6 +134,9 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
             // either, and the old ups would be sent after the new click
             Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
         | _ ->
+            // A click (or a down and up pair) is sent even if Pass Mode has been turned on (or
+            // the state initialized) since it was queued: it cannot leave the button pressed,
+            // and the user clicked before
             if sendOne msgs.[0] then
                 // The down was sent: the rest (the up) must be sent, or the button stays pressed
                 Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
