@@ -434,8 +434,9 @@ let sendWheel (movePt: WinAPI.POINT) =
 
 let private sendWheelRaw (x: int) (y: int): unit =
     let sx, sy = scrollStartPoint
-    // x and y are relative moves
-    if x <> 0 || y <> 0 then
+    // x and y are relative moves. WM_INPUT already queued is still handled after scroll mode
+    // has ended (RawInput unregistered).
+    if Ctx.isScrollMode() && (x <> 0 || y <> 0) then
         let dx, dy = swapIf x y
         let wspt = WinAPI.POINT(sx, sy)
         sendWheelIf wspt dx dy
