@@ -63,8 +63,11 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetResent waitingEvent
         //Thread.Sleep(0)
     | LeftUp(_) | RightUp(_) ->
-        Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
-        Ctx.LastFlags.SetResent waitingEvent
+        // Only for the up of the other button: the waiting down is resent and its physical up
+        // comes later. The up of the same button is resent with the down (the click is done).
+        if not (waitingEvent.SameButton me) then
+            Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
+            Ctx.LastFlags.SetResent waitingEvent
     | LeftDown(_) | RightDown(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
