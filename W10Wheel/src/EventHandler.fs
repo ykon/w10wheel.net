@@ -27,9 +27,10 @@ let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
-// The down of the single or drag trigger started scroll mode (and was suppressed). Reset by
-// its up: without it, the down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
-let mutable private triggerStarted = false
+// The down of the single or drag trigger that started scroll mode (and was suppressed). Reset
+// by its up. An up of another button (e.g. the trigger was changed by Reload while pressed), or
+// without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+let mutable private triggerStarted: MouseEvent = NonEvent
 
 let private initState () =
     lastEvent <- NonEvent
@@ -38,7 +39,7 @@ let private initState () =
     resentDownUp <- false
     secondTriggerUp <- false
     dragged <- false
-    triggerStarted <- false
+    triggerStarted <- NonEvent
 
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
@@ -274,7 +275,7 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         debug "start scroll mode" me
         Ctx.startScrollMode me.Info
-        triggerStarted <- true
+        triggerStarted <- me
         suppress()
     else
         None
@@ -292,7 +293,7 @@ let private dragStart info =
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
     Ctx.startScrollMode me.Info
-    triggerStarted <- true
+    triggerStarted <- me
 
     drag <- dragStart
     dragged <- false
@@ -300,8 +301,8 @@ let private startScrollDrag (me: MouseEvent): nativeint option =
     suppress()
 
 let private passNotStartedTrigger (up: MouseEvent): nativeint option =
-    if triggerStarted then
-        triggerStarted <- false
+    if triggerStarted.SameButton up then
+        triggerStarted <- NonEvent
         None
     else
         debug "pass (the down passed)" up
