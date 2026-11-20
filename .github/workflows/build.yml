@@ -71,5 +71,5 @@ jobs:
           gh release create "$TAG" artifacts/*.zip \
             --draft \
             --verify-tag \
-            --title "W10Wheel.NET v${VERSION}" \
+            --title "${VERSION}" \
             --notes "${notes:-W10Wheel.NET v${VERSION}}"
