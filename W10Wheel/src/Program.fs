@@ -121,7 +121,8 @@ let main argv =
     checkDoubleLaunch ()
     checkAdmin ()
 
-    SystemEvents.SessionEnding.Add (fun _ -> procExit())
+    // Not at SessionEnding: the shutdown can still be canceled there (and W10Wheel kept running)
+    SystemEvents.SessionEnded.Add (fun _ -> procExit())
     initSetFunctions ()
 
     Ctx.loadProperties false
