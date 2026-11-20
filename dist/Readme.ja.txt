@@ -111,7 +111,7 @@ URL:
         動作が競合して操作不能になります。
         
 回復操作:
-        スクロールモードのまま戻らくなったら、
+        スクロールモードのまま戻らなくなったら、
         Escape キーを押しながらクリックを試してください。
         状態を初期化して、スクロールモードを終了します。
         
@@ -128,10 +128,13 @@ URL:
         
 使用方法:
         W10Wheel.exe を実行してください。
-        タスクトレイに exe ファイルと同様のアイコンが発生します。
+        タスクトレイにアイコンが表示されます。
         こちらから右クリックメニューで設定を変更できます。
         詳しい方は、設定ファイル (.W10Wheel.properties) を直接編集してください。
         一度起動して終了すれば、設定ファイルはユーザーディレクトリに生成されます。
+        実行中に設定ファイルを編集した場合は、Properties メニューの Reload か
+        --sendReloadProp コマンドで読み込み直してください。
+        読み込み直さずに終了すると、実行中の設定で上書きされます。
         
         あとの使い方は WheelBall など同種のソフトと同様になります。
         各トリガーを押すと、スクロールモードに移行します。
@@ -194,7 +197,7 @@ URL:
         Keyboard: キーボードトリガー
         Accel Table: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
         Priority: プロセスの優先度を変更
-        SetNumber: 数値をセット (設定項目を参照)
+        Set Number: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
         Properties: 設定ファイル関連
@@ -260,8 +263,8 @@ URL:
         horizontalScroll: bool (default: true)
                 水平スクロール
                 使わない人は無効にしてください。
-        horizontalThreshold: 0-500 (default: 50)
-                水辺スクロールの閾値
+        horizontalThreshold: 0-500 (default: 75)
+                水平スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
                 スクロールの方向を逆にする (反転する)
@@ -303,7 +306,7 @@ URL:
                 折り返しの反応を速くするか
                 移動量に関係なくホイールを送ります。
                 
-        accelTable: bool (default: false) # AccelTable
+        accelTable: bool (default: true) # AccelTable
                 AccelTableを有効にするか
         customAccelTable: bool (default: false) # AccelTable
                 CustomTableを有効にするか
@@ -322,7 +325,7 @@ URL:
         uiLanguage: string (default: by system) # Language
                 UIの表示に使う言語設定
                 
-        excludeAvast: bool (default: false) # LR, Left*, Right*
+        excludeAvast: bool (default: false) # LRTrigger, LeftTrigger, RightTrigger
                 \\AvastUI.exeがフォアグラウンドの場合は処理を行わない
         
 ライセンス:
