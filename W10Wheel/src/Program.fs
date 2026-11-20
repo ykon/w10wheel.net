@@ -85,18 +85,20 @@ let private unknownCommand name =
 let private procArgv (argv: string[]) =
     Debug.WriteLine("procArgv")
 
-    match argv |> Array.toList with
-    | "--sendExit" :: _ -> W10Message.sendExit ()
-    | "--sendPassMode" :: rest -> W10Message.sendPassMode (getBool(rest))
-    | "--sendReloadProp" :: _ -> W10Message.sendReloadProp ()
-    | "--sendInitState" :: _ -> W10Message.sendInitState ()
-    | name :: _ when name.StartsWith("--") -> unknownCommand name
-    | name :: _ -> setSelectedProperties name
-    | _ -> ()
+    // Some(false) if the command could not be sent (SendInput failed)
+    let sent =
+        match argv |> Array.toList with
+        | "--sendExit" :: _ -> Some(W10Message.sendExit ())
+        | "--sendPassMode" :: rest -> Some(W10Message.sendPassMode (getBool(rest)))
+        | "--sendReloadProp" :: _ -> Some(W10Message.sendReloadProp ())
+        | "--sendInitState" :: _ -> Some(W10Message.sendInitState ())
+        | name :: _ when name.StartsWith("--") -> unknownCommand name; None
+        | name :: _ -> setSelectedProperties name; None
+        | _ -> None
 
-    if argv.Length > 0 && argv.[0].StartsWith("--send") then
+    sent |> Option.iter (fun ok ->
         Thread.Sleep(1000)
-        Environment.Exit(0)
+        Environment.Exit(if ok then 0 else 1))
 
 
 let private initSetFunctions () =
