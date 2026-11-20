@@ -182,9 +182,11 @@ let start (down: MouseEvent) =
         raise (ArgumentException())
 
     waitingEvent <- down
+    // Before queuing the wait: set after it, the wait could already have timed out (and reset
+    // waiting), leaving waiting set without a wait, so that the next offer would never return
+    sync.setWaiting()
     // Called by the mouse hook when the physical down is received: record the Pass Mode
     // generation now, the resend happens later on the waiter thread
     waiterQueue.Add((down, Ctx.getPassModeGeneration()))
-    sync.setWaiting()
 
 
