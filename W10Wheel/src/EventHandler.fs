@@ -32,10 +32,20 @@ let mutable private dragged = false
 // without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
 let mutable private triggerStarted: MouseEvent = NonEvent
 
-// The down that started scroll mode of the trigger before it was changed (changeTrigger). Its
-// up is suppressed before the handlers of the new trigger, which would handle it as their own
-// (e.g. the LR trigger's wait would resend it). Reset by its up or the next down of its button.
-let mutable private canceledDown: MouseEvent = NonEvent
+// The downs that started scroll mode of a trigger before it was changed (changeTrigger), by
+// button (buttonIndex): changed again while pressed, there can be several. Their up is
+// suppressed before the handlers of the current trigger, which would handle it as their own
+// (e.g. the LR trigger's wait would resend it). Reset by the up or the next down of the button.
+let private canceledDowns = Array.create 5 false
+
+let private buttonIndex (me: MouseEvent): int =
+    match me with
+    | LeftEvent(_) -> 0
+    | RightEvent(_) -> 1
+    | MiddleEvent(_) -> 2
+    | X1Event(_) -> 3
+    | X2Event(_) -> 4
+    | _ -> raise (ArgumentException())
 
 let private initState () =
     lastEvent <- NonEvent
@@ -45,7 +55,7 @@ let private initState () =
     secondTriggerUp <- false
     dragged <- false
     triggerStarted <- NonEvent
-    canceledDown <- NonEvent
+    Array.fill canceledDowns 0 canceledDowns.Length false
 
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
@@ -524,18 +534,26 @@ let private __procUpLR: (MouseEvent -> nativeint) ref = ref lrUp
 let private __procDownS: (MouseEvent -> nativeint) ref = ref noneDown
 let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 
-// Before the handlers of the trigger (see canceledDown)
+// Before the handlers of the trigger (see canceledDowns)
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
-    if not (Windows.isInjectedEvent d) && canceledDown.SameEvent d then
-        canceledDown <- NonEvent
+    if not (Windows.isInjectedEvent d) then
+        canceledDowns.[buttonIndex d] <- false
 
     Volatile.Read(&proc.contents)(d)
 
 let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): nativeint =
-    if not (Windows.isInjectedEvent u) && canceledDown.SameButton u then
-        debug "suppress (the down was canceled by changing the trigger)" u
-        canceledDown <- NonEvent
-        suppress().Value
+    let i = buttonIndex u
+    if not (Windows.isInjectedEvent u) && canceledDowns.[i] then
+        canceledDowns.[i] <- false
+
+        // As the handlers do for an up: Esc initializes the state (and passes the up), and the
+        // up is the last event (or the next down of the button would be taken as the same)
+        match checkEscape u with
+        | Some(res) -> res
+        | None ->
+            debug "suppress (the down was canceled by changing the trigger)" u
+            lastEvent <- u
+            suppress().Value
     else
         Volatile.Read(&proc.contents)(u)
 
@@ -616,13 +634,15 @@ let private changeTrigger (changed: bool): unit =
 
     // The handlers of the old trigger are not used any more, so its scroll mode would not end
     // (e.g. the up of the drag trigger is not handled as such). End it (not the keyboard
-    // trigger's), and suppress the up of its down before the new handlers (see canceledDown).
+    // trigger's), and suppress the up of its down before the new handlers (see canceledDowns).
     if changed then
         if (Ctx.isScrollMode() || Ctx.isStartingScrollMode()) && not (Ctx.isKeyboardScrollMode()) then
             Debug.WriteLine("changeTrigger: exit scroll mode")
             Ctx.exitScrollMode()
 
-        canceledDown <- triggerStarted
+        if triggerStarted.IsDown then
+            canceledDowns.[buttonIndex triggerStarted] <- true
+
         triggerStarted <- NonEvent
         drag <- dragDefault
         dragged <- false
