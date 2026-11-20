@@ -36,8 +36,8 @@ let private sendLock = new Object()
 let private closing = ref false
 
 // The rest of a batch (the up) whose down was sent but which could not be sent even with
-// retries. It is tried again before the next batch and at exit, so that the button is not
-// left pressed.
+// retries. It is tried again before the next batch, periodically while nothing is queued
+// (see senderThread) and at exit, so that the button is not left pressed.
 let private unsent: WinAPI.MINPUT[] ref = ref null
 
 let private sendOne (input: WinAPI.MINPUT): bool =
@@ -136,10 +136,25 @@ let closeInput () =
     else
         Debug.WriteLine("closeInput: timeout")
 
+// While ups are unsent, they are tried again at this interval even if nothing is queued
+// (e.g. SendInput fails while the secure desktop is shown)
+let private UNSENT_RETRY_INTERVAL_MS = 100
+
+let private retryUnsentIdle () = lock sendLock (fun () ->
+    if not (Volatile.Read(&closing.contents)) then
+        retryUnsent false
+)
+
 let private senderThread = new Thread(fun () ->
     while true do
-        let generation, msgs = inputQueue.Take()
-        sendBatch generation msgs
+        let timeout = if isNull unsent.Value then Timeout.Infinite else UNSENT_RETRY_INTERVAL_MS
+        let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
+
+        if inputQueue.TryTake(&item, timeout) then
+            let generation, msgs = item
+            sendBatch generation msgs
+        else
+            retryUnsentIdle ()
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
 )
