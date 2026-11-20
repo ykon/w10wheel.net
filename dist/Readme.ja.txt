@@ -248,7 +248,7 @@ URL:
                 AboveNormal: 通常以上
                 Normal: 通常
                 
-        pollTimeout: 150-500 (default: 200)
+        pollTimeout: 50-500 (default: 200)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 
         scrollLocktime: 150-500 (default: 200)
                 トリガーを離してスクロールモードに固定する時間(ミリ秒)

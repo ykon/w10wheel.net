@@ -906,7 +906,7 @@ let private createSetNumberMenu () =
     let add = fun name low up ->
         menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
 
-    add DataID.pollTimeout 150 500
+    add DataID.pollTimeout 50 500
     add DataID.scrollLocktime 150 500
     addSeparator menu.DropDownItems
 
