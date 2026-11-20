@@ -1282,19 +1282,12 @@ let private setSettings (p: Properties.Properties) =
     BooleanNames |> Array.iter (fun n -> p.SetBool(n, (getBooleanOfName n)))
     NumberNames |> Array.iter (fun n -> p.SetInt(n, (getNumberOfName n)))
 
-// A setting not in the properties file has its default value: otherwise it would keep the
-// value of the previous file (Reload, switching properties)
-let private setDefaultsOfMissing () =
-    for key in defaultProp.Keys do
-        if (prop.GetPropertyOption key).IsNone then
-            Debug.WriteLine("Default: " + key)
-            prop.[key] <- defaultProp.[key]
-
 let private isInvalidValue (e: exn) =
     e :? KeyNotFoundException || e :? FormatException || e :? OverflowException || e :? ArgumentException
 
-// Applies the value of name in prop. An invalid value is handled like a missing one: the
-// default value is applied instead (not keeping the value of the previous file).
+// Applies the value of name in prop. If it is missing or invalid, the default value is
+// applied instead: otherwise the value of the previous file would be kept (Reload,
+// switching properties).
 let private setOrDefault (name: string) (apply: Properties.Properties -> unit) =
     try
         apply prop
@@ -1386,10 +1379,9 @@ let loadProperties (update:bool): unit =
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
-            // All the settings have their default values
+            // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
 
-        setDefaultsOfMissing()
         Debug.WriteLine("Start load")
 
         setTriggerOfProperty()
