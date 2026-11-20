@@ -142,6 +142,9 @@ let private changeNotifyIcon b =
 // Set to Scroll.SetPassMode after Scroll is defined (see below)
 let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 
+// Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
+let mutable private onPassModeOn: unit -> unit = (fun () -> ())
+
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
 
@@ -150,6 +153,7 @@ type private Pass() =
         and set b =
             mode <- b
             setScrollPassMode b
+            if b then onPassModeOn()
             changeNotifyIcon b
             passModeMenuItem.Checked <- b
 
@@ -452,7 +456,8 @@ type private Scroll() =
         and set b = releasedMode <- b
 
     static member SetStarting () = lock monitor (fun () ->
-        starting <- (not mode)
+        // Start refuses while closed or in Pass Mode, so do not wait for it then
+        starting <- (not mode) && (not closed) && (not passMode)
     )
 
     static member IsStarting with get() = starting
@@ -1548,3 +1553,12 @@ let initState () =
     LastFlags.Init()
     exitScrollMode()
     offerEW(Cancel) |> ignore
+
+// Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
+// e.g. the LR trigger wait would resend a down after the timeout although the up has already
+// passed. Cancel the wait and reset their state (scroll mode is left by Scroll.SetPassMode).
+onPassModeOn <- (fun () ->
+    offerEW(Cancel) |> ignore
+    initStateMEH()
+    initStateKEH()
+    LastFlags.Init())

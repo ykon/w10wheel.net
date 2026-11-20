@@ -99,8 +99,7 @@ let private fromUp (down:MouseEvent) (up:MouseEvent) =
         let wn = down.Name
         let rn = up.Name
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s, %s" wn rn wn rn)
-        Windows.resendDown down
-        Windows.resendUp up
+        Windows.resendDownUp down up
 
     match down, up with
     | LeftDown(_), LeftUp(_)  ->

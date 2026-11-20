@@ -54,38 +54,41 @@ let private sendWithRetry (input: WinAPI.MINPUT): bool =
             false
     loop 3
 
-// Sends the inputs in order; returns the ones that could not be sent (null if all were sent)
-let private sendRest (rest: WinAPI.MINPUT[]): WinAPI.MINPUT[] =
+// Sends the inputs in order (with retries if withRetry); returns the ones that could not be
+// sent (null if all were sent)
+let private sendInOrder (withRetry: bool) (inputs: WinAPI.MINPUT[]): WinAPI.MINPUT[] =
+    let send = if withRetry then sendWithRetry else sendOne
     let rec loop i =
-        if i >= rest.Length then
+        if i >= inputs.Length then
             null
         else
             if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-            if sendWithRetry rest.[i] then loop (i + 1) else rest.[i..]
+            if send inputs.[i] then loop (i + 1) else inputs.[i..]
     loop 0
 
-let private retryUnsent () =
+let private retryUnsent (withRetry: bool) =
     match unsent.Value with
     | null -> ()
-    | rest -> unsent.Value <- sendRest rest
+    | rest -> unsent.Value <- sendInOrder withRetry rest
 
 let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
     if not (Volatile.Read(&closing.contents)) then
-        retryUnsent ()
+        // Without retries here: while SendInput keeps failing, retrying before every
+        // batch (wheel events while scrolling) would make the queue fall behind
+        retryUnsent false
 
-        if msgs.Length = 1 then
-            sendOne msgs.[0] |> ignore
-        elif sendOne msgs.[0] then
-            // The down was sent: the rest (the up) must be sent, or the button stays pressed
-            Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-            match sendRest msgs.[1..] with
-            | null -> ()
-            | rest ->
-                // Keep the earlier ones too (retryUnsent may not have sent them)
-                unsent.Value <-
-                    match unsent.Value with
-                    | null -> rest
-                    | earlier -> Array.append earlier rest
+        match msgs.Length with
+        | 0 -> ()
+        | 1 -> sendOne msgs.[0] |> ignore
+        | _ when unsent.Value <> null ->
+            // Ups are still not sent: do not press another button, it could not be released
+            // either, and the old ups would be sent after the new click
+            Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
+        | _ ->
+            if sendOne msgs.[0] then
+                // The down was sent: the rest (the up) must be sent, or the button stays pressed
+                Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+                unsent.Value <- sendInOrder true msgs.[1..]
 )
 
 // Called at exit: stops sending, waits for a batch being sent (its up included) and
@@ -94,7 +97,7 @@ let closeInput () =
     Volatile.Write(closing, true)
     if Monitor.TryEnter(sendLock, 1000) then
         try
-            retryUnsent ()
+            retryUnsent true
         finally
             Monitor.Exit(sendLock)
     else
@@ -416,6 +419,20 @@ let private __resendUp (me: MouseEvent) (extra: uint32) =
 
 let resendUp (me: MouseEvent) =
     __resendUp me resendTag
+
+// Resends a down and an up (at different points). The same button's down and up are sent
+// as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
+let resendDownUp (down: MouseEvent) (up: MouseEvent) =
+    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u resendTag
+    match down, up with
+    | LeftDown(d), LeftUp(u) ->
+        sendInputArray [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
+    | RightDown(d), RightUp(u) ->
+        sendInputArray [| input d MOUSEEVENTF_RIGHTDOWN; input u MOUSEEVENTF_RIGHTUP |]
+    | _ ->
+        // Different buttons: not a pair (the other button's up comes later)
+        resendDown down
+        resendUp up
 
 open WinAPI.VKey
 
