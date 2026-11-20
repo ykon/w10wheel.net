@@ -41,6 +41,7 @@ Copy-Item (Join-Path $root 'W10Wheel/bin/publish/win-x64/W10Wheel.exe') $staging
 Copy-Item (Join-Path $root 'dist/*') $staging
 Copy-Item (Join-Path $root 'License.txt') $staging
 Copy-Item (Join-Path $root 'Library.txt') $staging
+Copy-Item (Join-Path $root 'AccelTable.txt') $staging
 
 Compress-Archive -Path $staging -DestinationPath $zip
 Write-Host "Created: $zip"
