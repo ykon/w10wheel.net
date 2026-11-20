@@ -486,16 +486,16 @@ let private __procDownS: (MouseEvent -> nativeint) ref = ref noneDown
 let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 
 let private procDownLR (d: MouseEvent): nativeint =
-    Volatile.Read(__procDownLR)(d)
+    Volatile.Read(&__procDownLR.contents)(d)
 
 let private procUpLR (d: MouseEvent): nativeint =
-    Volatile.Read(__procUpLR)(d)
+    Volatile.Read(&__procUpLR.contents)(d)
 
 let private procDownS (d: MouseEvent): nativeint =
-    Volatile.Read(__procDownS)(d)
+    Volatile.Read(&__procDownS.contents)(d)
 
 let private procUpS (d: MouseEvent): nativeint =
-    Volatile.Read(__procUpS)(d)
+    Volatile.Read(&__procUpS.contents)(d)
 
 let leftDown (info: HookInfo) =
     //Debug.WriteLine("LeftDown")

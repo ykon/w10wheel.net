@@ -40,7 +40,7 @@ let private showAdminMesssage (): DialogResult =
 let private checkAdmin () =
     if not (isAdmin ()) then
         if (showAdminMesssage ()) = DialogResult.OK then
-            Process.Start(WikiUrl) |> ignore
+            Process.Start(ProcessStartInfo(WikiUrl, UseShellExecute = true)) |> ignore
 
 let private procExit () =
     Debug.WriteLine("procExit")

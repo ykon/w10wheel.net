@@ -15,7 +15,7 @@ let errorMessage msg title =
 let errorMessageE (e: Exception) =
     errorMessage e.Message (e.GetType().Name)
 
-let private isValidNumber input low up =
+let private isValidNumber (input: string) low up =
     match Int32.TryParse(input)  with
     | (true, res) -> res >= low && res <= up 
     | _ -> false

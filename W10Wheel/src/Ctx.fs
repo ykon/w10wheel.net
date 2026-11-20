@@ -25,7 +25,7 @@ let setSelectedProperties name =
     Volatile.Write(selectedProperties, name)
 
 let private getSelectedProperties () =
-    Volatile.Read(selectedProperties)
+    Volatile.Read(&selectedProperties.contents)
 
 let private firstTrigger: Trigger ref = ref LRTrigger
 let private pollTimeout = ref 200
@@ -48,10 +48,10 @@ let private keyboardMenuDict = new MenuDict()
 let private vhAdjusterMenuDict = new MenuDict()
 
 let isKeyboardHook () =
-    Volatile.Read(keyboardHook)
+    Volatile.Read(&keyboardHook.contents)
 
 let getTargetVKCode () =
-    Volatile.Read(targetVKCode)
+    Volatile.Read(&targetVKCode.contents)
 
 let isTriggerKey (ke: KeyboardEvent) =
     ke.VKCode = getTargetVKCode()
@@ -60,7 +60,7 @@ let isNoneTriggerKey () =
     getTargetVKCode() = 0
 
 let isSendMiddleClick () =
-    Volatile.Read(sendMiddleClick)
+    Volatile.Read(&sendMiddleClick.contents)
 
 let private notifyIcon = new System.Windows.Forms.NotifyIcon()
 
@@ -68,7 +68,7 @@ let private isSeparator (item: ToolStripItem): bool =
     item :? ToolStripSeparator
 
 let getUILanguage () =
-    Volatile.Read(uiLanguage)
+    Volatile.Read(&uiLanguage.contents)
 
 let convLang (msg: string) =
     Debug.WriteLine("convLang: " + msg)
@@ -234,10 +234,10 @@ let getAccelMultiplier () =
         Accel.Multiplier.DArray
 
 let private getFirstTrigger () =
-    Volatile.Read(firstTrigger)
+    Volatile.Read(&firstTrigger.contents)
 
 let private getProcessPriority () =
-    Volatile.Read(processPriority)
+    Volatile.Read(&processPriority.contents)
 
 let isTrigger (e: Trigger) =
     getFirstTrigger() = e
@@ -589,7 +589,7 @@ type LastFlags() =
     *)
 
 let getPollTimeout () =
-    Volatile.Read(pollTimeout)
+    Volatile.Read(&pollTimeout.contents)
 
 let isPassMode () =
     Pass.Mode
@@ -647,8 +647,8 @@ let private getBooleanOfName (name: string): bool =
     | DataID.customAccelTable -> Accel.CustomTable
     | DataID.draggedLock -> Scroll.DraggedLock
     | DataID.swapScroll -> Scroll.Swap
-    | DataID.sendMiddleClick -> Volatile.Read(sendMiddleClick)
-    | DataID.keyboardHook -> Volatile.Read(keyboardHook)
+    | DataID.sendMiddleClick -> Volatile.Read(&sendMiddleClick.contents)
+    | DataID.keyboardHook -> Volatile.Read(&keyboardHook.contents)
     | DataID.vhAdjusterMode -> VHAdjuster.Mode
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
     | DataID.passMode -> Pass.Mode
@@ -857,7 +857,7 @@ let private createPriorityMenu () =
 
 let private getNumberOfName (name: string): int =
     match name with
-    | DataID.pollTimeout -> Volatile.Read(pollTimeout)
+    | DataID.pollTimeout -> Volatile.Read(&pollTimeout.contents)
     | DataID.scrollLocktime -> Scroll.LockTime
     | DataID.verticalThreshold -> Threshold.Vertical
     | DataID.horizontalThreshold -> Threshold.Horizontal
@@ -1279,7 +1279,7 @@ let loadProperties (update:bool): unit =
         setUILanguageOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
-        WinHook.setOrUnsetKeyboardHook (Volatile.Read(keyboardHook))
+        WinHook.setOrUnsetKeyboardHook (Volatile.Read(&keyboardHook.contents))
 
         Debug.WriteLine("setNumberOfProperties")
         let setNum = setNumberOfProperty
@@ -1364,7 +1364,7 @@ let private createSavePropertiesMenuItem () =
 
 let private createOpenDirMenuItem (dir: string) =
     let item = createMenuItem_NonID "Open Dir"
-    addClick item (fun _ -> Process.Start(dir) |> ignore)
+    addClick item (fun _ -> Process.Start(ProcessStartInfo(dir, UseShellExecute = true)) |> ignore)
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
