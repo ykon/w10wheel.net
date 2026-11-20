@@ -20,20 +20,8 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-
-type private SendItem =
-    // (Pass Mode generation when queued, inputs): see sendUnlessPassMode
-    | Inputs of int * WinAPI.MINPUT[]
-    // An up whose down was not resent alone (see resendOtherUp): always sent
-    | OtherUp of WinAPI.MINPUT
-    // Pass Mode has been turned on: the ups (left, right) for the downs resent alone that are
-    // not released yet (see sendReleaseResent)
-    | ReleaseResent of WinAPI.MINPUT * WinAPI.MINPUT
-    // The state has been initialized (Ctx.initState): the physical ups pass W10Wheel, forget
-    // the downs resent alone (see sendForgetResent)
-    | ForgetResent
-
-let private inputQueue = new BlockingCollection<SendItem>()
+// (Pass Mode generation when queued, inputs): see sendUnlessPassMode
+let private inputQueue = new BlockingCollection<int * WinAPI.MINPUT[]>()
 
 // Interval between the inputs of one batch (the down and up of a resent click).
 // If they are sent in a single SendInput call, they arrive at the same moment, and
@@ -52,21 +40,6 @@ let private closing = ref false
 // (see senderThread) and at exit, so that the button is not left pressed.
 let private unsent: WinAPI.MINPUT[] ref = ref null
 
-// The downs resent alone (the LR trigger resends a down, and its up when the physical up
-// comes), by button (0: left, 1: right). Pressed: sent and not released yet; ReleaseResent
-// releases them when Pass Mode is turned on (the physical up then passes W10Wheel).
-// Dropped: not sent (Pass Mode, unsent ups, SendInput failed); its up (resendUp) is not sent
-// either (an up without a down, e.g. a right up opens a context menu). Reset when Pass Mode is
-// turned on, as the hook's flags (the physical up then passes W10Wheel). Used under sendLock.
-let private resentPressed = Array.create 2 false
-let private resentDropped = Array.create 2 false
-
-// The generation of the down resent alone being sent (NO_DOWN_SENT if none), and whether the
-// hook dropped it: see sendResentDown and dropStaleResentDown
-let private NO_DOWN_SENT = Int32.MinValue
-let private sendingDownGeneration = ref NO_DOWN_SENT
-let private sendingDownDropped = ref false
-
 let private sendOne (input: WinAPI.MINPUT): bool =
     WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
 
@@ -81,34 +54,17 @@ let private isDown =
     hasFlags (WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_RIGHTDOWN |||
               WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN)
 
-// The button of a down or an up resent alone (always left or right)
-let private lrIndex (input: WinAPI.MINPUT): int =
-    if hasFlags (WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_LEFTUP) input then 0 else 1
-
-// Inputs other than ups (downs and wheel events) are not sent in Pass Mode, nor if Pass Mode
-// has been turned on since they were queued (generation changed): W10Wheel does not scroll in
-// Pass Mode, and the physical up passes W10Wheel (the down would stay pressed). A down sent
-// just before Pass Mode is turned on is released by ReleaseResent, queued after it. Ups are
-// always sent (or a button could stay pressed).
+// Wheel events are not sent in Pass Mode, nor if Pass Mode has been turned on (or the state
+// initialized) since they were queued (generation changed): W10Wheel does not scroll then.
 // Not checked under a lock: SendInput waits for the low-level hooks (on the UI thread), which
-// may wait for that lock (e.g. Pass Mode switched there).
+// may wait for that lock (e.g. Pass Mode switched there). The resent downs and ups are checked
+// by the hook instead, which sees them in the order the application gets them (see dropResent).
 let private sendUnlessPassMode (generation: int) (input: WinAPI.MINPUT): bool =
     if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
         Debug.WriteLine("sendBatch: dropped (Pass Mode)")
         false
     else
         sendOne input
-
-// Sends a down resent alone. The generation can change (initState) after it is checked and
-// before the down is sent, and its physical up then passes W10Wheel, maybe before it: the
-// hook drops it then (see dropStaleResentDown). SendInput returns after the hook handled it.
-let private sendResentDown (generation: int) (input: WinAPI.MINPUT): bool =
-    Volatile.Write(sendingDownDropped, false)
-    Volatile.Write(sendingDownGeneration, generation)
-    try
-        sendUnlessPassMode generation input && not (Volatile.Read(&sendingDownDropped.contents))
-    finally
-        Volatile.Write(sendingDownGeneration, NO_DOWN_SENT)
 
 let private sendWithRetry (input: WinAPI.MINPUT): bool =
     let rec loop n =
@@ -164,67 +120,24 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
         | 1 when isUp msgs.[0] ->
             // An up for a down resent earlier (e.g. the LR trigger resent the down and the
             // physical up was suppressed): it must be sent, or the button stays pressed
-            let i = lrIndex msgs.[0]
-            if resentDropped.[i] && not resentPressed.[i] then
-                Debug.WriteLine("sendBatch: dropped an up (its down was not sent)")
-            else
-                sendUps msgs
-
-            resentPressed.[i] <- false
-            resentDropped.[i] <- false
+            sendUps msgs
         | 1 when isDown msgs.[0] ->
             // A down resent alone (its up comes later). Not before unsent ups: they would be
-            // sent after it, releasing it.
-            let i = lrIndex msgs.[0]
-            let sent = isNull unsent.Value && sendResentDown generation msgs.[0]
-            if sent then
-                resentPressed.[i] <- true
-            else
-                Debug.WriteLine("sendBatch: dropped a down")
-
-            resentDropped.[i] <- not sent
+            // sent after it, releasing it. Its up is then dropped by the hook (dropResent).
+            if not (isNull unsent.Value) then
+                Debug.WriteLine("sendBatch: dropped a down (unsent ups)")
+            elif not (sendOne msgs.[0]) then
+                Debug.WriteLine("sendBatch: SendInput failed (down)")
         | 1 -> sendUnlessPassMode generation msgs.[0] |> ignore
         | _ when not (isNull unsent.Value) ->
             // Ups are still not sent: do not press another button, it could not be released
             // either, and the old ups would be sent after the new click
             Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
         | _ ->
-            if sendUnlessPassMode generation msgs.[0] then
+            if sendOne msgs.[0] then
                 // The down was sent: the rest (the up) must be sent, or the button stays pressed
                 Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
                 addUnsent (sendInOrder true msgs.[1..])
-)
-
-// Releases the downs resent alone that were sent and are not released yet
-let private sendReleaseResent (left: WinAPI.MINPUT) (right: WinAPI.MINPUT) = lock sendLock (fun () ->
-    if not (Volatile.Read(&closing.contents)) then
-        let ups = [| if resentPressed.[0] then left
-                     if resentPressed.[1] then right |]
-        Array.fill resentPressed 0 2 false
-        // The downs dropped before (queued before Pass Mode was turned on, which queues this
-        // after them): their physical up passes W10Wheel, so no up of theirs comes any more
-        Array.fill resentDropped 0 2 false
-
-        if ups.Length > 0 then
-            Debug.WriteLine(sprintf "sendReleaseResent: %d" ups.Length)
-            sendUps ups
-)
-
-// The physical ups of the downs resent alone pass W10Wheel and release them: neither release
-// them again at Pass Mode, nor drop an up for them
-let private sendForgetResent () = lock sendLock (fun () ->
-    Array.fill resentPressed 0 2 false
-    Array.fill resentDropped 0 2 false
-)
-
-// An up whose down was not resent alone: sent whatever is known of those downs. The button
-// is released, so the tracking of its down resent alone ends too.
-let private sendOtherUp (up: WinAPI.MINPUT) = lock sendLock (fun () ->
-    if not (Volatile.Read(&closing.contents)) then
-        let i = lrIndex up
-        resentPressed.[i] <- false
-        resentDropped.[i] <- false
-        sendUps [| up |]
 )
 
 // Called at exit: stops sending, waits for a batch being sent (its up included) and
@@ -254,14 +167,11 @@ let private senderThread = new Thread(fun () ->
         let retry =
             not (Volatile.Read(&closing.contents)) && not (isNull (Volatile.Read(&unsent.contents)))
         let timeout = if retry then UNSENT_RETRY_INTERVAL_MS else Timeout.Infinite
-        let mutable item = Unchecked.defaultof<SendItem>
+        let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
 
         if inputQueue.TryTake(&item, timeout) then
-            match item with
-            | Inputs(generation, msgs) -> sendBatch generation msgs
-            | OtherUp(up) -> sendOtherUp up
-            | ReleaseResent(left, right) -> sendReleaseResent left right
-            | ForgetResent -> sendForgetResent ()
+            let generation, msgs = item
+            sendBatch generation msgs
         else
             retryUnsentIdle ()
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
@@ -274,7 +184,7 @@ senderThread.Start()
 
 let private rand = Random()
 
-let private createRandomNumber (): uint32 =    
+let private createRandomNumber (): uint32 =
     let mutable res = 0u
 
     while res = 0u do
@@ -285,47 +195,90 @@ let private createRandomNumber (): uint32 =
 let private resendTag = createRandomNumber()
 let private resendClickTag = createRandomNumber()
 
+// The kind of a resent input, in the upper half of dwExtraInfo (resendTag in the lower half):
+// see dropResent. In a 32-bit process dwExtraInfo has only the tag (all are KIND_PLAIN).
+let private KIND_PLAIN = 0UL   // passed as is (e.g. a down and up pair)
+let private KIND_DOWN = 1UL    // a down resent alone (its up comes later)
+let private KIND_RELEASE = 2UL // the up resent for a down resent alone
+
+let private resendExtra (kind: uint64): uint64 =
+    if IntPtr.Size = 8 then (kind <<< 32) ||| uint64 resendTag else uint64 resendTag
+
 // LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
 // https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
 // Events injected from a lower integrity level process have both bits set (flags = 3),
 // so test the bits instead of comparing the whole value.
-let isInjectedEvent (me: MouseEvent) =
-    (me.Info.flags &&& 0x3u) <> 0u
-    
-// dwExtraInfo is pointer-sized: compare as 64-bit (ToUInt32() throws on 64-bit values)
-let isResendEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt64() = uint64 resendTag
+let private isInjected (info: HookInfo) =
+    (info.flags &&& 0x3u) <> 0u
 
-// Called by the hook for a resent down: true (drop it) if it is the down resent alone being
-// sent and the generation has changed since the sender checked it (e.g. the state has been
-// initialized): its physical up passes W10Wheel and may already have passed, before it.
-// Not called in Pass Mode: then the down is released by ReleaseResent.
-let dropStaleResentDown () =
-    let g = Volatile.Read(&sendingDownGeneration.contents)
-    if g <> NO_DOWN_SENT && g <> Ctx.getPassModeGeneration() then
-        Volatile.Write(sendingDownDropped, true)
-        true
-    else
-        false
+let isInjectedEvent (me: MouseEvent) =
+    isInjected me.Info
+
+// dwExtraInfo is pointer-sized: compare as 64-bit (ToUInt32() throws on 64-bit values)
+let private isResendInfo (info: HookInfo) =
+    (info.dwExtraInfo.ToUInt64() &&& 0xFFFFFFFFUL) = uint64 resendTag
+
+let isResendEvent (me: MouseEvent) =
+    isResendInfo me.Info
 
 let isResendClickEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt64() = uint64 resendClickTag
 
-let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
+let private resendKind (info: HookInfo): uint64 option =
+    if isInjected info && isResendInfo info then Some(info.dwExtraInfo.ToUInt64() >>> 32) else None
+
+// The downs resent alone (LR trigger) by button (0: left, 1: right), as the hook sees them:
+// in the order the target application gets the inputs, whenever SendInput returns. Used on
+// the hook thread only.
+// upPassed: the physical up has passed W10Wheel since the physical down (e.g. in Pass Mode,
+// or after initState reset the flags).
+// downPassed: a down resent alone has reached the application, and no up since.
+let private upPassed = Array.create 2 false
+let private downPassed = Array.create 2 false
+
+// Called by the mouse hook for a left or right down or up before it is handled, also in
+// Pass Mode: true to drop it.
+// - A down resent alone after its physical up has passed would leave the button pressed.
+// - The up resent for a down resent alone that did not reach the application (dropped above,
+//   or not sent) would be an up without a down (e.g. a right up opens a context menu).
+let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
+    match resendKind info with
+    | Some(kind) when kind = KIND_DOWN && isDown && upPassed.[button] ->
+        Debug.WriteLine("dropResent: a down after its physical up")
+        true
+    | Some(kind) when kind = KIND_RELEASE && not isDown && not downPassed.[button] ->
+        Debug.WriteLine("dropResent: an up for a down not passed")
+        true
+    | _ ->
+        false
+
+// Called by the mouse hook after handling a left or right down or up (passed: passed on)
+let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
+    if isDown then
+        if not (isInjected info) then
+            upPassed.[button] <- false
+        elif passed && resendKind info = Some(KIND_DOWN) then
+            downPassed.[button] <- true
+    elif passed then
+        downPassed.[button] <- false
+        if not (isInjected info) then
+            upPassed.[button] <- true
+
+let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint64): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
     WinAPI.MINPUT(mi)
 
 // generation: the Pass Mode generation to check an input against (see sendUnlessPassMode)
 let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
-    inputQueue.Add(Inputs(generation, msgs))
+    inputQueue.Add((generation, msgs))
 
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
-    let input = createInput pt data flags time extra
+    let input = createInput pt data flags time (uint64 extra)
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
     enqueue (Ctx.getPassModeGeneration()) [|input|]
 
 let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
-    let input = createInput pt data flags time extra
+    let input = createInput pt data flags time (uint64 extra)
     WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
 
 open WinAPI.Event
@@ -566,7 +519,7 @@ let setSendWheelRaw (): unit =
     RawInput.setSendWheelRaw sendWheelRaw
 
 let private createClick (mc:MouseClick) =
-    let extra = resendClickTag
+    let extra = uint64 resendClickTag
     let create mouseData es = Array.map (fun e -> createInput mc.Info.pt mouseData e 0u extra) es
     match mc with
     | LeftClick(_) -> create 0 [|MOUSEEVENTF_LEFTDOWN; MOUSEEVENTF_LEFTUP|]
@@ -577,8 +530,8 @@ let private createClick (mc:MouseClick) =
 
 // The functions taking a generation are for EventWaiter, which resends on its own thread
 // some time after the physical down: it passes the Pass Mode generation recorded when the
-// physical down was received (EventWaiter.start), so that a down is dropped if Pass Mode was
-// turned on since then, even before it is queued.
+// physical down was received (EventWaiter.start). The resent downs and ups are checked by the
+// hook (dropResent), the generation is checked for wheel events only (sendUnlessPassMode).
 let resendClickWith (generation: int) (mc: MouseClick) =
     enqueue generation (createClick mc)
 
@@ -592,35 +545,34 @@ let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     | _ -> raise (ArgumentException())
 
 let resendDown (generation: int) (me: MouseEvent) =
-    let send (info: HookInfo) flags = enqueue generation [| createInput info.pt 0 flags 0u resendTag |]
+    let send (info: HookInfo) flags = enqueue generation [| createInput info.pt 0 flags 0u (resendExtra KIND_DOWN) |]
     match me with
     | LeftDown(info) -> send info MOUSEEVENTF_LEFTDOWN
     | RightDown(info) -> send info MOUSEEVENTF_RIGHTDOWN
     | _ -> raise (ArgumentException())
 
-let private __resendUp (me: MouseEvent) (extra: uint32) =
+let private __resendUp (me: MouseEvent) (kind: uint64) =
+    let send (info: HookInfo) flags =
+        enqueue (Ctx.getPassModeGeneration()) [| createInput info.pt 0 flags 0u (resendExtra kind) |]
     match me with
-    | LeftUp(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTUP 0u extra
-    | RightUp(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTUP 0u extra
+    | LeftUp(info) -> send info MOUSEEVENTF_LEFTUP
+    | RightUp(info) -> send info MOUSEEVENTF_RIGHTUP
     | _ -> raise (ArgumentException())
 
+// The up of a down resent alone (the physical up was suppressed)
 let resendUp (me: MouseEvent) =
-    __resendUp me resendTag
+    __resendUp me KIND_RELEASE
 
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
 // alone (the up of such a down is resent by checkResentDown before the wait is offered): it
-// passed W10Wheel (e.g. pressed in Pass Mode), so its up must be sent.
+// passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
 let private resendOtherUp (me: MouseEvent) =
-    let up (info: HookInfo) flags = OtherUp(createInput info.pt 0 flags 0u resendTag)
-    match me with
-    | LeftUp(info) -> inputQueue.Add(up info MOUSEEVENTF_LEFTUP)
-    | RightUp(info) -> inputQueue.Add(up info MOUSEEVENTF_RIGHTUP)
-    | _ -> raise (ArgumentException())
+    __resendUp me KIND_PLAIN
 
 // Resends a down and an up (at different points). The same button's down and up are sent
 // as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
 let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
-    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u resendTag
+    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u (resendExtra KIND_PLAIN)
     match down, up with
     | LeftDown(d), LeftUp(u) ->
         enqueue generation [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
@@ -630,21 +582,6 @@ let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
         // Different buttons: not a pair (the other button's up comes later)
         resendDown generation down
         resendOtherUp up
-
-// Pass Mode turned on (see Ctx): releases the downs resent alone whose physical up W10Wheel
-// will not handle. Queued after the downs queued before; only the ones sent are released
-// (see sendReleaseResent).
-let private releaseResent () =
-    let pt = WinAPI.POINT(Cursor.Position.X, Cursor.Position.Y)
-    let up flags = createInput pt 0 flags 0u resendTag
-    inputQueue.Add(ReleaseResent(up MOUSEEVENTF_LEFTUP, up MOUSEEVENTF_RIGHTUP))
-
-// Ctx.initState: queued after the downs queued before (see sendForgetResent)
-let private forgetResent () =
-    inputQueue.Add(ForgetResent)
-
-let setResentTracking () =
-    Ctx.setResentTracking releaseResent forgetResent
 
 open WinAPI.VKey
 

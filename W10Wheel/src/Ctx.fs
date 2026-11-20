@@ -1624,12 +1624,6 @@ let setSystemTray (): unit =
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
 let mutable private offerEW: MouseEvent -> bool = (fun me -> false)
-let mutable private releaseResent: unit -> unit = (fun () -> ())
-let mutable private forgetResent: unit -> unit = (fun () -> ())
-
-let setResentTracking release forget =
-    releaseResent <- release
-    forgetResent <- forget
 
 let setInitStateMEH f = initStateMEH <- f
 let setInitStateKEH f = initStateKEH <- f
@@ -1638,30 +1632,24 @@ let setOfferEW f = offerEW <- f
 let initState () =
     // Cancel the LR trigger wait first: its timeout could set the flags again after Init
     offerEW(Cancel) |> ignore
-    // The downs still queued are not sent: their physical up passes W10Wheel from now on and
-    // could come before them (also refuses a pending LR trigger start)
+    // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
+    // received before, and the wheel events queued are not sent. A down resent before and
+    // sent after its physical up is dropped by the hook (Windows.dropResent).
     newPassModeGeneration ()
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
-
-    // Without the flags, the physical ups of the downs resent alone pass W10Wheel and release
-    // them: Windows forgets them (not released again when Pass Mode is turned on)
-    forgetResent ()
     exitScrollMode()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
 // passed. Cancel the wait and reset their state (scroll mode is left by Scroll.SetPassMode).
 onPassModeOn <- (fun () ->
-    offerEW(Cancel) |> ignore
-
     // A down resent by W10Wheel (LR trigger) waits for W10Wheel to resend its up when the
-    // physical up comes. In Pass Mode the physical up passes instead, and it may even be
-    // handled before the resent down (Windows input queue), leaving the button pressed.
-    // Release it now: queued after the down, and only if the down has been sent.
-    releaseResent ()
-
+    // physical up comes. In Pass Mode the physical up passes instead and releases it; if it
+    // passes before the resent down (Windows input queue), the hook drops the down
+    // (Windows.dropResent).
+    offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
     LastFlags.Init())
