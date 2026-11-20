@@ -37,6 +37,9 @@ type Properties() =
     member self.Clear (): unit =
         sdict.Clear()
 
+    member self.Keys: string[] =
+        Seq.toArray sdict.Keys
+
     member self.Load (path:string, update:bool): unit =
         if update || sdict.Count = 0 then
             File.ReadAllLines(path) |>

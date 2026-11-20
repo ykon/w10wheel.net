@@ -1163,9 +1163,6 @@ let private setDefaultPriority () =
     //ProcessPriority.setPriority(getProcessPriority())
     setPriority (getProcessPriority().Name)
 
-let private setDefaultTrigger () =
-    setTrigger(getFirstTrigger().Name)
-
 let private NumberNames: string[] =
     [|DataID.pollTimeout; DataID.scrollLocktime;
       DataID.verticalThreshold; DataID.horizontalThreshold;
@@ -1279,6 +1276,31 @@ let private resetAllMenuItems () =
 
 let private prop = Properties.Properties()
 
+// The settings before the first load (the default values), written as in a properties file
+let private defaultProp = Properties.Properties()
+
+// Write the settings to p (the custom accel table is not written: it is only read)
+let private setSettings (p: Properties.Properties) =
+    let set = fun key value -> p.[key] <- value
+
+    set DataID.firstTrigger (getFirstTrigger().Name)
+    set DataID.accelMultiplier (Accel.Multiplier.Name)
+    set DataID.processPriority (getProcessPriority().Name)
+    set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
+    set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
+    set DataID.uiLanguage (getUILanguage())
+
+    BooleanNames |> Array.iter (fun n -> p.SetBool(n, (getBooleanOfName n)))
+    NumberNames |> Array.iter (fun n -> p.SetInt(n, (getNumberOfName n)))
+
+// A setting not in the properties file has its default value: otherwise it would keep the
+// value of the previous file (Reload, switching properties)
+let private setDefaultsOfMissing () =
+    for key in defaultProp.Keys do
+        if (prop.GetPropertyOption key).IsNone then
+            Debug.WriteLine("Default: " + key)
+            prop.[key] <- defaultProp.[key]
+
 let private setStringOfProperty name setFunc =
     try
         setFunc(prop.GetString(name))
@@ -1372,9 +1394,18 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
+    if not loaded then
+        setSettings defaultProp
+
     loaded <- true
     try
-        prop.Load(getSelectedPropertiesPath(), update)
+        try
+            prop.Load(getSelectedPropertiesPath(), update)
+        with
+            // All the settings have their default values
+            | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
+
+        setDefaultsOfMissing()
         Debug.WriteLine("Start load")
 
         setTriggerOfProperty()
@@ -1402,10 +1433,6 @@ let loadProperties (update:bool): unit =
         setNum DataID.firstMinThreshold 1 10
         setNum DataID.switchingThreshold 10 500
     with
-        | :? FileNotFoundException ->
-            Debug.WriteLine("Properties file not found")
-            setDefaultPriority()
-            setDefaultTrigger()
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
 let private isChangedProperties () =
@@ -1440,18 +1467,7 @@ let storeProperties () =
         if not loaded || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
-            let set = fun key value -> prop.[key] <- value
-
-            set DataID.firstTrigger (getFirstTrigger().Name)
-            set DataID.accelMultiplier (Accel.Multiplier.Name)
-            set DataID.processPriority (getProcessPriority().Name)
-            set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
-            set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
-            set DataID.uiLanguage (getUILanguage())
-
-            BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
-            NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
-
+            setSettings prop
             prop.Store(getSelectedPropertiesPath())
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
