@@ -824,20 +824,22 @@ let private setMenuEnabled (dict:MenuDict) key enabled =
     if dict.ContainsKey(key) then
         dict.[key].Enabled <- enabled
 
-let mutable private changeTrigger: (unit -> unit) = (fun () -> ())
+// Called with whether the trigger has changed (not on every properties load)
+let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
 
-let setChangeTrigger (f: unit -> unit) =
+let setChangeTrigger (f: bool -> unit) =
     changeTrigger <- f
 
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine("setTrigger: " + res.Name)
+    let changed = res <> getFirstTrigger()
     Volatile.Write(firstTrigger, res)
 
     setMenuEnabled boolMenuDict DataID.sendMiddleClick res.IsSingle
     setMenuEnabled boolMenuDict DataID.draggedLock res.IsDrag
 
-    changeTrigger()
+    changeTrigger changed
 
 let private addClick (item: ToolStripMenuItem) f =
     item.Click.Add (fun e -> f (e))

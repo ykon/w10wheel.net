@@ -578,7 +578,7 @@ let move (info: HookInfo) =
     else
         callNextHook().Value
 
-let private changeTrigger (): unit =
+let private changeTrigger (changed: bool): unit =
     Debug.WriteLine("changeTrigger: EventHandler")
 
     let downLR, upLR, downS, upS =
@@ -599,6 +599,23 @@ let private changeTrigger (): unit =
     Volatile.Write(__procUpLR, upLR)
     Volatile.Write(__procDownS, downS)
     Volatile.Write(__procUpS, upS)
+
+    // The handlers of the old trigger are not used any more, so its scroll mode would not end
+    // (e.g. the up of the drag trigger is not handled as such). End it (not the keyboard
+    // trigger's), and suppress the up of its down like that of a suppressed down: all the
+    // handlers do (checkSuppressedDown), as for the LR trigger's downs.
+    if changed then
+        if (Ctx.isScrollMode() || Ctx.isStartingScrollMode()) && not (Ctx.isKeyboardScrollMode()) then
+            Debug.WriteLine("changeTrigger: exit scroll mode")
+            Ctx.exitScrollMode()
+
+        if triggerStarted.IsDown then
+            Ctx.LastFlags.SetSuppressed triggerStarted
+
+        triggerStarted <- NonEvent
+        drag <- dragDefault
+        dragged <- false
+        secondTriggerUp <- false
 
 let setChangeTrigger () =
     Ctx.setChangeTrigger changeTrigger
