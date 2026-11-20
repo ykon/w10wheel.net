@@ -150,13 +150,21 @@ let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 // (in Pass Mode the physical up passes W10Wheel and could arrive before a queued down).
 let passModeLock = new Object()
 
+// Incremented under passModeLock whenever Pass Mode is turned on. Windows records it when
+// queuing and does not send a down queued before it, even if Pass Mode has been turned off
+// again by then (the physical up may have passed while Pass Mode was on).
+let private passModeGeneration = ref 0
+let getPassModeGeneration () = Volatile.Read(&passModeGeneration.contents)
+
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
 
     static member Mode
         with get() = mode
         and set b =
-            lock passModeLock (fun () -> mode <- b)
+            lock passModeLock (fun () ->
+                if b then Volatile.Write(passModeGeneration, passModeGeneration.Value + 1)
+                mode <- b)
             setScrollPassMode b
             if b then onPassModeOn()
             changeNotifyIcon b

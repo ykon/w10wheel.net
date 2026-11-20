@@ -20,7 +20,8 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
+// (Pass Mode generation when queued, inputs): see sendDownOrOther
+let private inputQueue = new BlockingCollection<int * WinAPI.MINPUT[]>()
 
 // Interval between the inputs of one batch (the down and up of a resent click).
 // If they are sent in a single SendInput call, they arrive at the same moment, and
@@ -48,13 +49,14 @@ let private isDown (input: WinAPI.MINPUT): bool =
         WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN
     (input.mi.dwFlags &&& uint32 downs) <> 0u
 
-// A down resent by W10Wheel is not sent in Pass Mode: the physical up passes W10Wheel then
-// and could arrive before it, leaving the button pressed. Checked and sent under
+// A down resent by W10Wheel is not sent in Pass Mode, nor if Pass Mode has been turned on
+// since it was queued (generation changed): the physical up passes W10Wheel in Pass Mode and
+// could arrive before it, leaving the button pressed. Checked and sent under
 // Ctx.passModeLock, under which Pass Mode is switched (see there).
-let private sendDownOrOther (input: WinAPI.MINPUT): bool =
+let private sendDownOrOther (generation: int) (input: WinAPI.MINPUT): bool =
     if isDown input then
         lock Ctx.passModeLock (fun () ->
-            if Ctx.isPassMode() then
+            if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
                 Debug.WriteLine("sendBatch: dropped a down (Pass Mode)")
                 false
             else
@@ -91,7 +93,7 @@ let private retryUnsent (withRetry: bool) =
     | null -> ()
     | rest -> unsent.Value <- sendInOrder withRetry rest
 
-let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
+let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
     if not (Volatile.Read(&closing.contents)) then
         // Without retries here: while SendInput keeps failing, retrying before every
         // batch (wheel events while scrolling) would make the queue fall behind
@@ -99,13 +101,13 @@ let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
 
         match msgs.Length with
         | 0 -> ()
-        | 1 -> sendDownOrOther msgs.[0] |> ignore
+        | 1 -> sendDownOrOther generation msgs.[0] |> ignore
         | _ when unsent.Value <> null ->
             // Ups are still not sent: do not press another button, it could not be released
             // either, and the old ups would be sent after the new click
             Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
         | _ ->
-            if sendDownOrOther msgs.[0] then
+            if sendDownOrOther generation msgs.[0] then
                 // The down was sent: the rest (the up) must be sent, or the button stays pressed
                 Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
                 unsent.Value <- sendInOrder true msgs.[1..]
@@ -125,7 +127,8 @@ let closeInput () =
 
 let private senderThread = new Thread(fun () ->
     while true do
-        sendBatch (inputQueue.Take())
+        let generation, msgs = inputQueue.Take()
+        sendBatch generation msgs
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
 )
@@ -168,7 +171,7 @@ let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
-    inputQueue.Add [|input|]
+    inputQueue.Add((Ctx.getPassModeGeneration(), [|input|]))
 
 let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
@@ -176,7 +179,7 @@ let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extr
 
 let private sendInputArray (msgs: WinAPI.MINPUT[]) =
     //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
-    inputQueue.Add msgs
+    inputQueue.Add((Ctx.getPassModeGeneration(), msgs))
 
 open WinAPI.Event
 
