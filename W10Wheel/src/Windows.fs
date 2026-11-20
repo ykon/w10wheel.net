@@ -29,6 +29,9 @@ type private SendItem =
     // Pass Mode has been turned on: the ups (left, right) for the downs resent alone that are
     // not released yet (see sendReleaseResent)
     | ReleaseResent of WinAPI.MINPUT * WinAPI.MINPUT
+    // The state has been initialized (Ctx.initState): the physical ups pass W10Wheel, forget
+    // the downs resent alone (see sendForgetResent)
+    | ForgetResent
 
 let private inputQueue = new BlockingCollection<SendItem>()
 
@@ -190,6 +193,13 @@ let private sendReleaseResent (left: WinAPI.MINPUT) (right: WinAPI.MINPUT) = loc
             sendUps ups
 )
 
+// The physical ups of the downs resent alone pass W10Wheel and release them: neither release
+// them again at Pass Mode, nor drop an up for them
+let private sendForgetResent () = lock sendLock (fun () ->
+    Array.fill resentPressed 0 2 false
+    Array.fill resentDropped 0 2 false
+)
+
 // An up whose down was not resent alone: sent whatever is known of those downs. The button
 // is released, so the tracking of its down resent alone ends too.
 let private sendOtherUp (up: WinAPI.MINPUT) = lock sendLock (fun () ->
@@ -234,6 +244,7 @@ let private senderThread = new Thread(fun () ->
             | Inputs(generation, msgs) -> sendBatch generation msgs
             | OtherUp(up) -> sendOtherUp up
             | ReleaseResent(left, right) -> sendReleaseResent left right
+            | ForgetResent -> sendForgetResent ()
         else
             retryUnsentIdle ()
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
@@ -599,8 +610,12 @@ let private releaseResent () =
     let up flags = createInput pt 0 flags 0u resendTag
     inputQueue.Add(ReleaseResent(up MOUSEEVENTF_LEFTUP, up MOUSEEVENTF_RIGHTUP))
 
-let setReleaseResent () =
-    Ctx.setReleaseResent releaseResent
+// Ctx.initState: queued after the downs queued before (see sendForgetResent)
+let private forgetResent () =
+    inputQueue.Add(ForgetResent)
+
+let setResentTracking () =
+    Ctx.setResentTracking releaseResent forgetResent
 
 open WinAPI.VKey
 

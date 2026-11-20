@@ -110,7 +110,7 @@ let private initSetFunctions () =
     EventHandler.setChangeTrigger ()
     Windows.setSendWheelRaw ()
     Windows.setInitScroll ()
-    Windows.setReleaseResent ()
+    Windows.setResentTracking ()
     EventWaiter.setOfferEW ()
     EventHandler.setInitStateMEH ()
     KEventHandler.setInitStateKEH ()

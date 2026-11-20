@@ -1610,19 +1610,27 @@ let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
 let mutable private offerEW: MouseEvent -> bool = (fun me -> false)
 let mutable private releaseResent: unit -> unit = (fun () -> ())
+let mutable private forgetResent: unit -> unit = (fun () -> ())
 
-let setReleaseResent f = releaseResent <- f
+let setResentTracking release forget =
+    releaseResent <- release
+    forgetResent <- forget
 
 let setInitStateMEH f = initStateMEH <- f
 let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
 let initState () =
+    // Cancel the LR trigger wait first: its timeout could set the flags again after Init
+    offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
+
+    // Without the flags, the physical ups of the downs resent alone pass W10Wheel and release
+    // them: Windows forgets them (not released again when Pass Mode is turned on)
+    forgetResent ()
     exitScrollMode()
-    offerEW(Cancel) |> ignore
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
