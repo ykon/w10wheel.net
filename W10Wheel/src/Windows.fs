@@ -20,7 +20,7 @@ type HookInfo = WinAPI.MSLLHOOKSTRUCT
 type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
-// (Pass Mode generation when queued, inputs): see sendDownOrOther
+// (Pass Mode generation when queued, inputs): see sendUnlessPassMode
 let private inputQueue = new BlockingCollection<int * WinAPI.MINPUT[]>()
 
 // Interval between the inputs of one batch (the down and up of a resent click).
@@ -43,26 +43,24 @@ let private unsent: WinAPI.MINPUT[] ref = ref null
 let private sendOne (input: WinAPI.MINPUT): bool =
     WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
 
-let private isDown (input: WinAPI.MINPUT): bool =
-    let downs =
-        WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_RIGHTDOWN |||
-        WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN
-    (input.mi.dwFlags &&& uint32 downs) <> 0u
+let private isUp (input: WinAPI.MINPUT): bool =
+    let ups =
+        WinAPI.Event.MOUSEEVENTF_LEFTUP ||| WinAPI.Event.MOUSEEVENTF_RIGHTUP |||
+        WinAPI.Event.MOUSEEVENTF_MIDDLEUP ||| WinAPI.Event.MOUSEEVENTF_XUP
+    (input.mi.dwFlags &&& uint32 ups) <> 0u
 
-// A down resent by W10Wheel is not sent in Pass Mode, nor if Pass Mode has been turned on
-// since it was queued (generation changed): the physical up passes W10Wheel in Pass Mode and
-// could arrive before it, leaving the button pressed. Checked and sent under
-// Ctx.passModeLock, under which Pass Mode is switched (see there).
-let private sendDownOrOther (generation: int) (input: WinAPI.MINPUT): bool =
-    if isDown input then
-        lock Ctx.passModeLock (fun () ->
-            if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
-                Debug.WriteLine("sendBatch: dropped a down (Pass Mode)")
-                false
-            else
-                sendOne input)
-    else
-        sendOne input
+// Inputs other than ups (downs and wheel events) are not sent in Pass Mode, nor if Pass Mode
+// has been turned on since they were queued (generation changed): the physical up passes
+// W10Wheel in Pass Mode and could arrive before a resent down, leaving the button pressed,
+// and W10Wheel does not scroll in Pass Mode. Ups are always sent (or a button could stay
+// pressed). Checked and sent under Ctx.passModeLock, under which Pass Mode is switched.
+let private sendUnlessPassMode (generation: int) (input: WinAPI.MINPUT): bool =
+    lock Ctx.passModeLock (fun () ->
+        if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
+            Debug.WriteLine("sendBatch: dropped (Pass Mode)")
+            false
+        else
+            sendOne input)
 
 let private sendWithRetry (input: WinAPI.MINPUT): bool =
     let rec loop n =
@@ -93,6 +91,15 @@ let private retryUnsent (withRetry: bool) =
     | null -> ()
     | rest -> unsent.Value <- sendInOrder withRetry rest
 
+let private addUnsent (rest: WinAPI.MINPUT[]) =
+    match rest with
+    | null -> ()
+    | _ ->
+        unsent.Value <-
+            match unsent.Value with
+            | null -> rest
+            | earlier -> Array.append earlier rest
+
 let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
     if not (Volatile.Read(&closing.contents)) then
         // Without retries here: while SendInput keeps failing, retrying before every
@@ -101,16 +108,20 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
 
         match msgs.Length with
         | 0 -> ()
-        | 1 -> sendDownOrOther generation msgs.[0] |> ignore
+        | 1 when isUp msgs.[0] ->
+            // An up for a down resent earlier (e.g. the LR trigger resent the down and the
+            // physical up was suppressed): it must be sent, or the button stays pressed
+            addUnsent (sendInOrder true msgs)
+        | 1 -> sendUnlessPassMode generation msgs.[0] |> ignore
         | _ when unsent.Value <> null ->
             // Ups are still not sent: do not press another button, it could not be released
             // either, and the old ups would be sent after the new click
             Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
         | _ ->
-            if sendDownOrOther generation msgs.[0] then
+            if sendUnlessPassMode generation msgs.[0] then
                 // The down was sent: the rest (the up) must be sent, or the button stays pressed
                 Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-                unsent.Value <- sendInOrder true msgs.[1..]
+                addUnsent (sendInOrder true msgs.[1..])
 )
 
 // Called at exit: stops sending, waits for a batch being sent (its up included) and
@@ -168,7 +179,7 @@ let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
     WinAPI.MINPUT(mi)
 
-// generation: the Pass Mode generation to check a down against (see sendDownOrOther)
+// generation: the Pass Mode generation to check an input against (see sendUnlessPassMode)
 let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
     inputQueue.Add((generation, msgs))
 
