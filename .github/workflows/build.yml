@@ -1,0 +1,75 @@
+name: Build
+
+# - push / pull request: build and upload the zip as a workflow artifact
+# - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with the zip
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '11.0.x'
+
+      - name: Build and package
+        id: package
+        shell: pwsh
+        run: ./build/package.ps1
+
+      - name: Check that the tag matches PROGRAM_VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          if ($env:TAG -ne "v$env:VERSION") {
+            throw "Tag $env:TAG does not match PROGRAM_VERSION $env:VERSION in W10Wheel/src/AppDef.fs"
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: W10Wheel.NET-${{ steps.package.outputs.version }}
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: W10Wheel.NET-${{ needs.build.outputs.version }}
+          path: artifacts
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # Use the history line for this version in dist/Readme.ja.txt as the release notes
+          notes=$(grep -m1 -F ": v${VERSION}:" dist/Readme.ja.txt | tr -d '\r' | sed 's/^[[:space:]]*//' || true)
+          gh release create "$TAG" artifacts/*.zip \
+            --draft \
+            --verify-tag \
+            --title "W10Wheel.NET v${VERSION}" \
+            --notes "${notes:-W10Wheel.NET v${VERSION}}"
