@@ -1332,6 +1332,7 @@ let private setCustomAccelOfProperty (): unit =
     with
         | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
         | :? FormatException as e -> Debug.WriteLine("Parse error: " + e.Message)
+        | :? OverflowException as e -> Debug.WriteLine("Overflow: " + e.Message)
 
 let private setPriorityOfProperty (): unit =
     try
@@ -1375,6 +1376,7 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
     with
         | :? KeyNotFoundException -> Debug.WriteLine("Not fund: " + name)
         | :? FormatException -> Debug.WriteLine("Parse error: " + name)
+        | :? OverflowException -> Debug.WriteLine("Overflow: " + name)
         | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
 
 let private getSelectedPropertiesPath () =
