@@ -147,9 +147,10 @@ let private fromTimeout (generation: int) (down: MouseEvent) =
         if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
             Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): dropped (Pass Mode)" down.Name)
         else
-            Ctx.LastFlags.SetResent down
             Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-            Windows.resendDown generation down)
+            // Queue the down first: the up of a hook seeing the flag is queued after it
+            Windows.resendDown generation down
+            Ctx.LastFlags.SetResent down)
 
 // (physical down, Pass Mode generation when it was received)
 let private waiterQueue = new BlockingCollection<MouseEvent * int>(1)
