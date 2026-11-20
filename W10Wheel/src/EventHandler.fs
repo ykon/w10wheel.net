@@ -215,6 +215,9 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     if EventWaiter.offer me then
         debug "success to offer" me
+        // The second down starts LR scroll mode: no up of the pair counted yet (the count
+        // of an earlier one may remain, e.g. when the keyboard trigger took over its scroll)
+        if me.IsDown then secondTriggerUp <- false
         suppress()
     else
         None
