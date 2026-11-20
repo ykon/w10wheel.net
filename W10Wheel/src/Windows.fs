@@ -168,10 +168,14 @@ let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
     WinAPI.MINPUT(mi)
 
+// generation: the Pass Mode generation to check a down against (see sendDownOrOther)
+let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
+    inputQueue.Add((generation, msgs))
+
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
-    inputQueue.Add((Ctx.getPassModeGeneration(), [|input|]))
+    enqueue (Ctx.getPassModeGeneration()) [|input|]
 
 let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time extra
@@ -179,7 +183,7 @@ let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extr
 
 let private sendInputArray (msgs: WinAPI.MINPUT[]) =
     //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
-    inputQueue.Add((Ctx.getPassModeGeneration(), msgs))
+    enqueue (Ctx.getPassModeGeneration()) msgs
 
 open WinAPI.Event
 
@@ -419,8 +423,15 @@ let private createClick (mc:MouseClick) =
     | X1Click(_) -> create WinAPI.XBUTTON1 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
     | X2Click(_) -> create WinAPI.XBUTTON2 [|MOUSEEVENTF_XDOWN; MOUSEEVENTF_XUP|]
 
+// The functions taking a generation are for EventWaiter, which resends on its own thread
+// some time after the physical down: it passes the Pass Mode generation recorded when the
+// physical down was received (EventWaiter.start), so that a down is dropped if Pass Mode was
+// turned on since then, even before it is queued.
+let resendClickWith (generation: int) (mc: MouseClick) =
+    enqueue generation (createClick mc)
+
 let resendClick (mc: MouseClick) =
-    sendInputArray (createClick mc)
+    resendClickWith (Ctx.getPassModeGeneration()) mc
 
 let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     match down, up with
@@ -428,10 +439,11 @@ let resendClickDU (down:MouseEvent) (up:MouseEvent) =
     | RightDown(_), RightUp(_) -> resendClick(RightClick(down.Info))
     | _ -> raise (ArgumentException())
 
-let resendDown (me: MouseEvent) =
+let resendDown (generation: int) (me: MouseEvent) =
+    let send (info: HookInfo) flags = enqueue generation [| createInput info.pt 0 flags 0u resendTag |]
     match me with
-    | LeftDown(info) -> sendInput info.pt 0 MOUSEEVENTF_LEFTDOWN 0u resendTag
-    | RightDown(info) -> sendInput info.pt 0 MOUSEEVENTF_RIGHTDOWN 0u resendTag
+    | LeftDown(info) -> send info MOUSEEVENTF_LEFTDOWN
+    | RightDown(info) -> send info MOUSEEVENTF_RIGHTDOWN
     | _ -> raise (ArgumentException())
 
 let private __resendUp (me: MouseEvent) (extra: uint32) =
@@ -445,16 +457,16 @@ let resendUp (me: MouseEvent) =
 
 // Resends a down and an up (at different points). The same button's down and up are sent
 // as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
-let resendDownUp (down: MouseEvent) (up: MouseEvent) =
+let resendDownUp (generation: int) (down: MouseEvent) (up: MouseEvent) =
     let input (info: HookInfo) flags = createInput info.pt 0 flags 0u resendTag
     match down, up with
     | LeftDown(d), LeftUp(u) ->
-        sendInputArray [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
+        enqueue generation [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
     | RightDown(d), RightUp(u) ->
-        sendInputArray [| input d MOUSEEVENTF_RIGHTDOWN; input u MOUSEEVENTF_RIGHTUP |]
+        enqueue generation [| input d MOUSEEVENTF_RIGHTDOWN; input u MOUSEEVENTF_RIGHTUP |]
     | _ ->
         // Different buttons: not a pair (the other button's up comes later)
-        resendDown down
+        resendDown generation down
         resendUp up
 
 open WinAPI.VKey
