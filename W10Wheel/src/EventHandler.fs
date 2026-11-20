@@ -396,6 +396,8 @@ let private lrUp (me: MouseEvent): nativeint =
         checkExitScrollUpLR
         checkStartingScroll
         offerEventWaiter
+        // The wait timed out during the checks above: its down has been resent
+        checkResentDown
         checkSuppressedDown
         endNotTrigger
     ]

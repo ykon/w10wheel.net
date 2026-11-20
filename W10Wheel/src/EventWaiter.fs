@@ -21,12 +21,15 @@ type private SynchronousQueue() =
     member self.setWaiting () =
         waiting <- true
 
-    member self.poll (timeout: int): MouseEvent option =
+    // handle is called with the result (None: timeout) before waiting is reset, so before an
+    // offer made meanwhile returns: what it queues (resends) comes before what the hook queues
+    // for the events after (e.g. the resent up for the physical up of a resent down)
+    member self.poll (timeout: int) (handle: MouseEvent option -> unit): unit =
         let ts = new TimeSpan(0, 0, 0, 0, timeout)
         let mutable res = NonEvent
 
         try
-            if sync.TryTake(&res, ts) then Some(res) else None
+            handle (if sync.TryTake(&res, ts) then Some(res) else None)
         finally
             waiting <- false
 
@@ -155,9 +158,17 @@ let private waiterThread = new Thread(fun () ->
     while true do
         let down, generation = waiterQueue.Take()
 
-        match sync.poll(Ctx.getPollTimeout()) with
-        | Some(res) -> dispatchEvent generation down res
-        | None -> fromTimeout generation down
+        // The scroll start (second down) takes longer: it is done after the offer returns,
+        // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+        let second = ref NonEvent
+        sync.poll (Ctx.getPollTimeout()) (fun res ->
+            match res with
+            | Some(LeftDown(_) | RightDown(_) as d2) -> second.Value <- d2
+            | Some(res) -> dispatchEvent generation down res
+            | None -> fromTimeout generation down)
+
+        if second.Value.IsDown then
+            dispatchEvent generation down second.Value
 )
         
 //let private waiterThread = new Thread(waiter)
