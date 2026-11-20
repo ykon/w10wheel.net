@@ -2,7 +2,7 @@
         W10Wheel.NET
 
 バージョン:
-        2.7.3
+        2.8.0
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2026-11-20: v2.8.0: .NET Framework 4.6.1 から .NET 11 に移行 (ランタイム同梱の単一 exe で配布、.NET のインストールは不要)
         2021-02-07: v2.7.3: Avast(\\AvastUI.exe)を除外する設定を追加 (excludeAvast)
         2021-01-25: v2.7.2: 起動時のメッセージがuiLanguageに従わないことを修正
         2021-01-25: v2.7.1: 管理者権限で実行されているか確認、日本語テキストの変更
@@ -61,23 +62,41 @@ URL:
         2016-07-22: v0.1.0: 初公開
         
 移植:
-        Java版 (Scala) を .NET Framework (F#) に移植しました。
+        Java版 (Scala) を .NET Framework (F#) に移植し、現在は .NET 11 で動作します。
         実行環境が違うだけで、ほとんどの動作は同一となります。
         また、設定ファイルも共有します。
         
 対応環境:
-        .NET Framework システム要件
-         https://msdn.microsoft.com/ja-jp/library/8z6watww(v=vs.110).aspx
+        Windows 10 / Windows 11 (x64)
+        .NET 11 が対応する Windows のバージョンに準じます。
+         https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md
+        .NET のランタイムを同梱しているため、.NET のインストールは不要です。
         
-        Windows 8.1:
-                最新の.NET Frameworkをインストールしてください。 
-                https://www.microsoft.com/ja-JP/download/details.aspx?id=49981
-                WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
-                http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
+        Windows 10 / Windows 11:
+                マウスの設定で、非アクティブ ウィンドウをホバーしたときに
+                スクロールするオプションを有効にしてください。
+                Windows 11: 設定 > Bluetooth とデバイス > マウス
+                Windows 10: 設定 > デバイス > マウス
         
-        Windows 10:
-                オプションを有効にしてください。
-                http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
+インストール:
+        Releases から W10Wheel.NET-<バージョン>.zip をダウンロードし、
+        任意のフォルダに展開して W10Wheel.exe を実行してください。
+         https://github.com/ykon/w10wheel.net/releases
+        
+        SmartScreen の警告:
+                W10Wheel.exe にはコード署名がないため、初めて実行したときに
+                「Windows によって PC が保護されました」と表示されることがあります。
+                上記の Releases からダウンロードしたものであれば、
+                「詳細情報」をクリックしてから「実行」を選んでください。
+        
+        v2.7.x からの更新:
+                実行中の W10Wheel を終了してください。(右クリックメニューの Exit)
+                古いフォルダに上書きせず、新しいフォルダに展開してください。
+                (以前のバージョンの FSharp.Core.dll は不要になりました)
+                設定ファイル (.W10Wheel.properties など) はユーザーディレクトリにあるため、
+                そのまま引き継がれます。
+                スタートアップなどのショートカットから起動している場合は、
+                リンク先を新しい W10Wheel.exe に変更してください。
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
@@ -92,7 +111,7 @@ URL:
         動作が競合して操作不能になります。
         
 回復操作:
-        スクロールモードのまま戻らくなったら、
+        スクロールモードのまま戻らなくなったら、
         Escape キーを押しながらクリックを試してください。
         状態を初期化して、スクロールモードを終了します。
         
@@ -109,10 +128,13 @@ URL:
         
 使用方法:
         W10Wheel.exe を実行してください。
-        タスクトレイに exe ファイルと同様のアイコンが発生します。
+        タスクトレイにアイコンが表示されます。
         こちらから右クリックメニューで設定を変更できます。
         詳しい方は、設定ファイル (.W10Wheel.properties) を直接編集してください。
         一度起動して終了すれば、設定ファイルはユーザーディレクトリに生成されます。
+        実行中に設定ファイルを編集した場合は、Properties メニューの Reload か
+        --sendReloadProp コマンドで読み込み直してください。
+        読み込み直さずに終了すると、実行中の設定で上書きされます。
         
         あとの使い方は WheelBall など同種のソフトと同様になります。
         各トリガーを押すと、スクロールモードに移行します。
@@ -175,7 +197,7 @@ URL:
         Keyboard: キーボードトリガー
         Accel Table: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
         Priority: プロセスの優先度を変更
-        SetNumber: 数値をセット (設定項目を参照)
+        Set Number: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
         Properties: 設定ファイル関連
@@ -241,8 +263,8 @@ URL:
         horizontalScroll: bool (default: true)
                 水平スクロール
                 使わない人は無効にしてください。
-        horizontalThreshold: 0-500 (default: 50)
-                水辺スクロールの閾値
+        horizontalThreshold: 0-500 (default: 75)
+                水平スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
                 スクロールの方向を逆にする (反転する)
@@ -284,7 +306,7 @@ URL:
                 折り返しの反応を速くするか
                 移動量に関係なくホイールを送ります。
                 
-        accelTable: bool (default: false) # AccelTable
+        accelTable: bool (default: true) # AccelTable
                 AccelTableを有効にするか
         customAccelTable: bool (default: false) # AccelTable
                 CustomTableを有効にするか
@@ -303,7 +325,7 @@ URL:
         uiLanguage: string (default: by system) # Language
                 UIの表示に使う言語設定
                 
-        excludeAvast: bool (default: false) # LR, Left*, Right*
+        excludeAvast: bool (default: false) # LRTrigger, LeftTrigger, RightTrigger
                 \\AvastUI.exeがフォアグラウンドの場合は処理を行わない
         
 ライセンス:

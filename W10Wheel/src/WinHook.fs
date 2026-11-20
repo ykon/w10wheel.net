@@ -40,11 +40,11 @@ let private __setKeyboardHook () =
     WinAPI.SetWindowsHookExK(WinAPI.WH_KEYBOARD_LL, keyboardDispatcher, hMod, 0u)
 
 let callNextMouseHook nCode wParam info =
-    let hhk = Volatile.Read(mouseHhk)
+    let hhk = Volatile.Read(&mouseHhk.contents)
     WinAPI.CallNextHookExM(hhk, nCode, wParam, info)
 
 let callNextKeyboardHook nCode wParam info =
-    let hhk = Volatile.Read(keyboardHhk)
+    let hhk = Volatile.Read(&keyboardHhk.contents)
     WinAPI.CallNextHookExK(hhk, nCode, wParam, info)
 
 let setMouseHook (): bool =
@@ -58,13 +58,13 @@ let setKeyboardHook (): bool =
     hhk <> IntPtr.Zero
 
 let unhookMouse () =
-    let hhk = Volatile.Read(mouseHhk)
+    let hhk = Volatile.Read(&mouseHhk.contents)
     if hhk <> IntPtr.Zero then
         __unhook hhk
         Volatile.Write(mouseHhk, IntPtr.Zero)
 
 let unhookKeyboard () =
-    let hhk = Volatile.Read(keyboardHhk)
+    let hhk = Volatile.Read(&keyboardHhk.contents)
     if hhk <> IntPtr.Zero then
         __unhook hhk
         Volatile.Write(keyboardHhk, IntPtr.Zero)

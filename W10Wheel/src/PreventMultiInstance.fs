@@ -18,7 +18,7 @@ let LOCK_FILE_PATH = Path.Combine(LOCK_FILE_DIR, LOCK_FILE_NAME)
 let private lock: FileStream ref = ref null
 
 let isLocked (): bool =
-    Volatile.Read(lock) <> null
+    Volatile.Read(&lock.contents) <> null
 
 let tryLock (): bool =
     if isLocked() then
@@ -33,4 +33,4 @@ let tryLock (): bool =
 
 let unlock () =
     if isLocked() then
-        Volatile.Read(lock).Close()
+        Volatile.Read(&lock.contents).Close()
