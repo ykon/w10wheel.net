@@ -1158,11 +1158,6 @@ let private createExitMenuItem (): ToolStripMenuItem =
     item.Click.AddHandler(new EventHandler(fun _ _ -> exitAction()))
     item
 
-let private setDefaultPriority () =
-    Debug.WriteLine("setDefaultPriority")
-    //ProcessPriority.setPriority(getProcessPriority())
-    setPriority (getProcessPriority().Name)
-
 let private NumberNames: string[] =
     [|DataID.pollTimeout; DataID.scrollLocktime;
       DataID.verticalThreshold; DataID.horizontalThreshold;
@@ -1301,12 +1296,21 @@ let private setDefaultsOfMissing () =
             Debug.WriteLine("Default: " + key)
             prop.[key] <- defaultProp.[key]
 
-let private setStringOfProperty name setFunc =
+let private isInvalidValue (e: exn) =
+    e :? KeyNotFoundException || e :? FormatException || e :? OverflowException || e :? ArgumentException
+
+// Applies the value of name in prop. An invalid value is handled like a missing one: the
+// default value is applied instead (not keeping the value of the previous file).
+let private setOrDefault (name: string) (apply: Properties.Properties -> unit) =
     try
-        setFunc(prop.GetString(name))
+        apply prop
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
+        | e when isInvalidValue e ->
+            Debug.WriteLine(sprintf "Invalid value: %s (%s): use default" name e.Message)
+            apply defaultProp
+
+let private setStringOfProperty name setFunc =
+    setOrDefault name (fun p -> setFunc(p.GetString(name)))
 
 let private setTriggerOfProperty (): unit =
     setStringOfProperty DataID.firstTrigger setTrigger
@@ -1335,15 +1339,7 @@ let private setCustomAccelOfProperty (): unit =
         | :? OverflowException as e -> Debug.WriteLine("Overflow: " + e.Message)
 
 let private setPriorityOfProperty (): unit =
-    try
-        setPriority (prop.GetString DataID.processPriority)
-    with
-        | :? KeyNotFoundException as e ->
-            Debug.WriteLine("Not found " + e.Message)
-            setDefaultPriority()
-        | :? ArgumentException as e ->
-            Debug.WriteLine("Match error: " + e.Message)
-            setDefaultPriority()
+    setStringOfProperty DataID.processPriority setPriority
 
 let private setVKCodeOfProperty (): unit =
     setStringOfProperty DataID.targetVKCode setTargetVKCode
@@ -1352,32 +1348,24 @@ let private setVhAdjusterMethodOfProperty (): unit =
     setStringOfProperty DataID.vhAdjusterMethod setVhAdjusterMethod
 
 let private setUILanguageOfProperty (): unit =
-    setStringOfProperty DataID.uiLanguage setUILanguage
+    setStringOfProperty DataID.uiLanguage (fun lang ->
+        // Only the languages of the Language menu
+        if lang <> DataID.English && lang <> DataID.Japanese then
+            raise (ArgumentException("Unknown language: " + lang))
+
+        setUILanguage lang)
 
 let private setBooleanOfProperty (name: string): unit =
-    try
-        setBooleanOfName name (prop.GetBool name)
-    with
-        | :? KeyNotFoundException ->
-            Debug.WriteLine("Not found: " + name)
-            if name = DataID.excludeAvast then
-                setBooleanOfName name false
-        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
-        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
+    setOrDefault name (fun p -> setBooleanOfName name (p.GetBool name))
 
 let private setNumberOfProperty (name:string) (low:int) (up:int) =
-    try
-        let n = prop.GetInt name
+    setOrDefault name (fun p ->
+        let n = p.GetInt name
         Debug.WriteLine(sprintf "setNumberOfProperty: %s: %d" name n)
         if n < low || n > up then
-            Debug.WriteLine("Number out of bounds: " + name)
-        else
-            setNumberOfName name n
-    with
-        | :? KeyNotFoundException -> Debug.WriteLine("Not fund: " + name)
-        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
-        | :? OverflowException -> Debug.WriteLine("Overflow: " + name)
-        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
+            raise (ArgumentOutOfRangeException(name, "Number out of bounds"))
+
+        setNumberOfName name n)
 
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
