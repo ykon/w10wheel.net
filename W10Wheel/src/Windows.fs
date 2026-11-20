@@ -28,12 +28,48 @@ let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
 // leaving the remapped button pressed.
 let private BATCH_INPUT_INTERVAL_MS = 10
 
+// The rest of a batch (the up) whose first input (the down) has been sent.
+// releasePendingInput sends it at exit, so that the button is not left pressed.
+let private pendingInputs: WinAPI.MINPUT[] ref = ref null
+
+let private sendOne (input: WinAPI.MINPUT): bool =
+    WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
+
+// If the up is not sent, the button stays pressed: retry a few times
+let private sendWithRetry (input: WinAPI.MINPUT): unit =
+    let rec loop n =
+        if not (sendOne input) then
+            if n > 0 then
+                Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+                loop (n - 1)
+            else
+                Debug.WriteLine("SendInput failed")
+    loop 3
+
+let private sendRest (rest: WinAPI.MINPUT[]) =
+    rest |> Array.iteri (fun i input ->
+        if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+        sendWithRetry input)
+
+let private sendBatch (msgs: WinAPI.MINPUT[]) =
+    if msgs.Length = 1 then
+        sendOne msgs.[0] |> ignore
+    elif sendOne msgs.[0] then
+        Volatile.Write(pendingInputs, msgs.[1..])
+        Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+        match Interlocked.Exchange(&pendingInputs.contents, null) with
+        | null -> () // already sent by releasePendingInput (exiting)
+        | rest -> sendRest rest
+
+// Called at exit: sends the up of a click whose down has been sent
+let releasePendingInput () =
+    match Interlocked.Exchange(&pendingInputs.contents, null) with
+    | null -> ()
+    | rest -> sendRest rest
+
 let private senderThread = new Thread(fun () ->
     while true do
-        let msgs = inputQueue.Take()
-        msgs |> Array.iteri (fun i msg ->
-            if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
-            WinAPI.SendInput(1u, [| msg |], MINPUT_SIZE) |> ignore)
+        sendBatch (inputQueue.Take())
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
 )

@@ -14,9 +14,13 @@ let private procCommand (info: HookInfo): bool =
         false
     else
         Debug.WriteLine("receive (mouseData >>> 16) = 1")
-        // ToUInt32() throws on 64-bit values; the command is in the low 32 bits
-        let msg = int (uint32 (info.dwExtraInfo.ToUInt64()))
-        W10Message.procMessage msg
+        // Commands are sent with 32-bit values: anything larger is a normal wheel event
+        // (ToUInt32() would throw on it)
+        let extra = info.dwExtraInfo.ToUInt64()
+        if extra > 0xFFFFFFFFUL then
+            false
+        else
+            W10Message.procMessage (int (uint32 extra))
 
 let private procMouse nCode wParam info: nativeint =
     //Debug.WriteLine("mouseProc")
@@ -26,10 +30,6 @@ let private procMouse nCode wParam info: nativeint =
         callNextHook()
     else
         if Ctx.isPassMode() then
-            // Leave scroll mode if Pass Mode was turned on while scrolling,
-            // otherwise RawInput keeps sending wheel events.
-            if Ctx.isScrollMode() then Ctx.exitScrollMode()
-
             if wParam.ToInt32() = WM_MOUSEHWHEEL && procCommand info then
                 IntPtr(1)
             else

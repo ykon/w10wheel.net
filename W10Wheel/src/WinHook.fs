@@ -53,14 +53,17 @@ let setMouseHook (): bool =
     hhk <> IntPtr.Zero
 
 let setKeyboardHook (): bool =
-    // setOrUnsetKeyboardHook true is called on every properties load (Reload, switching properties):
-    // installing again would leave the previous hook installed, and unhookKeyboard only removes the last one.
-    if Volatile.Read(&keyboardHhk.contents) <> IntPtr.Zero then
-        true
-    else
-        let hhk = __setKeyboardHook()
-        Volatile.Write(keyboardHhk, hhk)
-        hhk <> IntPtr.Zero
+    // setOrUnsetKeyboardHook true is called on every properties load (Reload, switching properties).
+    // Remove the previous hook first: installing again would leave it installed (unhookKeyboard
+    // only removes the last one). Installing anew also recovers a hook that Windows removed
+    // silently because of a timeout (UnhookWindowsHookEx then just fails).
+    let old = Volatile.Read(&keyboardHhk.contents)
+    if old <> IntPtr.Zero then
+        __unhook old
+
+    let hhk = __setKeyboardHook()
+    Volatile.Write(keyboardHhk, hhk)
+    hhk <> IntPtr.Zero
 
 let unhookMouse () =
     let hhk = Volatile.Read(&mouseHhk.contents)

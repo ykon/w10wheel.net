@@ -139,6 +139,9 @@ let private changeNotifyIcon b =
     notifyIcon.Text <- (getTrayText b)
     notifyIcon.Icon <- (getTrayIcon b)
 
+// Set after Scroll is defined (see below)
+let mutable private exitScrollOnPassMode: unit -> unit = (fun () -> ())
+
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
 
@@ -146,6 +149,7 @@ type private Pass() =
         with get() = mode
         and set b =
             mode <- b
+            if b then exitScrollOnPassMode()
             changeNotifyIcon b
             passModeMenuItem.Checked <- b
 
@@ -345,6 +349,7 @@ type private Scroll() =
     [<VolatileField>] static let mutable draggedLock = false
     [<VolatileField>] static let mutable swap = false
     [<VolatileField>] static let mutable releasedMode = false
+    [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
 
     static let monitor = new Object()
 
@@ -352,35 +357,7 @@ type private Scroll() =
         sx <- x
         sy <- y
 
-    static member Start (info: HookInfo) = lock monitor (fun () ->
-        stime <- info.time
-        setStartPoint(info.pt.x, info.pt.y)
-        initScroll()
-
-        RawInput.register()
-
-        if cursorChange && not (isDragTrigger()) then
-            WinCursor.changeV()
-
-        mode <- true
-        starting <- false
-    )
-
-    static member Start (info: KHookInfo) = lock monitor (fun () ->
-        stime <- info.time
-        setStartPoint(Cursor.Position.X, Cursor.Position.Y)
-        initScroll()
-
-        RawInput.register()
-
-        if cursorChange then
-            WinCursor.changeV()
-
-        mode <- true
-        starting <- false
-    )
-
-    static member Exit () = lock monitor (fun () ->
+    static let exit () =
         RawInput.unregister()
 
         mode <- false
@@ -388,6 +365,45 @@ type private Scroll() =
 
         if cursorChange then
             WinCursor.restore() |> ignore
+
+    static member Start (info: HookInfo) = lock monitor (fun () ->
+        if not closed then
+            stime <- info.time
+            setStartPoint(info.pt.x, info.pt.y)
+            initScroll()
+
+            RawInput.register()
+
+            if cursorChange && not (isDragTrigger()) then
+                WinCursor.changeV()
+
+            mode <- true
+            starting <- false
+    )
+
+    static member Start (info: KHookInfo) = lock monitor (fun () ->
+        if not closed then
+            stime <- info.time
+            setStartPoint(Cursor.Position.X, Cursor.Position.Y)
+            initScroll()
+
+            RawInput.register()
+
+            if cursorChange then
+                WinCursor.changeV()
+
+            mode <- true
+            starting <- false
+    )
+
+    static member Exit () = lock monitor (fun () -> exit ())
+
+    // At exit: waits for a Start in progress (on the EventWaiter thread for LR triggers),
+    // leaves scroll mode and refuses later Starts, so that the cursor is restored and
+    // RawInput is not registered again afterwards.
+    static member Close () = lock monitor (fun () ->
+        closed <- true
+        if mode then exit ()
     )
 
     static member CheckExit (time: uint32) =
@@ -431,6 +447,12 @@ let startScrollMode (info: HookInfo): unit = Scroll.Start info
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
 
 let exitScrollMode (): unit = Scroll.Exit()
+let closeScrollMode (): unit = Scroll.Close()
+
+// Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
+// Leave it when Pass Mode is turned on (menu, tray icon or --sendPassMode).
+exitScrollOnPassMode <- (fun () -> if isScrollMode() then exitScrollMode())
+
 let checkExitScroll (time: uint32) = Scroll.CheckExit time
 let getScrollStartPoint () = Scroll.StartPoint
 let getScrollLockTime () = Scroll.LockTime
