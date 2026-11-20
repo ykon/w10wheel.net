@@ -145,9 +145,9 @@ let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 
-// Pass Mode is switched under this lock, and Windows sends a resent down under it after
-// checking Pass Mode: the down is either sent before Pass Mode is on, or not sent at all
-// (in Pass Mode the physical up passes W10Wheel and could arrive before a queued down).
+// Pass Mode is switched under this lock, and the LR trigger checks Pass Mode and queues its
+// resent down under it (see EventWaiter.fromTimeout). Held only briefly: SendInput must not
+// be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
 let passModeLock = new Object()
 
 // Incremented under passModeLock whenever Pass Mode is turned on. Windows records it when
@@ -618,12 +618,6 @@ type LastFlags() =
         | LeftDown(_) -> ldR <- true
         | RightDown(_) -> rdR <- true
         | _ -> raise (ArgumentException())
-
-    // (left, right) downs resent whose physical up W10Wheel has not handled yet; resets them
-    static member TakeResent () =
-        let res = (ldR, rdR)
-        ldR <- false; rdR <- false
-        res
 
     static member GetAndReset_ResentDown (up: MouseEvent) =
         match up with
@@ -1616,7 +1610,7 @@ let setSystemTray (): unit =
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
 let mutable private offerEW: MouseEvent -> bool = (fun me -> false)
-let mutable private releaseResent: bool -> bool -> unit = (fun _ _ -> ())
+let mutable private releaseResent: unit -> unit = (fun () -> ())
 
 let setReleaseResent f = releaseResent <- f
 
@@ -1639,10 +1633,9 @@ onPassModeOn <- (fun () ->
 
     // A down resent by W10Wheel (LR trigger) waits for W10Wheel to resend its up when the
     // physical up comes. In Pass Mode the physical up passes instead, and it may even be
-    // handled before the resent down (Windows input queue), leaving the button pressed. Send
-    // the up now: it is queued after the down, so it is always sent after it.
-    let left, right = LastFlags.TakeResent()
-    if left || right then releaseResent left right
+    // handled before the resent down (Windows input queue), leaving the button pressed.
+    // Release it now: queued after the down, and only if the down has been sent.
+    releaseResent ()
 
     initStateMEH()
     initStateKEH()
