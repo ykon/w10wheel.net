@@ -62,11 +62,12 @@ let private resendClickTag = createRandomNumber()
 let isInjectedEvent (me: MouseEvent) =
     (me.Info.flags &&& 0x3u) <> 0u
     
+// dwExtraInfo is pointer-sized: compare as 64-bit (ToUInt32() throws on 64-bit values)
 let isResendEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt32() = resendTag
+    me.Info.dwExtraInfo.ToUInt64() = uint64 resendTag
 
 let isResendClickEvent (me: MouseEvent) =
-    me.Info.dwExtraInfo.ToUInt32() = resendClickTag
+    me.Info.dwExtraInfo.ToUInt64() = uint64 resendClickTag
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32): WinAPI.MINPUT =
     let mi = WinAPI.MOUSEINPUT(pt.x, pt.y, (uint32 data), uint32 flags, time, UIntPtr(extra))
@@ -108,7 +109,9 @@ let private getNearestIndex (d:int) (thr:int[]): int =
         match thr.[i] with
         | n when n = ad -> i
         | n when n > ad ->
-            if n - ad < Math.Abs(thr.[i - 1] - ad) then i else i - 1
+            // i = 0: smaller than the first threshold (custom tables may not start with 1)
+            if i = 0 then i
+            elif n - ad < Math.Abs(thr.[i - 1] - ad) then i else i - 1
         | _ ->
             if i <> thr.Length - 1 then loop (i + 1) else i
 
@@ -348,7 +351,7 @@ let resendUp (me: MouseEvent) =
 open WinAPI.VKey
 
 let private checkAsyncKeyState (vKey:int) =
-    (WinAPI.GetAsyncKeyState(vKey) &&& 0xf000s) <> 0s
+    (WinAPI.GetAsyncKeyState(vKey) &&& 0x8000s) <> 0s  // most significant bit: key is down
 
 let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
 let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
@@ -414,7 +417,7 @@ let private getFullPathFromWindow (hWnd: nativeint): string option =
     else
         let mutable processId = 0u
         let _ = WinAPI.GetWindowThreadProcessId(hWnd, &processId)
-        let hProcess = WinAPI.OpenProcess(0x0400u, false, processId)
+        let hProcess = WinAPI.OpenProcess(0x1000u, false, processId)  // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName
         if hProcess = IntPtr.Zero then
             None
         else

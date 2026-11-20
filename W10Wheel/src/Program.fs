@@ -45,6 +45,9 @@ let private checkAdmin () =
 let private procExit () =
     Debug.WriteLine("procExit")
 
+    // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput
+    if Ctx.isScrollMode() then Ctx.exitScrollMode()
+
     WinHook.unhook()
     Ctx.storeProperties()
     PreventMultiInstance.unlock()

@@ -14,10 +14,11 @@ let private procCommand (info: HookInfo): bool =
         false
     else
         Debug.WriteLine("receive (mouseData >>> 16) = 1")
-        let msg = int (info.dwExtraInfo.ToUInt32())
+        // ToUInt32() throws on 64-bit values; the command is in the low 32 bits
+        let msg = int (uint32 (info.dwExtraInfo.ToUInt64()))
         W10Message.procMessage msg
 
-let private mouseProc nCode wParam info: nativeint =
+let private procMouse nCode wParam info: nativeint =
     //Debug.WriteLine("mouseProc")
     let callNextHook = (fun _ -> WinHook.callNextMouseHook nCode wParam info)
     EventHandler.setCallNextHook callNextHook
@@ -25,6 +26,10 @@ let private mouseProc nCode wParam info: nativeint =
         callNextHook()
     else
         if Ctx.isPassMode() then
+            // Leave scroll mode if Pass Mode was turned on while scrolling,
+            // otherwise RawInput keeps sending wheel events.
+            if Ctx.isScrollMode() then Ctx.exitScrollMode()
+
             if wParam.ToInt32() = WM_MOUSEHWHEEL && procCommand info then
                 IntPtr(1)
             else
@@ -43,14 +48,23 @@ let private mouseProc nCode wParam info: nativeint =
             | WM_MOUSEWHEEL -> callNextHook()
             | WM_MOUSEHWHEEL ->
                 if procCommand info then IntPtr(1) else callNextHook()
-            | _ -> raise (InvalidOperationException())
+            | _ -> callNextHook()
+
+// An exception escaping a low-level hook procedure terminates the process on .NET,
+// so pass the event on to the next hook instead.
+let private mouseProc nCode wParam info: nativeint =
+    try
+        procMouse nCode wParam info
+    with e ->
+        Debug.WriteLine("mouseProc: " + e.ToString())
+        WinHook.callNextMouseHook nCode wParam info
 
 let private getMouseDispatcher () = new WinAPI.LowLevelMouseProc(mouseProc)
 
 let setMouseDispatcher () =
     WinHook.setMouseDispatcher (getMouseDispatcher ())
 
-let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
+let private procKeyboard nCode wParam (info:KHookInfo): nativeint =
     let callNextHook = (fun _ -> WinHook.callNextKeyboardHook nCode wParam info)
     KEventHandler.setCallNextHook callNextHook
     if nCode < 0 || Ctx.isPassMode() then
@@ -60,6 +74,13 @@ let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
         | WM_KEYDOWN | WM_SYSKEYDOWN -> KEventHandler.keyDown info
         | WM_KEYUP | WM_SYSKEYUP -> KEventHandler.keyUp info
         | _ -> callNextHook()
+
+let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
+    try
+        procKeyboard nCode wParam info
+    with e ->
+        Debug.WriteLine("keyboardProc: " + e.ToString())
+        WinHook.callNextKeyboardHook nCode wParam info
 
 let private getKeyboardDispatcher () = new WinAPI.LowLevelKeyboardProc(keyboardProc)
 
