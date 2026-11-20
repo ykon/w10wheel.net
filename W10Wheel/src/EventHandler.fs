@@ -27,6 +27,10 @@ let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
+// The down of the single or drag trigger started scroll mode (and was suppressed). Reset by
+// its up: without it, the down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+let mutable private triggerStarted = false
+
 let private initState () =
     lastEvent <- NonEvent
     lastResendLeftEvent := NonEvent
@@ -34,6 +38,7 @@ let private initState () =
     resentDownUp <- false
     secondTriggerUp <- false
     dragged <- false
+    triggerStarted <- false
 
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
@@ -266,6 +271,7 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         debug "start scroll mode" me
         Ctx.startScrollMode me.Info
+        triggerStarted <- true
         suppress()
     else
         None
@@ -283,14 +289,23 @@ let private dragStart info =
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
     Ctx.startScrollMode me.Info
+    triggerStarted <- true
 
     drag <- dragStart
     dragged <- false
 
     suppress()
 
+let private passNotStartedTrigger (up: MouseEvent): nativeint option =
+    if triggerStarted then
+        triggerStarted <- false
+        None
+    else
+        debug "pass (the down passed)" up
+        callNextHook()
+
 // Scroll mode started by the keyboard trigger after the drag trigger: its up neither continues
-// nor ends it (nor resends a click). Its down was suppressed, so is the up.
+// nor ends it (nor resends a click). Its down started the drag (suppressed), so is the up.
 let private suppressKeyboardScroll (up: MouseEvent): nativeint option =
     if Ctx.isKeyboardScrollMode() then
         debug "suppress (keyboard scroll mode)" up
@@ -440,6 +455,7 @@ let private singleUp (me: MouseEvent): nativeint =
         checkSameLastEvent
         checkSuppressedDown
         passNotTrigger
+        passNotStartedTrigger
         checkExitScrollUp
         endIllegalState
     ]
@@ -468,6 +484,7 @@ let private dragUp (me: MouseEvent): nativeint =
         checkSameLastEvent
         checkSuppressedDown
         passNotDragTrigger
+        passNotStartedTrigger
         suppressKeyboardScroll
         continueScrollDrag
         exitAndResendDrag
