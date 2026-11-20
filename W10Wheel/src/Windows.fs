@@ -22,10 +22,18 @@ type KHookInfo = WinAPI.KBDLLHOOKSTRUCT
 let private MINPUT_SIZE = Marshal.SizeOf(typeof<WinAPI.MINPUT>)
 let private inputQueue = new BlockingCollection<WinAPI.MINPUT[]>()
 
+// Interval between the inputs of one batch (the down and up of a resent click).
+// If they are sent in a single SendInput call, they arrive at the same moment, and
+// tools that remap injected input (e.g. X-Mouse Button Control) may miss the up,
+// leaving the remapped button pressed.
+let private BATCH_INPUT_INTERVAL_MS = 10
+
 let private senderThread = new Thread(fun () ->
     while true do
         let msgs = inputQueue.Take()
-        WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE) |> ignore
+        msgs |> Array.iteri (fun i msg ->
+            if i > 0 then Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
+            WinAPI.SendInput(1u, [| msg |], MINPUT_SIZE) |> ignore)
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
         //Debug.WriteLine(sprintf "sendinput: %d" res)
 )
