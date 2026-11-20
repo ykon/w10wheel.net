@@ -80,7 +80,12 @@ let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
             Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
             match sendRest msgs.[1..] with
             | null -> ()
-            | rest -> unsent.Value <- rest
+            | rest ->
+                // Keep the earlier ones too (retryUnsent may not have sent them)
+                unsent.Value <-
+                    match unsent.Value with
+                    | null -> rest
+                    | earlier -> Array.append earlier rest
 )
 
 // Called at exit: stops sending, waits for a batch being sent (its up included) and

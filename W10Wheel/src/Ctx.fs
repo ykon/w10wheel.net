@@ -380,6 +380,9 @@ type private Scroll() =
 
             mode <- true
             starting <- false
+        else
+            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
+            starting <- false
     )
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
@@ -394,6 +397,9 @@ type private Scroll() =
                 WinCursor.changeV()
 
             mode <- true
+            starting <- false
+        else
+            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
             starting <- false
     )
 
