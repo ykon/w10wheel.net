@@ -181,10 +181,6 @@ let sendInputDirect (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extr
     let input = createInput pt data flags time extra
     WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
 
-let private sendInputArray (msgs: WinAPI.MINPUT[]) =
-    //WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)
-    enqueue (Ctx.getPassModeGeneration()) msgs
-
 open WinAPI.Event
 
 let private passInt (d: int) = d
