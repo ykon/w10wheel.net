@@ -269,13 +269,18 @@ let private isTurnMove last d =
     | Plus -> d < 0
     | Minus -> d > 0
 
+// On a turn, the move left from the other direction does not count: start counting again
+// as at the scroll start (quickTurn sends a notch at once, like quickFirst).
+// A move larger than wheelMove sends a notch for each wheelMove.
 let private sendRealVWheel pt d =
     let send () = sendInput pt (getVWheelDelta d) MOUSEEVENTF_WHEEL 0u 0u
+
+    if isTurnMove vLastMove d then
+        vwCount <- if quickTurn then vWheelMove else vWheelMove / 2
+
     vwCount <- vwCount + Math.Abs(d)
 
-    if quickTurn && isTurnMove vLastMove d then
-        send()
-    elif vwCount >= vWheelMove then
+    while vWheelMove > 0 && vwCount >= vWheelMove do
         send()
         vwCount <- vwCount - vWheelMove
 
@@ -286,11 +291,13 @@ let private sendDirectVWheel (pt:WinAPI.POINT) (d:int) =
 
 let private sendRealHWheel pt d =
     let send () = sendInput pt (getHWheelDelta d) MOUSEEVENTF_HWHEEL 0u 0u
+
+    if isTurnMove hLastMove d then
+        hwCount <- if quickTurn then hWheelMove else hWheelMove / 2
+
     hwCount <- hwCount + Math.Abs(d)
 
-    if quickTurn && isTurnMove hLastMove d then
-        send()
-    elif hwCount >= hWheelMove then
+    while hWheelMove > 0 && hwCount >= hWheelMove do
         send()
         hwCount <- hwCount - hWheelMove
 
