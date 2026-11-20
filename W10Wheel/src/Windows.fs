@@ -42,6 +42,26 @@ let private unsent: WinAPI.MINPUT[] ref = ref null
 let private sendOne (input: WinAPI.MINPUT): bool =
     WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
 
+let private isDown (input: WinAPI.MINPUT): bool =
+    let downs =
+        WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_RIGHTDOWN |||
+        WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN
+    (input.mi.dwFlags &&& uint32 downs) <> 0u
+
+// A down resent by W10Wheel is not sent in Pass Mode: the physical up passes W10Wheel then
+// and could arrive before it, leaving the button pressed. Checked and sent under
+// Ctx.passModeLock, under which Pass Mode is switched (see there).
+let private sendDownOrOther (input: WinAPI.MINPUT): bool =
+    if isDown input then
+        lock Ctx.passModeLock (fun () ->
+            if Ctx.isPassMode() then
+                Debug.WriteLine("sendBatch: dropped a down (Pass Mode)")
+                false
+            else
+                sendOne input)
+    else
+        sendOne input
+
 let private sendWithRetry (input: WinAPI.MINPUT): bool =
     let rec loop n =
         if sendOne input then
@@ -79,13 +99,13 @@ let private sendBatch (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
 
         match msgs.Length with
         | 0 -> ()
-        | 1 -> sendOne msgs.[0] |> ignore
+        | 1 -> sendDownOrOther msgs.[0] |> ignore
         | _ when unsent.Value <> null ->
             // Ups are still not sent: do not press another button, it could not be released
             // either, and the old ups would be sent after the new click
             Debug.WriteLine("sendBatch: dropped a click (unsent ups)")
         | _ ->
-            if sendOne msgs.[0] then
+            if sendDownOrOther msgs.[0] then
                 // The down was sent: the rest (the up) must be sent, or the button stays pressed
                 Thread.Sleep(BATCH_INPUT_INTERVAL_MS)
                 unsent.Value <- sendInOrder true msgs.[1..]

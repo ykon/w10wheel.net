@@ -145,13 +145,18 @@ let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 
+// Pass Mode is switched under this lock, and Windows sends a resent down under it after
+// checking Pass Mode: the down is either sent before Pass Mode is on, or not sent at all
+// (in Pass Mode the physical up passes W10Wheel and could arrive before a queued down).
+let passModeLock = new Object()
+
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
 
     static member Mode
         with get() = mode
         and set b =
-            mode <- b
+            lock passModeLock (fun () -> mode <- b)
             setScrollPassMode b
             if b then onPassModeOn()
             changeNotifyIcon b
