@@ -97,8 +97,11 @@ let private procArgv (argv: string[]) =
         | _ -> None
 
     sent |> Option.iter (fun ok ->
-        Thread.Sleep(1000)
-        Environment.Exit(if ok then 0 else 1))
+        if ok then
+            Thread.Sleep(1000)
+            Environment.Exit(0)
+        else
+            Environment.Exit(1))
 
 
 let private initSetFunctions () =
