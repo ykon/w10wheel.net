@@ -33,8 +33,15 @@ let private skipFirstUp (ke: KeyboardEvent): nativeint option =
     else
         None
 
+let private isKeyDown (ke: KeyboardEvent) =
+    match ke with
+    | KeyDown(_) -> true
+    | _ -> false
+
 let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
-    if ke.Same lastEvent && Ctx.isScrollMode() then
+    // A key repeat of the trigger key is always suppressed, like its first down: otherwise
+    // holding the key after leaving scroll mode with it would start scroll mode again
+    if ke.Same lastEvent && (Ctx.isScrollMode() || isKeyDown ke) then
         debug "same last event" ke
         suppress()
     else
