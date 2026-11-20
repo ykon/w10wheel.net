@@ -72,9 +72,31 @@ URL:
          https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md
         .NET のランタイムを同梱しているため、.NET のインストールは不要です。
         
-        Windows 10:
-                オプションを有効にしてください。
-                http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
+        Windows 10 / Windows 11:
+                マウスの設定で、非アクティブ ウィンドウをホバーしたときに
+                スクロールするオプションを有効にしてください。
+                Windows 11: 設定 > Bluetooth とデバイス > マウス
+                Windows 10: 設定 > デバイス > マウス
+        
+インストール:
+        Releases から W10Wheel.NET-<バージョン>.zip をダウンロードし、
+        任意のフォルダに展開して W10Wheel.exe を実行してください。
+         https://github.com/ykon/w10wheel.net/releases
+        
+        SmartScreen の警告:
+                W10Wheel.exe にはコード署名がないため、初めて実行したときに
+                「Windows によって PC が保護されました」と表示されることがあります。
+                上記の Releases からダウンロードしたものであれば、
+                「詳細情報」をクリックしてから「実行」を選んでください。
+        
+        v2.7.x からの更新:
+                実行中の W10Wheel を終了してください。(右クリックメニューの Exit)
+                古いフォルダに上書きせず、新しいフォルダに展開してください。
+                (以前のバージョンの FSharp.Core.dll は不要になりました)
+                設定ファイル (.W10Wheel.properties など) はユーザーディレクトリにあるため、
+                そのまま引き継がれます。
+                スタートアップなどのショートカットから起動している場合は、
+                リンク先を新しい W10Wheel.exe に変更してください。
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
