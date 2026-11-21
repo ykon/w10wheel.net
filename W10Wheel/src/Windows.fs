@@ -255,6 +255,8 @@ let private NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
 let private pressId = Array.create 2 NO_PRESS
 let private upPassed = Array.create 2 false
 let private downPassedId = Array.create 2 NO_PRESS
+// downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it)
+let private downSuppressed = Array.create 2 false
 let mutable private lastPressId = 0
 
 // Called by the mouse hook for a left or right down or up before it is handled, also in
@@ -283,9 +285,13 @@ let handlingButton (button: int) (isDown: bool) (info: HookInfo) =
         lastPressId <- lastPressId % (PRESS_ID_MASK - 1) + 1
         pressId.[button] <- lastPressId
         upPassed.[button] <- false
+        downSuppressed.[button] <- false
 
 // Called by the mouse hook after handling a left or right down or up (passed: passed on)
 let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
+    if isDown && not passed && not (isInjected info) then
+        downSuppressed.[button] <- true
+
     if passed then
         if isDown then
             match resendKind info with
@@ -295,6 +301,20 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
             downPassedId.[button] <- NO_PRESS
             if not (isInjected info) then
                 upPassed.[button] <- true
+
+// Called by the mouse hook when a left or right up is about to be passed on (by the handlers,
+// or in Pass Mode): true to suppress it instead. If the physical down of its press was
+// suppressed and no down resent alone for it reached the application, the application has the
+// button released (or got a whole click instead): the up alone would be an up without a down
+// (e.g. a right up opens a context menu). The press is ended then: a down resent late for it
+// is dropped (dropResent).
+let dropLoneUp (button: int) (info: HookInfo): bool =
+    if not (isInjected info) && downSuppressed.[button] && downPassedId.[button] <> pressId.[button] then
+        Debug.WriteLine("dropLoneUp: an up whose down did not reach the application")
+        upPassed.[button] <- true
+        true
+    else
+        false
 
 // The ID of the current press of the button of a left or right event (on the hook thread)
 let pressIdOf (me: MouseEvent): int =

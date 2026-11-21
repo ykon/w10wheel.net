@@ -11,6 +11,7 @@ open Keyboard
 
 let mutable private __callNextHook: (unit -> nativeint) = fun _ -> IntPtr(0)
 let setCallNextHook (f: unit -> nativeint): unit = __callNextHook <- f
+let getCallNextHook (): unit -> nativeint = __callNextHook
 
 let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
