@@ -1388,6 +1388,8 @@ let private getShownMouseTrigger () =
     let t = getFirstTrigger()
     if t.IsNone then lastMouseTrigger else t
 
+// Not None: Keyboard unchecked turns the keyboard trigger off. (None, the hook without a trigger
+// key, is still read from the properties: the dialog then shows no key.)
 let private keyboardItems =
     [DataID.VK_TAB, " (Tab)"; DataID.VK_PAUSE, " (Pause)"; DataID.VK_CAPITAL, " (Caps Lock)";
      DataID.VK_CONVERT, " (Henkan)"; DataID.VK_NONCONVERT, " (Muhenkan)";
@@ -1399,7 +1401,6 @@ let private keyboardItems =
      DataID.VK_LCONTROL, " (Left Ctrl)"; DataID.VK_RCONTROL, " (Right Ctrl)";
      DataID.VK_LMENU, " (Left Alt)"; DataID.VK_RMENU, " (Right Alt)"]
     |> List.map (fun (id, name) -> id, id + name)
-    |> fun items -> items @ [DataID.None, DataID.None]
 
 let private accelItems =
     [DataID.M5, DataID.M5 + " (1.0 ... 4.8)"; DataID.M6, DataID.M6 + " (1.2 ... 5.8)";

@@ -48,7 +48,6 @@ let private JapaneseMessage =
         "MiddleDrag", "中央ドラッグ";
         "X1Drag", "X1 ドラッグ";
         "X2Drag", "X2 ドラッグ";
-        "None", "なし";
         "Send MiddleClick", "中央クリック送信";
         "Dragged Lock", "ドラッグ後固定";
         
