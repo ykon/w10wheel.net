@@ -302,6 +302,12 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
             if not (isInjected info) then
                 upPassed.[button] <- true
 
+    // The physical up of the press is handled (suppressed or passed): the press is over. A later
+    // up whose down the hook did not see (e.g. pressed on another desktop) is not taken for an
+    // up without its down (dropLoneUp).
+    if not isDown && not (isInjected info) then
+        downSuppressed.[button] <- false
+
 // Called by the mouse hook when a left or right up is about to be passed on (by the handlers,
 // or in Pass Mode): true to suppress it instead. If the physical down of its press was
 // suppressed and no down resent alone for it reached the application, the application has the
