@@ -79,3 +79,6 @@ let private revVKCodeMap =
 let getVKCode name = vkCodeMap.[name]
 let getName vkCode = revVKCodeMap.[vkCode]
 
+// A key that does not repeat and may send no up (the Pause key): each down is a new press
+let isNoRepeatKey (vk: int) = vk = 0x13 // VK_PAUSE
+

@@ -705,9 +705,16 @@ type LastFlags() =
     // A key that does not repeat (the Pause key): its down is always a new press, its flags
     // are reset (it may send only a down, the flags of the previous press would remain)
     static member NewKeyDown (vk: int) =
-        if vk = 0x13 then // VK_PAUSE
+        if Keyboard.isNoRepeatKey vk then
             kdS.[vk] <- false
             kdP.[vk] <- false
+
+    // The passed keys that are not pressed any more: their up was missed (e.g. the hook was
+    // removed by Windows for a timeout), forget them (or their next down would pass as a repeat)
+    static member ResetReleasedKeys () =
+        for vk in 1 .. kdP.Length - 1 do
+            if kdP.[vk] && (WinAPI.GetAsyncKeyState(vk) &&& 0x8000s) = 0s then
+                kdP.[vk] <- false
 
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
@@ -1154,7 +1161,10 @@ let private setTargetVKCode name =
 
 let private setKeyboardHookOf (b: bool) =
     WinHook.setOrUnsetKeyboardHook b
-    if not b then
+    if b then
+        // Installed again (e.g. on Reload, after Windows removed it): ups may have been missed
+        LastFlags.ResetReleasedKeys()
+    else
         changeKeyboardTrigger (getTargetVKCode()) false
 
 
@@ -1705,6 +1715,7 @@ let initState () =
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
+    LastFlags.ResetReleasedKeys()
     exitScrollMode()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
