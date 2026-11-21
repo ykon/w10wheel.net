@@ -77,7 +77,7 @@ let private setFlagsOffer me =
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
-        Ctx.setStartingScrollMode()
+        // The scroll is starting already (waiterThread)
     | Cancel -> Debug.WriteLine("setFlagsOffer: cancel")
     | _ -> raise (InvalidOperationException())
 
@@ -173,11 +173,13 @@ let private waiterThread = new Thread(fun () ->
         let down, generation, pressId = waiterQueue.Take()
 
         // The scroll start (second down) takes longer: it is done after the offer returns,
-        // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+        // the hook handles the ups meanwhile as starting (set before the offer returns)
         let second = ref NonEvent
         sync.poll (Ctx.getPollTimeout()) (fun res ->
             match res with
-            | Some(LeftDown(_) | RightDown(_) as d2) -> second.Value <- d2
+            | Some(LeftDown(_) | RightDown(_) as d2) ->
+                Ctx.setStartingScrollModeFor generation
+                second.Value <- d2
             | Some(res) -> dispatchEvent generation pressId down res
             | None -> fromTimeout generation pressId down)
 

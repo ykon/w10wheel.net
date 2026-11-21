@@ -517,9 +517,13 @@ type private Scroll() =
         with get() = releasedMode
         and set b = releasedMode <- b
 
-    static member SetStarting () = lock monitor (fun () ->
-        // Start refuses while closed or in Pass Mode, so do not wait for it then
-        starting <- (not mode) && (not closed) && (not passMode)
+    // For the LR trigger, on the EventWaiter thread before the offer of the second down returns
+    // (so before the hook handles the ups) and before Start, which resets it: set after Start,
+    // it would remain. Start refuses while closed, in Pass Mode or in another generation (see
+    // Start), so do not wait for it then.
+    static member SetStarting (generation: int) = lock monitor (fun () ->
+        let sameGeneration = generation = Volatile.Read(&passModeGeneration.contents)
+        starting <- (not mode) && (not closed) && (not passMode) && sameGeneration
         if starting then startCanceled <- false
     )
 
@@ -556,7 +560,7 @@ let isKeyboardScrollMode () = Scroll.IsMode && Scroll.ByKeyboard
 let isPressedKeyboardScrollMode () = isPressedScrollMode() && Scroll.ByKeyboard
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 
-let setStartingScrollMode () = Scroll.SetStarting()
+let setStartingScrollModeFor (generation: int) = Scroll.SetStarting(generation)
 let isStartingScrollMode () = Scroll.IsStarting
 
 type VHAdjusterMethod =
