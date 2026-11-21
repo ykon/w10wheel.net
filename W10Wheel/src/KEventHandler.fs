@@ -220,15 +220,20 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
         Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
         Ctx.exitScrollMode()
 
-// The ups may have been missed (see Ctx.LastFlags.ResetReleasedKeys): the last trigger key event
-// is forgotten if the key is not pressed any more, or its next down would be taken for a repeat
-let private keysReleased (isPressed: int -> bool) =
-    match lastEvent with
-    | KeyDown(_) when not (isPressed lastEvent.VKCode) -> lastEvent <- NonEvent
-    | _ -> ()
+// The keyboard hook is installed again (on every load): ups may have been missed while it was
+// removed (e.g. by Windows for a timeout). The scroll mode the trigger key started would not
+// end, and its next down would be taken for a repeat: end it and forget the last event. The
+// suppressed and passed keys are kept until their up: whether a key is still pressed cannot
+// be told for sure.
+let private hookInstalled () =
+    lastEvent <- NonEvent
+
+    if Ctx.isKeyboardScrollMode() then
+        Debug.WriteLine("hookInstalled: exit keyboard scroll mode")
+        Ctx.exitScrollMode()
 
 let setChangeTrigger () =
     Ctx.setChangeKeyboardTrigger changeTrigger
-    Ctx.setKeysReleased keysReleased
+    Ctx.setKeyboardHookInstalled hookInstalled
 
 

@@ -199,19 +199,6 @@ module VKey =
 [<DllImport("user32.dll")>]
 extern int16 GetAsyncKeyState(int32 vKey)
 
-// To check that the input desktop is the thread's desktop: GetAsyncKeyState returns 0 otherwise
-[<DllImport("user32.dll", SetLastError = true)>]
-extern nativeint OpenInputDesktop(uint32 dwFlags, bool fInherit, uint32 dwDesiredAccess)
-
-[<DllImport("user32.dll", SetLastError = true)>]
-extern bool CloseDesktop(nativeint hDesktop)
-
-[<DllImport("user32.dll", SetLastError = true)>]
-extern nativeint GetThreadDesktop(uint32 dwThreadId)
-
-[<DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)>]
-extern bool GetUserObjectInformation(nativeint hObj, int32 nIndex, [<Out>] char[] pvInfo, uint32 nLength, uint32& lpnLengthNeeded)
-
 module CursorID =
     let OCR_NORMAL = 32512
     let OCR_IBEAM = 32513

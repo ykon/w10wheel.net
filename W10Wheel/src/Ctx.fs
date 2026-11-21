@@ -609,32 +609,6 @@ let getFirstMinThreshold () =
 let getSwitchingThreshold () =
     VHAdjuster.SwitchingThreshold
 
-// The name of a desktop (UOI_NAME), or null
-let private getDesktopName (h: nativeint): string =
-    let buf = Array.zeroCreate<char> 256
-    let mutable needed = 0u
-    if h <> IntPtr.Zero && WinAPI.GetUserObjectInformation(h, 2, buf, uint32 (buf.Length * 2), &needed) then
-        String(buf).TrimEnd(char 0)
-    else
-        null
-
-// Whether a key is pressed (GetAsyncKeyState), if it can tell: it also returns 0 when the input
-// desktop is not the thread's desktop (e.g. the secure desktop is shown)
-let private getKeyPressedIfReliable (): (int -> bool) option =
-    let input = WinAPI.OpenInputDesktop(0u, false, 0x0001u) // DESKTOP_READOBJECTS
-    if input = IntPtr.Zero then
-        None
-    else
-        try
-            let inputName = getDesktopName input
-            let ownName = getDesktopName (WinAPI.GetThreadDesktop(WinAPI.GetCurrentThreadId()))
-            if not (isNull inputName) && inputName = ownName then
-                Some(fun (vk: int) -> (WinAPI.GetAsyncKeyState(vk) &&& 0x8000s) <> 0s)
-            else
-                None
-        finally
-            WinAPI.CloseDesktop(input) |> ignore
-
 type LastFlags() =
     // R = Resent
     [<VolatileField>] static let mutable ldR = false
@@ -663,14 +637,21 @@ type LastFlags() =
     static let isKey (vk: int) =
         vk >= 0 && vk < kdS.Length
 
-    static member Init () =
+    // Pass Mode turned on: not the keys passed (kdP), whose ups pass (also in Pass Mode, see
+    // Dispatcher) and reset them; reset, a key pressed before would lose it (e.g. Pass Mode
+    // turned on and off while pressed: its repeats would start scroll mode if it became the
+    // trigger). Whether a key is still pressed cannot be told: GetAsyncKeyState may fail, and
+    // a key whose down was suppressed is not pressed for it.
+    static member InitAtPassMode () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
-        // Not kdP: the ups of the passed keys pass (also in Pass Mode, see Dispatcher) and
-        // reset them; reset, a key pressed before would lose it (e.g. Pass Mode turned on and
-        // off while pressed: its repeats would start scroll mode if it became the trigger)
+
+    // Initializing the state (initState): all, also the keys passed whose up may have been missed
+    static member Init () =
+        LastFlags.InitAtPassMode()
+        Array.fill kdP 0 (kdP.Length) false
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -737,18 +718,6 @@ type LastFlags() =
         if Keyboard.isNoRepeatKey vk then
             kdS.[vk] <- false
             kdP.[vk] <- false
-
-    // The ups may have been missed (the keyboard hook installed again after Windows removed it,
-    // or the state initialized): forget the keys that are not pressed any more, if this can be
-    // told (or their next down would be taken for a repeat). Kept otherwise, until their up.
-    static member ResetReleasedKeys (): (int -> bool) option =
-        let isPressed = getKeyPressedIfReliable()
-        isPressed |> Option.iter (fun pressed ->
-            for vk in 1 .. kdS.Length - 1 do
-                if (kdS.[vk] || kdP.[vk]) && not (pressed vk) then
-                    kdS.[vk] <- false
-                    kdP.[vk] <- false)
-        isPressed
 
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
@@ -1184,11 +1153,11 @@ let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
 let setChangeKeyboardTrigger f =
     changeKeyboardTrigger <- f
 
-// Called with whether a key is pressed when the ups may have been missed (see ResetReleasedKeys)
-let mutable private keysReleased: (int -> bool) -> unit = (fun _ -> ())
+// Called when the keyboard hook is installed (again): see KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
 
-let setKeysReleased f =
-    keysReleased <- f
+let setKeyboardHookInstalled f =
+    keyboardHookInstalled <- f
 
 let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
@@ -1204,7 +1173,7 @@ let private setKeyboardHookOf (b: bool) =
     if b then
         // Installed again on every load (e.g. Reload after Windows removed it): ups may have
         // been missed
-        LastFlags.ResetReleasedKeys() |> Option.iter keysReleased
+        keyboardHookInstalled ()
     else
         changeKeyboardTrigger (getTargetVKCode()) false
 
@@ -1756,7 +1725,6 @@ let initState () =
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
-    LastFlags.ResetReleasedKeys() |> ignore
     exitScrollMode()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
@@ -1770,4 +1738,4 @@ onPassModeOn <- (fun () ->
     offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
-    LastFlags.Init())
+    LastFlags.InitAtPassMode())
