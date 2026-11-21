@@ -676,6 +676,18 @@ type LastFlags() =
         | KeyDown(_) -> kdS.[down.VKCode] <- true
         | _ -> raise (ArgumentException())
 
+    // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
+    static member IsSuppressedKey (vk: int): bool =
+        vk >= 0 && vk < kdS.Length && kdS.[vk]
+
+    // The keyboard trigger changed while the old key was pressed (its down was suppressed)
+    static member SetSuppressedKey (vk: int) =
+        if vk >= 0 && vk < kdS.Length then kdS.[vk] <- true
+
+    // The keyboard hook is removed: the ups will not be seen
+    static member ResetKeys () =
+        Array.fill kdS 0 kdS.Length false
+
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
         let res = [| ldS; rdS; mdS; x1S; x2S |]

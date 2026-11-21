@@ -17,14 +17,8 @@ let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NonEvent
 
-// The old trigger key, pressed when the trigger key changed (see changeTrigger): its down was
-// suppressed, so are its repeats and its up (it is not the trigger any more)
-let private NO_KEY = -1
-let mutable private canceledKey = NO_KEY
-
 let private initState () =
     lastEvent <- NonEvent
-    canceledKey <- NO_KEY
 
 let setInitStateKEH () =
     Ctx.setInitStateKEH initState
@@ -161,8 +155,10 @@ let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
     let kd = KeyDown(info)
-    if kd.VKCode = canceledKey then
-        debug "suppress (the old trigger key)" kd
+    // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
+    // the trigger changed): its repeats are suppressed too, whatever the trigger is now
+    if Ctx.LastFlags.IsSuppressedKey kd.VKCode then
+        debug "suppress (repeat of a suppressed down)" kd
         IntPtr(1)
     elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 
@@ -170,22 +166,29 @@ let keyUp (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyUp: %d" info.vkCode)
 
     let ku = KeyUp(info)
-    if ku.VKCode = canceledKey then
-        debug "suppress (the old trigger key)" ku
-        canceledKey <- NO_KEY
+    // The up of a suppressed down, whatever the trigger is now (it may have changed since)
+    if Ctx.LastFlags.GetAndReset_SuppressedDown ku then
+        debug "suppress (up of a suppressed down)" ku
+        // As the trigger's handlers do, or its next down would be taken for a repeat
+        if Ctx.isTriggerKey ku then lastEvent <- ku
         IntPtr(1)
     elif Ctx.isTriggerKey ku then singleUp ku else noneUp ku
 
-// The trigger key has changed (cancelPressed), or the keyboard hook is removed: the scroll
-// mode the old key started would not end (its up is not the trigger's any more, or not seen).
-// End it. If the old key is pressed (its down suppressed), suppress it until its up.
-let private changeTrigger (oldVK: int) (cancelPressed: bool) =
+// The trigger key has changed (keyChanged), or the keyboard hook is removed: the scroll mode
+// the old key started would not end (its up is not the trigger's any more, or not seen). End
+// it. If the old key is pressed after a change (its down suppressed), suppress it until its up
+// (keyUp). Without the hook, the ups will not be seen: forget the suppressed downs.
+let private changeTrigger (oldVK: int) (keyChanged: bool) =
     let pressed =
         match lastEvent with
         | KeyDown(_) -> lastEvent.VKCode = oldVK
         | _ -> false
 
-    canceledKey <- if cancelPressed && pressed then oldVK else NO_KEY
+    if not keyChanged then
+        Ctx.LastFlags.ResetKeys()
+    elif pressed then
+        Ctx.LastFlags.SetSuppressedKey oldVK
+
     lastEvent <- NonEvent
 
     if Ctx.isKeyboardScrollMode() then
