@@ -25,9 +25,15 @@ let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
 // The down of the single or drag trigger that started scroll mode (and was suppressed). Reset
-// by its up. An up of another button (e.g. the trigger was changed by Reload while pressed), or
-// without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+// by its up, or by the next down of its button (the up was missed, see checkSameLastEvent). An
+// up of another button (e.g. the trigger was changed by Reload while pressed), or without it,
+// has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
 let mutable private triggerStarted: MouseEvent = NonEvent
+
+// The earlier down of the button of the down handled was suppressed, and no up of the button
+// has come since (the flag before procDown resets it for this down): the up was missed, the
+// buttons do not repeat (see checkSameLastEvent)
+let mutable private earlierDownSuppressed = false
 
 // The downs that started scroll mode of a trigger before it was changed (changeTrigger), by
 // button (buttonIndex): changed again while pressed, there can be several. Their up is
@@ -98,8 +104,36 @@ let private skipFirstUp (me: MouseEvent): nativeint option =
     else
         None
 
+// The earlier press of the button of a down held scroll mode, and its up was missed: the press
+// of the single or drag trigger (triggerStarted), or one of the pair of the LR, left and right
+// triggers (both downs suppressed, see EventWaiter.setFlagsOffer; earlierDownSuppressed). Not
+// e.g. the middle trigger's for an X1 down, nor a down passed in the LR trigger's scroll mode
+// after the first up (the other button still holds it). By button, whatever the other buttons
+// have done since (lastEvent).
+let private isHeldByEarlierPress (down: MouseEvent): bool =
+    let isLR = match down with LeftDown(_) | RightDown(_) -> true | _ -> false
+    triggerStarted.SameEvent down || (Ctx.isDoubleTrigger() && isLR && earlierDownSuppressed)
+
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
-    if me.SameEvent lastEvent then
+    let held = me.IsDown && isHeldByEarlierPress me
+    if me.IsDown && (me.SameEvent lastEvent || held) then
+        // A down again with no up of the button between (the buttons do not repeat): the up of
+        // the earlier press was missed (e.g. released on the secure desktop or over a window of
+        // a higher integrity level). A new press: passed, its up would be handled by the state of
+        // the earlier one (e.g. suppressed as the trigger's), leaving the button pressed. The
+        // scroll mode that press held could not end by its up any more: it is taken for locked,
+        // so that this down ends it (checkExitScrollDown, its up suppressed too). Only the scroll
+        // mode of this button (isHeldByEarlierPress), also if other buttons were pressed since.
+        debug "down again (the up was missed)" me
+        if held && Ctx.isPressedMouseScrollMode() then
+            Ctx.setReleasedScrollMode()
+
+        if triggerStarted.SameEvent me then
+            triggerStarted <- NonEvent
+
+        lastEvent <- me
+        None
+    elif me.SameEvent lastEvent then
         debug "same last event" me
         callNextHook()
         //suppress()
@@ -216,6 +250,15 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
     else
         None
 
+// The wait of the earlier press of the button of a down may have timed out after procDown reset
+// the flags of this down: its resent flag (EventWaiter.fromTimeout) is not of this press, whose
+// up would be resent for a down the hook drops (its press is not the current one), with the
+// wait of this press not offered that up (its down resent later, left pressed). Reset it when no
+// wait is in progress any more: a timeout is handled before the wait ends (EventWaiter.
+// SynchronousQueue.poll). No flag of this press has been set yet (lrDown).
+let private resetRacedResentDown (down: MouseEvent) =
+    Ctx.LastFlags.ResetFor down
+
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     // The up of the other button than the waiting down, whose own down did not reach the
     // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
@@ -223,6 +266,15 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
+    // A down of the button whose down is waiting (the up was missed, or of another mouse): not
+    // the second down of the trigger (the same button would start scroll mode). A new press, as
+    // for checkSameLastEvent: the wait is canceled (its down is not resent: the hook would drop
+    // it, its press is not the current one, see Windows.dropResent), this down is handled after.
+    elif me.IsDown && EventWaiter.isWaitingFor me then
+        debug "cancel the wait (down of the waiting button)" me
+        EventWaiter.cancel () |> ignore
+        resetRacedResentDown me
+        None
     elif EventWaiter.offer me then
         debug "success to offer" me
         // The second down starts LR scroll mode: no up of the pair counted yet (the count
@@ -230,6 +282,7 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
         if me.IsDown then secondTriggerUp <- false
         suppress()
     else
+        if me.IsDown then resetRacedResentDown me
         None
 
 let private checkSuppressedDown (up: MouseEvent): nativeint option =
@@ -239,9 +292,13 @@ let private checkSuppressedDown (up: MouseEvent): nativeint option =
     else
         None
 
+// Also before skipFirstUp (lrUp): the flag is of this press (reset at its down), e.g. the last
+// event was reset by a trigger change after the down was resent. The last event is this up then,
+// as checkSameLastEvent would set it.
 let private checkResentDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_ResentDown up then
         debug "resendUp and suppress (checkResentDown)" up
+        lastEvent <- up
         Windows.resendUp up
         suppress()
     else
@@ -283,9 +340,15 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
 let private dragDefault info = ()
 let mutable private drag: HookInfo -> unit = dragDefault
 
-// Dragged only when the cursor would have moved from the start point (scroll mode suppresses
-// the moves): not for a move at the same point (e.g. a slight move with enhanced pointer
-// precision) or of other software (injected), the click is resent at the up then
+// The press of the drag trigger is a drag (its click is not resent at the up) if the cursor
+// would have moved from the start point (scroll mode suppresses the moves), or if it has
+// scrolled (Ctx.isScrolled: the scroll uses RawInput, a slight move with enhanced pointer
+// precision can scroll without moving the cursor, and so can a move toward the edge of the
+// screen from it). Not for a move of other software (injected), nor for one that neither moved
+// the cursor nor scrolled: the click is resent then, the scroll and the click never both.
+let private isDragged () =
+    dragged || Ctx.isScrolled()
+
 let private dragStart (info: HookInfo) =
     let sx, sy = Ctx.getScrollStartPoint()
     if not (Windows.isInjectedEvent (Move(info))) && (info.pt.x <> sx || info.pt.y <> sy) then
@@ -324,7 +387,7 @@ let private suppressNotDragScroll (up: MouseEvent): nativeint option =
         None
 
 let private continueScrollDrag (me: MouseEvent): nativeint option =
-    if Ctx.isDraggedLock() && dragged then
+    if Ctx.isDraggedLock() && isDragged() then
         debug "continueScrollDrag (Released)" me
         Ctx.setReleasedScrollMode()
         suppress()
@@ -333,6 +396,7 @@ let private continueScrollDrag (me: MouseEvent): nativeint option =
 
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
     debug "exit scroll mode (Drag)" me
+    let dragged = isDragged()
     Ctx.exitScrollMode()
 
     if not dragged then
@@ -430,11 +494,13 @@ let private lrUp (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkEscape
+        // The down was resent: its up must be resent (and the down it follows), even without a
+        // last event (skipFirstUp would pass this up, and the hook drop the down not sent yet)
+        checkResentDown
         skipFirstUp
         checkSameLastEvent
         //checkSingleSuppressed
         checkPassedDown
-        checkResentDown
         checkExitScrollUpLR
         checkStartingScroll
         offerEventWaiter
@@ -540,8 +606,12 @@ let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 
 // Before the handlers of the trigger (see canceledDowns)
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
+    earlierDownSuppressed <- false
     if not (Windows.isInjectedEvent d) then
         canceledDowns.[buttonIndex d] <- false
+
+        // Before the reset (see checkSameLastEvent)
+        earlierDownSuppressed <- Ctx.LastFlags.IsSuppressedDown d
 
         // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
         // whatever the trigger, for all the buttons (e.g. the up of a suppressed middle down

@@ -321,18 +321,24 @@ let private upPassed = Array.create 5 false
 let private downPassedId = Array.create 5 NO_PRESS
 // downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it)
 let private downSuppressed = Array.create 5 false
+// releaseQueuedId: the last press whose up has been resent (queued, see resendUp) for its down
+// resent alone: that down is not dropped if a later press has started before it is sent (e.g.
+// the sender busy with a click), it is released by that up
+let private releaseQueuedId = Array.create 5 NO_PRESS
 let mutable private lastPressId = 0
 
 // Called by the mouse hook for a button down or up before it is handled, also in
 // Pass Mode: true to drop it.
 // - A down resent alone for a press whose physical up has passed (or for an earlier press)
-//   would leave the button pressed.
+//   would leave the button pressed. Not if its up has been resent (releaseQueuedId): it comes
+//   after, and the press would be lost.
 // - The up resent for a down resent alone that did not reach the application (dropped above,
 //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
 let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
     match resendKind info with
     | Some(kind, id) when kind = KIND_DOWN && isDown &&
-                          (id <> pressId.[button] || upPassed.[button]) ->
+                          (id <> pressId.[button] || upPassed.[button]) &&
+                          id <> releaseQueuedId.[button] ->
         Debug.WriteLine("dropResent: a down after its physical up")
         true
     | Some(kind, id) when kind = KIND_RELEASE && not isDown &&
@@ -408,8 +414,11 @@ let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (
 let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
     inputQueue.Add((generation, msgs))
 
+// The wheel events of scroll mode
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time (uint64 extra)
+    // It has scrolled: the press of the drag trigger is a drag (see EventHandler.dragStart)
+    Ctx.setScrolled()
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
     enqueue (Ctx.getPassModeGeneration()) [|input|]
 
@@ -705,7 +714,14 @@ let private __resendUp (me: MouseEvent) (kind: uint64) (pressId: int) =
 // The up of a down resent alone, for the physical up (suppressed) of the current press: called
 // on the hook thread
 let resendUp (me: MouseEvent) =
-    __resendUp me KIND_RELEASE (pressIdOf me)
+    let button =
+        match me with
+        | LeftUp(_) -> 0
+        | RightUp(_) -> 1
+        | _ -> raise (ArgumentException())
+    let id = pressIdOf me
+    releaseQueuedId.[button] <- id
+    __resendUp me KIND_RELEASE id
 
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
 // alone (the up of such a down is resent by checkResentDown before the wait is offered): it

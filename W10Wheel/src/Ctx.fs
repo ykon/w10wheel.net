@@ -387,6 +387,9 @@ type private Scroll() =
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
     [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
     [<VolatileField>] static let mutable byKeyboard = false // started by the keyboard trigger
+    // A wheel event has been sent since scroll mode started (Windows.sendInput): the press of
+    // the drag trigger is a drag then, even if the cursor would not have moved
+    [<VolatileField>] static let mutable scrolled = false
 
     // The LR trigger start was canceled before Start ran on the EventWaiter thread: Exit was
     // called while starting (e.g. both buttons released), so Start must not start afterwards
@@ -431,6 +434,7 @@ type private Scroll() =
                     WinCursor.changeV()
 
                 byKeyboard <- false
+                scrolled <- false
                 mode <- true
 
             starting <- false
@@ -462,6 +466,7 @@ type private Scroll() =
                     WinCursor.changeV()
 
                 byKeyboard <- true
+                scrolled <- false
                 mode <- true
 
             starting <- false
@@ -512,6 +517,9 @@ type private Scroll() =
 
     static member IsMode with get() = mode
     static member ByKeyboard with get() = byKeyboard
+    static member Scrolled
+        with get() = scrolled
+        and set b = scrolled <- b
     static member StartTime with get() = stime
     static member StartPoint with get() = (sx, sy)
     static member LockTime
@@ -549,6 +557,8 @@ type private Scroll() =
     static member IsStarting with get() = starting
 
 let isScrollMode () = Scroll.IsMode
+let isScrolled () = Scroll.Scrolled
+let setScrolled () = Scroll.Scrolled <- true
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
 let startScrollModeFor (generation: int) (info: HookInfo): unit = Scroll.Start(info, generation)
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
@@ -678,6 +688,11 @@ type LastFlags() =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        LastFlags.SuppressedKeysToLoneUp()
+
+    // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
+    // missed is not suppressed again (see Init, and KEventHandler.hookInstalled)
+    static member SuppressedKeysToLoneUp () =
         for vk in 0 .. kdS.Length - 1 do
             if kdS.[vk] then kdL.[vk] <- true
         Array.fill kdS 0 (kdS.Length) false
@@ -784,6 +799,16 @@ type LastFlags() =
         match up with
         | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
+
+    // The down of the button of an event was suppressed and its up has not come yet
+    static member IsSuppressedDown (me: MouseEvent): bool =
+        match me with
+        | LeftEvent(_) -> ldS
+        | RightEvent(_) -> rdS
+        | MiddleEvent(_) -> mdS
+        | X1Event(_) -> x1S
+        | X2Event(_) -> x2S
+        | _ -> false
 
     // The flags of the press of the button of an event (resent, suppressed, passed)
     static member ResetFor (me: MouseEvent) =
@@ -1592,6 +1617,14 @@ let loadProperties (update:bool): unit =
 
         setNum DataID.firstMinThreshold 1 10
         setNum DataID.switchingThreshold 10 500
+
+        // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+        // progress (Reload, switching properties) ends once they are set, so that the new ones
+        // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+        // keyboard hook). Not if the file could not be read: the settings have not changed. The
+        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+        exitScrollMode()
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
@@ -1815,12 +1848,14 @@ let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
 let initState () =
-    // Cancel the LR trigger wait first: its timeout could set the flags again after Init
-    offerEW(Cancel) |> ignore
     // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
     // received before, and the wheel events queued are not sent. A down resent before and
-    // sent after its physical up is dropped by the hook (Windows.dropResent).
+    // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass Mode
+    // does: a wait timing out while it is canceled below sees the new generation and does not
+    // resend its down (its flag would be reset by Init, and its up not resent).
     newPassModeGeneration ()
+    // Cancel the LR trigger wait before Init: its timeout could set the flags again after it
+    offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
     LastFlags.Init()

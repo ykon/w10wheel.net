@@ -34,17 +34,22 @@ let setInitStateKEH () =
 let private debug (msg: string) (ke: KeyboardEvent) =
     Debug.WriteLine(msg + ": " + ke.Name)
 
-let private skipFirstUp (ke: KeyboardEvent): nativeint option =
-    if lastEvent.IsNone then
-        debug "skip first Up" ke
-        callNextHook()
-    else
-        None
-
 let private isKeyDown (ke: KeyboardEvent) =
     match ke with
     | KeyDown(_) -> true
     | _ -> false
+
+// An up of the trigger key whose down W10Wheel did not handle (the last event is not its down):
+// the first one, or one whose down was not seen (e.g. pressed over a window of a higher
+// integrity level). The down reached the application (or Windows): the up passes, or the key
+// would be left pressed. (The ups of the downs suppressed otherwise are handled before, see
+// keyUp.)
+let private skipFirstUp (ke: KeyboardEvent): nativeint option =
+    if not (isKeyDown lastEvent) then
+        debug "skip Up (its down not handled)" ke
+        callNextHook()
+    else
+        None
 
 let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
     // A key repeat of the trigger key is always suppressed, like its first down: otherwise
@@ -241,18 +246,20 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
 // The keyboard hook is installed again (on every load): ups may have been missed while it was
 // removed (e.g. by Windows for a timeout). The scroll mode the trigger key started would not
 // end, and its next down would be taken for a repeat: end it and forget the last event. The
-// suppressed and passed keys are kept until their up: whether a key is still pressed cannot
-// be told for sure.
+// passed keys are kept until their up. The suppressed keys are suppressed for their up alone,
+// as after initState: whether a key is still pressed cannot be told for sure, and the hook is
+// installed again (Reload) to recover, so the next press of a key whose up was missed works.
 let private hookInstalled () =
-    // The trigger key pressed (its down suppressed, as the scroll it started): suppress its
-    // repeats and its up until the up (keyUp), or the up alone would pass, or the repeats start
-    // scroll mode again. If its up was missed, its next press is suppressed once.
+    // The trigger key pressed (its down suppressed, as the scroll it started): suppress its up
+    // alone, or it would pass. Its next down is taken for a new press (a repeat cannot be told
+    // from it), the repeats of a key still pressed start scroll mode again.
     match lastEvent with
     | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
     | _ -> ()
 
     lastEvent <- NonEvent
     Ctx.LastFlags.ResetLoneUpKeys()
+    Ctx.LastFlags.SuppressedKeysToLoneUp()
 
     if Ctx.isKeyboardScrollMode() then
         Debug.WriteLine("hookInstalled: exit keyboard scroll mode")
