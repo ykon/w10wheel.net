@@ -130,11 +130,11 @@ let private checkExitOtherScroll (down: MouseEvent): nativeint option =
 
 // While the keyboard trigger's scroll mode is held, the buttons of the LR, left and right
 // triggers wait as when not scrolling: if the trigger is pressed (the second down, offered to
-// the wait whichever button it is: e.g. the right one for the left trigger), it ends that scroll
-// mode instead of starting one (EventWaiter.waiterThread), as another trigger does; otherwise
-// the down is resent (or the click) as usual
+// the wait before, whichever button it is), it ends that scroll mode instead of starting one
+// (EventWaiter.waiterThread), as another trigger does; otherwise the down is resent (or the
+// click) as usual
 let private passPressedScrollMode (down: MouseEvent): nativeint option =
-    let isTriggerButton = Ctx.isLRTrigger() || Ctx.isTriggerEvent down || EventWaiter.isWaiting()
+    let isTriggerButton = Ctx.isLRTrigger() || Ctx.isTriggerEvent down
     if Ctx.isPressedScrollMode() && not (Ctx.isPressedKeyboardScrollMode() && isTriggerButton) then
         debug "pass scroll mode (Pressed)" down
         Ctx.LastFlags.SetPassed(down)
@@ -408,10 +408,14 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
+        // A wait in progress gets the down first, whatever the scroll mode: started during the
+        // keyboard trigger's scroll mode, the second down ends it (see EventWaiter.waiterThread),
+        // also if it is locked now (the keyboard trigger released quickly in between); it would
+        // not be offered after checkExitScrollDown, and the wait would resend its down
+        offerEventWaiter
         checkExitScrollDown
         passPressedScrollMode
         //passSingleEvent
-        offerEventWaiter
         // Only to start a wait: scroll mode is left, and a wait in progress gets the down,
         // also on the excluded window (or the wait would resend its down after this one)
         skipExcludeWindow
