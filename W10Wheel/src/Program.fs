@@ -94,7 +94,8 @@ let private getBool (sl: string list): bool =
 // The errors of the arguments are shown in the language of the properties (Default: no other
 // is selected then)
 let private setSelectedProperties name =
-    // Default is always valid (its file is not written until exit)
+    // Default is always valid (its file is not written until a setting is changed or W10Wheel
+    // exits)
     if name = Properties.DEFAULT_DEF || Properties.exists(name) then
         Ctx.setSelectedProperties name
     else

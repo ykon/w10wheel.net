@@ -87,7 +87,6 @@ let private JapaneseMessage =
         
         "Properties", "設定ファイル";
         "Reload", "再読み込み";
-        "Save", "保存";
         "Open Dir", "フォルダを開く";
         "Add", "追加";
         "Delete", "削除";

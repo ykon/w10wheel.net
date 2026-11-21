@@ -931,9 +931,15 @@ let private makeSetBooleanEvent id =
         let b = item.Checked
         setBooleanOfName id b
 
+// A setting changed in the menu is stored at once (storeProperties, set after it is defined).
+// Not for Pass Mode: it is not stored, and storing would overwrite the file edited outside
+// W10Wheel and not reloaded yet.
+let mutable private storeChangedSettings: unit -> unit = (fun () -> ())
+
 let private createBoolMenuItem (data: MenuData) enabled =
     let item = createMenuItem data
     item.Click.AddHandler(new EventHandler(makeSetBooleanEvent data.id.Value))
+    item.Click.Add(fun _ -> storeChangedSettings())
     item.CheckOnClick <- true
     item.Enabled <- enabled
     boolMenuDict.[data.id.Value] <- item
@@ -988,11 +994,12 @@ let private createDictMenuItem (data: MenuData) (dict: MenuDict) (setID: (string
     let id = data.id.Value
     dict.[id] <- item
 
-    addClick item (fun _ -> 
+    addClick item (fun _ ->
         if item.CheckState = CheckState.Unchecked then
             uncheckAllItems dict
             item.CheckState <- CheckState.Indeterminate
             setID(id)
+            storeChangedSettings()
     )
 
 let private addSeparator (col: ToolStripItemCollection) =
@@ -1046,6 +1053,8 @@ let private createOnOffMenuItem (id:string) (action: bool -> unit) =
         item.Text <- convLang(getOnOffText b)
         setBooleanOfName id b
         action(b)
+        // After the action: the keyboard hook is off again if it could not be installed
+        storeChangedSettings()
     )
 
 let private createOnOffMenuItemNA (id:string) =
@@ -1137,6 +1146,7 @@ let private createNumberMenuItem name low up =
         | Ok n ->
             setNumberOfName name n
             item.Text <- makeNumberText name n
+            storeChangedSettings()
         | Error s ->
             if s <> "" then
                 Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Number") s) (convLang "Error")
@@ -1678,6 +1688,8 @@ let storeProperties () =
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
+storeChangedSettings <- storeProperties
+
 let reloadProperties () =
     prop.Clear()
     loadProperties true
@@ -1686,10 +1698,6 @@ let reloadProperties () =
 let private createReloadPropertiesMenuItem () =
     let item = createMenuItem_NonID "Reload"
     addClick item (fun _ -> reloadProperties ())
-
-let private createSavePropertiesMenuItem () =
-    let item = createMenuItem_NonID "Save"
-    addClick item (fun _ -> storeProperties())
 
 let private createOpenDirMenuItem (dir: string) =
     let item = createMenuItem_NonID "Open Dir"
@@ -1781,7 +1789,6 @@ let private createPropertiesMenu () =
         old |> Array.iter (fun item -> item.Dispose())
 
         addItem (createReloadPropertiesMenuItem())
-        addItem (createSavePropertiesMenuItem())
         addSeparator items
 
         addItem (createOpenDirMenuItem(Properties.USER_DIR))
