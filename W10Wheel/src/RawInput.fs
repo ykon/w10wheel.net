@@ -26,7 +26,11 @@ let private procRawInput (lParam:nativeint): unit =
         // usFlags can have other bits with a relative move (e.g. MOUSE_MOVE_NOCOALESCE)
         (ri.header.dwType = RIM_TYPEMOUSE) && ((ri.mouse.usFlags &&& MOUSE_MOVE_ABSOLUTE) = 0us)
 
-    if (getRawInputData IntPtr.Zero) = 0u then
+    // Not smaller than RAWINPUT (a mouse input, the only device registered): it is read whole
+    // from the buffer, which would be read past otherwise
+    let minSize = uint32 <| Marshal.SizeOf(typeof<WinAPI.RAWINPUT>)
+
+    if (getRawInputData IntPtr.Zero) = 0u && pcbSize >= minSize then
         let buf = Marshal.AllocHGlobal(int pcbSize)
         try
             if (getRawInputData buf) = pcbSize then
