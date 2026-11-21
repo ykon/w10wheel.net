@@ -34,17 +34,22 @@ let setInitStateKEH () =
 let private debug (msg: string) (ke: KeyboardEvent) =
     Debug.WriteLine(msg + ": " + ke.Name)
 
-let private skipFirstUp (ke: KeyboardEvent): nativeint option =
-    if lastEvent.IsNone then
-        debug "skip first Up" ke
-        callNextHook()
-    else
-        None
-
 let private isKeyDown (ke: KeyboardEvent) =
     match ke with
     | KeyDown(_) -> true
     | _ -> false
+
+// An up of the trigger key whose down W10Wheel did not handle (the last event is not its down):
+// the first one, or one whose down was not seen (e.g. pressed over a window of a higher
+// integrity level). The down reached the application (or Windows): the up passes, or the key
+// would be left pressed. (The ups of the downs suppressed otherwise are handled before, see
+// keyUp.)
+let private skipFirstUp (ke: KeyboardEvent): nativeint option =
+    if not (isKeyDown lastEvent) then
+        debug "skip Up (its down not handled)" ke
+        callNextHook()
+    else
+        None
 
 let private checkSameLastEvent (ke: KeyboardEvent): nativeint option =
     // A key repeat of the trigger key is always suppressed, like its first down: otherwise
