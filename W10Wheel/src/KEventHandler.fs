@@ -87,13 +87,6 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
     else
         None
 
-let private checkSuppressedDown (up: KeyboardEvent): nativeint option =
-    if Ctx.LastFlags.GetAndReset_SuppressedDown up then
-        debug "suppress (checkSuppressedDown)" up
-        suppress()
-    else
-        None
-
 let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
     Debug.WriteLine(msg)
     callNextHook()
@@ -129,7 +122,6 @@ let private singleUp (ke: KeyboardEvent) =
     let checkers = [
         skipFirstUp
         checkSameLastEvent
-        checkSuppressedDown
         checkExitScrollUp
         endIllegalState
     ]
@@ -150,8 +142,8 @@ let private noneDown (ke: KeyboardEvent): nativeint =
     getResult checkers ke
 
 let private noneUp (ke: KeyboardEvent): nativeint =
+    // (the ups of suppressed downs are handled in keyUp)
     let checkers = [
-        checkSuppressedDown
         endPass
     ]
 

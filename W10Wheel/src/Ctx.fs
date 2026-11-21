@@ -688,7 +688,7 @@ type LastFlags() =
 
     // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
     static member IsSuppressedKey (vk: int): bool =
-        vk >= 0 && vk < kdS.Length && kdS.[vk]
+        isKey vk && kdS.[vk]
 
     // The keyboard trigger changed while the old key was pressed (its down was suppressed)
     static member SetSuppressedKey (vk: int) =
@@ -699,13 +699,11 @@ type LastFlags() =
 
     // The key's down passed: its repeats and its up pass too, even if it is the trigger now
     static member IsPassedKey (vk: int): bool =
-        vk >= 0 && vk < kdP.Length && kdP.[vk]
+        isKey vk && kdP.[vk]
 
     static member GetAndReset_PassedKey (vk: int): bool =
-        vk >= 0 && vk < kdP.Length && getAndReset(&kdP.[vk])
+        isKey vk && getAndReset(&kdP.[vk])
 
-    // A key that does not repeat (the Pause key): its down is always a new press, its flags
-    // are reset (it may send only a down, the flags of the previous press would remain)
     // A key that does not repeat (Pause): its down is always a new press, its flags are reset
     // (it may send only a down, the flags of the previous press would remain). The flags of the
     // other keys are kept until their up (a repeat cannot be told from a new press for sure).
@@ -736,7 +734,7 @@ type LastFlags() =
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) -> getAndReset(&kdS.[up.VKCode])
+        | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
 
     static member ResetLR (down: MouseEvent) =
