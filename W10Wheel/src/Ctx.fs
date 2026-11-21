@@ -628,6 +628,11 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
+    // The time of the last down (or repeat) of each key: see NewKeyDown
+    static let kdTime = Array.create 256 0u
+    // A repeat comes within the keyboard delay (1 s at most) or the repeat interval (0.4 s at
+    // most) after the previous down of the key
+    static let REPEAT_INTERVAL_MAX_MS = 1500u
 
     static let getAndReset (flag: bool byref) =
         let res = flag
@@ -704,17 +709,17 @@ type LastFlags() =
 
     // A key that does not repeat (the Pause key): its down is always a new press, its flags
     // are reset (it may send only a down, the flags of the previous press would remain)
-    static member NewKeyDown (vk: int) =
-        if Keyboard.isNoRepeatKey vk then
-            kdS.[vk] <- false
-            kdP.[vk] <- false
-
-    // The passed keys that are not pressed any more: their up was missed (e.g. the hook was
-    // removed by Windows for a timeout), forget them (or their next down would pass as a repeat)
-    static member ResetReleasedKeys () =
-        for vk in 1 .. kdP.Length - 1 do
-            if kdP.[vk] && (WinAPI.GetAsyncKeyState(vk) &&& 0x8000s) = 0s then
+    // Called at each key down, also in Pass Mode. A down of a key whose flags say it is pressed
+    // (passed or suppressed), coming later than a repeat would, is a new press: its up was missed
+    // (e.g. the hook was removed by Windows for a timeout), its flags are reset. A key that does
+    // not repeat (Pause) is always a new press.
+    static member NewKeyDown (vk: int, time: uint32) =
+        if isKey vk then
+            if Keyboard.isNoRepeatKey vk || time - kdTime.[vk] > REPEAT_INTERVAL_MAX_MS then
+                kdS.[vk] <- false
                 kdP.[vk] <- false
+
+            kdTime.[vk] <- time
 
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
@@ -1161,10 +1166,7 @@ let private setTargetVKCode name =
 
 let private setKeyboardHookOf (b: bool) =
     WinHook.setOrUnsetKeyboardHook b
-    if b then
-        // Installed again (e.g. on Reload, after Windows removed it): ups may have been missed
-        LastFlags.ResetReleasedKeys()
-    else
+    if not b then
         changeKeyboardTrigger (getTargetVKCode()) false
 
 
@@ -1715,7 +1717,6 @@ let initState () =
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
-    LastFlags.ResetReleasedKeys()
     exitScrollMode()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:

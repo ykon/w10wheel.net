@@ -96,7 +96,9 @@ let private procKeyboard nCode wParam (info:KHookInfo): nativeint =
         // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned off,
         // even if they have become the trigger (see KEventHandler.keyDown)
         match wParam.ToInt32() with
-        | WM_KEYDOWN | WM_SYSKEYDOWN -> Ctx.LastFlags.SetPassedKey (int info.vkCode)
+        | WM_KEYDOWN | WM_SYSKEYDOWN ->
+            Ctx.LastFlags.NewKeyDown(int info.vkCode, info.time)
+            Ctx.LastFlags.SetPassedKey (int info.vkCode)
         | WM_KEYUP | WM_SYSKEYUP -> Ctx.LastFlags.GetAndReset_PassedKey (int info.vkCode) |> ignore
         | _ -> ()
 

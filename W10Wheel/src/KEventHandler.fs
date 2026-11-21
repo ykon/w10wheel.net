@@ -160,7 +160,7 @@ let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
     let kd = KeyDown(info)
-    Ctx.LastFlags.NewKeyDown kd.VKCode
+    Ctx.LastFlags.NewKeyDown(kd.VKCode, info.time)
 
     // The trigger key that does not repeat (Pause) may send no up: a down after its down was
     // released, quickly. As its up would, lock the scroll it started (this down then ends it),
