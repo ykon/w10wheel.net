@@ -206,6 +206,8 @@ let private checkExitScrollUpLR (up: MouseEvent): nativeint option =
             debug "continue scroll mode (Released)" up
             Ctx.setReleasedScrollMode()
 
+        // Its down was suppressed (setFlagsOffer): handled
+        Ctx.LastFlags.GetAndReset_SuppressedDown up |> ignore
         secondTriggerUp <- not secondTriggerUp
         suppress()
     else
@@ -222,6 +224,7 @@ let private checkStartingScroll (up: MouseEvent): nativeint option =
             debug "exit scroll mode (starting)" up
             Ctx.exitScrollMode()
 
+        Ctx.LastFlags.GetAndReset_SuppressedDown up |> ignore
         secondTriggerUp <- not secondTriggerUp
         suppress()
     else
@@ -538,6 +541,13 @@ let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
     if not (Windows.isInjectedEvent d) then
         canceledDowns.[buttonIndex d] <- false
+
+        // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
+        // whatever the trigger (only the LR trigger's handlers did, so after changing the
+        // trigger they could take e.g. the next up for that of a resent or suppressed down)
+        match d with
+        | LeftDown(_) | RightDown(_) -> Ctx.LastFlags.ResetLR d
+        | _ -> ()
 
     Volatile.Read(&proc.contents)(d)
 
