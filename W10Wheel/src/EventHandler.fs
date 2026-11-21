@@ -129,11 +129,12 @@ let private checkExitOtherScroll (down: MouseEvent): nativeint option =
         None
 
 // While the keyboard trigger's scroll mode is held, the buttons of the LR, left and right
-// triggers wait as when not scrolling: if the trigger is pressed (the second down), its start
-// ends that scroll mode instead (Ctx.Scroll.Start), as another trigger does; otherwise the down
-// is resent (or the click) as usual
+// triggers wait as when not scrolling: if the trigger is pressed (the second down, offered to
+// the wait whichever button it is: e.g. the right one for the left trigger), it ends that scroll
+// mode instead of starting one (EventWaiter.waiterThread), as another trigger does; otherwise
+// the down is resent (or the click) as usual
 let private passPressedScrollMode (down: MouseEvent): nativeint option =
-    let isTriggerButton = Ctx.isLRTrigger() || Ctx.isTriggerEvent down
+    let isTriggerButton = Ctx.isLRTrigger() || Ctx.isTriggerEvent down || EventWaiter.isWaiting()
     if Ctx.isPressedScrollMode() && not (Ctx.isPressedKeyboardScrollMode() && isTriggerButton) then
         debug "pass scroll mode (Pressed)" down
         Ctx.LastFlags.SetPassed(down)

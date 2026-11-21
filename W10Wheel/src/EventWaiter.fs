@@ -103,6 +103,10 @@ let isWaitingOtherThan (up: MouseEvent): bool =
 let isWaitingAt (me: MouseEvent): bool =
     sync.IsWaiting && Mouse.samePoint waitingEvent me
 
+// Whether a wait is in progress (on the hook thread)
+let isWaiting (): bool =
+    sync.IsWaiting
+
 let setOfferEW () =
     Ctx.setOfferEW offer
 
