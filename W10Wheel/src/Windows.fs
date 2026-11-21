@@ -408,8 +408,11 @@ let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (
 let private enqueue (generation: int) (msgs: WinAPI.MINPUT[]) =
     inputQueue.Add((generation, msgs))
 
+// The wheel events of scroll mode
 let sendInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint32) =
     let input = createInput pt data flags time (uint64 extra)
+    // It has scrolled: the press of the drag trigger is a drag (see EventHandler.dragStart)
+    Ctx.setScrolled()
     //WinAPI.SendInput(1u, [|input|], MINPUT_SIZE)
     enqueue (Ctx.getPassModeGeneration()) [|input|]
 

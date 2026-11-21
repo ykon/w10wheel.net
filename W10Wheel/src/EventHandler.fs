@@ -310,9 +310,15 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
 let private dragDefault info = ()
 let mutable private drag: HookInfo -> unit = dragDefault
 
-// Dragged only when the cursor would have moved from the start point (scroll mode suppresses
-// the moves): not for a move at the same point (e.g. a slight move with enhanced pointer
-// precision) or of other software (injected), the click is resent at the up then
+// The press of the drag trigger is a drag (its click is not resent at the up) if the cursor
+// would have moved from the start point (scroll mode suppresses the moves), or if it has
+// scrolled (Ctx.isScrolled: the scroll uses RawInput, a slight move with enhanced pointer
+// precision can scroll without moving the cursor, and so can a move toward the edge of the
+// screen from it). Not for a move of other software (injected), nor for one that neither moved
+// the cursor nor scrolled: the click is resent then, the scroll and the click never both.
+let private isDragged () =
+    dragged || Ctx.isScrolled()
+
 let private dragStart (info: HookInfo) =
     let sx, sy = Ctx.getScrollStartPoint()
     if not (Windows.isInjectedEvent (Move(info))) && (info.pt.x <> sx || info.pt.y <> sy) then
@@ -351,7 +357,7 @@ let private suppressNotDragScroll (up: MouseEvent): nativeint option =
         None
 
 let private continueScrollDrag (me: MouseEvent): nativeint option =
-    if Ctx.isDraggedLock() && dragged then
+    if Ctx.isDraggedLock() && isDragged() then
         debug "continueScrollDrag (Released)" me
         Ctx.setReleasedScrollMode()
         suppress()
@@ -360,6 +366,7 @@ let private continueScrollDrag (me: MouseEvent): nativeint option =
 
 let private exitAndResendDrag (me: MouseEvent): nativeint option =
     debug "exit scroll mode (Drag)" me
+    let dragged = isDragged()
     Ctx.exitScrollMode()
 
     if not dragged then

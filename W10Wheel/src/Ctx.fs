@@ -387,6 +387,9 @@ type private Scroll() =
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
     [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
     [<VolatileField>] static let mutable byKeyboard = false // started by the keyboard trigger
+    // A wheel event has been sent since scroll mode started (Windows.sendInput): the press of
+    // the drag trigger is a drag then, even if the cursor would not have moved
+    [<VolatileField>] static let mutable scrolled = false
 
     // The LR trigger start was canceled before Start ran on the EventWaiter thread: Exit was
     // called while starting (e.g. both buttons released), so Start must not start afterwards
@@ -431,6 +434,7 @@ type private Scroll() =
                     WinCursor.changeV()
 
                 byKeyboard <- false
+                scrolled <- false
                 mode <- true
 
             starting <- false
@@ -462,6 +466,7 @@ type private Scroll() =
                     WinCursor.changeV()
 
                 byKeyboard <- true
+                scrolled <- false
                 mode <- true
 
             starting <- false
@@ -512,6 +517,9 @@ type private Scroll() =
 
     static member IsMode with get() = mode
     static member ByKeyboard with get() = byKeyboard
+    static member Scrolled
+        with get() = scrolled
+        and set b = scrolled <- b
     static member StartTime with get() = stime
     static member StartPoint with get() = (sx, sy)
     static member LockTime
@@ -549,6 +557,8 @@ type private Scroll() =
     static member IsStarting with get() = starting
 
 let isScrollMode () = Scroll.IsMode
+let isScrolled () = Scroll.Scrolled
+let setScrolled () = Scroll.Scrolled <- true
 let startScrollMode (info: HookInfo): unit = Scroll.Start info
 let startScrollModeFor (generation: int) (info: HookInfo): unit = Scroll.Start(info, generation)
 let startScrollModeK (info: KHookInfo) = Scroll.Start info
