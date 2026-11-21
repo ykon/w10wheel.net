@@ -144,7 +144,7 @@ let private passPressedScrollMode (down: MouseEvent): nativeint option =
 
 let private matchAvastUI (pathOpt: string option): bool =
     match pathOpt with
-    | Some (path) -> path.EndsWith("\\AvastUI.exe")
+    | Some (path) -> path.EndsWith("\\AvastUI.exe", StringComparison.OrdinalIgnoreCase)
     //| Some (path) -> path.EndsWith("\\chrome.exe") // for Debug
     | None -> false
 
@@ -403,12 +403,14 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
-        skipExcludeWindow
         checkExitScrollDown
         checkExitOtherScrollLR
         passPressedScrollMode
         //passSingleEvent
         offerEventWaiter
+        // Only to start a wait: scroll mode is left, and a wait in progress gets the down,
+        // also on the excluded window (or the wait would resend its down after this one)
+        skipExcludeWindow
         checkTriggerWaitStart
         endNotTrigger
     ]
