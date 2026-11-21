@@ -1513,13 +1513,17 @@ let loadProperties (update:bool): unit =
     if not loaded then
         setSettings defaultProp
 
-    loaded <- true
     try
+        // Not loaded if the file could not be read (e.g. locked): the settings are not stored
+        // (storeProperties) until a load succeeds, or they would overwrite the file (with the
+        // default values, or those of another properties file switched from)
+        loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
+        loaded <- true
 
         Debug.WriteLine("Start load")
 
@@ -1550,20 +1554,19 @@ let loadProperties (update:bool): unit =
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
-let private isChangedProperties () =
+// Whether the settings differ from the properties of the file (p)
+let private isChangedProperties (p: Properties.Properties) =
     try
-        prop.Load(getSelectedPropertiesPath(), true)
-
         let isChangedBoolean () =
             BooleanNames |>
-            Array.map (fun n -> (prop.GetBool n) <> getBooleanOfName n) |>
+            Array.map (fun n -> (p.GetBool n) <> getBooleanOfName n) |>
             Array.contains true
         let isChangedNumber () =
             NumberNames |>
-            Array.map (fun n -> (prop.GetInt n) <> getNumberOfName n) |>
+            Array.map (fun n -> (p.GetInt n) <> getNumberOfName n) |>
             Array.contains true
 
-        let check = fun n v -> prop.GetString(n) <> v
+        let check = fun n v -> p.GetString(n) <> v
 
         check DataID.firstTrigger (getFirstTrigger().Name) ||
         check DataID.accelMultiplier (Accel.Multiplier.Name) ||
@@ -1573,17 +1576,31 @@ let private isChangedProperties () =
         check DataID.uiLanguage (getUILanguage()) ||
         isChangedBoolean() || isChangedNumber() 
     with
-        | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
         | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message); true
         | e -> Debug.WriteLine("isChanged: " + (e.ToString())); true
 
+// The settings are stored in the file as it is now (read anew): its keys that are not settings
+// (e.g. customAccelThreshold) are kept as they are, and those removed from it since it was
+// loaded are not stored again. Not stored if it cannot be read (it could not be written either).
 let storeProperties () =
     try
-        if not loaded || not (isChangedProperties()) then
-            Debug.WriteLine("Not changed properties")
+        if not loaded then
+            Debug.WriteLine("Not loaded properties")
         else
-            setSettings prop
-            prop.Store(getSelectedPropertiesPath())
+            let path = getSelectedPropertiesPath()
+            let file = Properties.Properties()
+            let found =
+                try
+                    file.Load(path, true)
+                    true
+                with
+                    | :? FileNotFoundException -> Debug.WriteLine("First write properties"); false
+
+            if found && not (isChangedProperties file) then
+                Debug.WriteLine("Not changed properties")
+            else
+                setSettings file
+                file.Store(path)
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
@@ -1606,8 +1623,13 @@ let private createOpenDirMenuItem (dir: string) =
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
-let private isValidPropertiesName name =
-    (name <> DEFAULT_DEF) && not (name.StartsWith("--"))
+// A part of a file name (see Properties.getPath), not Default whatever its case (a name only
+// differing in case would be confused with it), nor a command (--)
+let private isValidPropertiesName (name: string) =
+    not (String.IsNullOrWhiteSpace(name)) && name.Trim() = name &&
+    not (String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase)) &&
+    not (name.StartsWith("--")) &&
+    name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
 
 let private createAddPropertiesMenuItem () =
     let item = createMenuItem_NonID "Add"
