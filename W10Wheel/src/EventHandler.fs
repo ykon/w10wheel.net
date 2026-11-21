@@ -559,7 +559,7 @@ let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nati
 
     Volatile.Read(&proc.contents)(d)
 
-let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): nativeint =
+let private procUpBody (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): nativeint =
     let i = buttonIndex u
     if not (Windows.isInjectedEvent u) && canceledDowns.[i] then
         canceledDowns.[i] <- false
@@ -574,6 +574,17 @@ let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): native
             suppress().Value
     else
         Volatile.Read(&proc.contents)(u)
+
+let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): nativeint =
+    let res = procUpBody proc u
+
+    // The press is over: its flags (resent, suppressed, passed) are not needed any more, reset
+    // them whatever handled the up (e.g. after changing the trigger, the handlers of the new one
+    // do not use them, and they would be taken for those of a later up whose down was not seen)
+    if not (Windows.isInjectedEvent u) then
+        Ctx.LastFlags.ResetLRFor u
+
+    res
 
 let private procDownLR (d: MouseEvent): nativeint = procDown __procDownLR d
 let private procUpLR (u: MouseEvent): nativeint = procUp __procUpLR u
@@ -676,6 +687,10 @@ let private changeTrigger (changed: bool): unit =
         drag <- dragDefault
         dragged <- false
         secondTriggerUp <- false
+
+        // Some handlers do not record the last event (none trigger): the event recorded by the
+        // old ones could stay a down after its up, so that the next down was taken as the same
+        lastEvent <- NonEvent
 
 let setChangeTrigger () =
     Ctx.setChangeTrigger changeTrigger
