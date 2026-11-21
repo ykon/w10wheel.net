@@ -28,11 +28,10 @@ let private checkDoubleLaunch () =
         messageDoubleLaunch()
         Environment.Exit(1)
 
+// Without changing the principal policy of the process (Thread.CurrentPrincipal)
 let private isAdmin () =
-    let myDomain = Thread.GetDomain();
-    myDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
-    let myPrincipal = Thread.CurrentPrincipal :?> WindowsPrincipal
-    myPrincipal.IsInRole(WindowsBuiltInRole.Administrator)
+    use identity = WindowsIdentity.GetCurrent()
+    WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)
 
 let private showAdminMesssage (): DialogResult =
     MessageBox.Show(convLangP LocaleData.AdminMessage, convLangP "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)

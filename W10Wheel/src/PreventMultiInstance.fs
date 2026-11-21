@@ -29,7 +29,9 @@ let tryLock (): bool =
                                  FileAccess.ReadWrite, FileShare.None))
         true
     with
-        | :? IOException -> false
+        // Also denied (e.g. the file was created by an instance running as another user, or
+        // with other rights)
+        | :? IOException | :? UnauthorizedAccessException -> false
 
 let unlock () =
     // Once (isLocked is false after)

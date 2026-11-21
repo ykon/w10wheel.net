@@ -14,7 +14,10 @@ type KeyboardEvent =
     | KeyUp of KHookInfo
     | NonEvent
 
-    member self.Name = Mouse.getUnionCaseName(self) + (sprintf " (%d)" self.VKCode)
+    member self.Name =
+        match self with
+        | NonEvent -> Mouse.getUnionCaseName(self) // no VKCode (Info throws)
+        | _ -> Mouse.getUnionCaseName(self) + (sprintf " (%d)" self.VKCode)
 
     member self.IsNone =
         match self with

@@ -94,16 +94,16 @@ let private sendInOrder (withRetry: bool) (inputs: WinAPI.MINPUT[]): WinAPI.MINP
 let private retryUnsent (withRetry: bool) =
     match unsent.Value with
     | null -> ()
-    | rest -> unsent.Value <- sendInOrder withRetry rest
+    | rest -> Volatile.Write(unsent, sendInOrder withRetry rest)
 
 let private addUnsent (rest: WinAPI.MINPUT[]) =
     match rest with
     | null -> ()
     | _ ->
-        unsent.Value <-
+        Volatile.Write(unsent,
             match unsent.Value with
             | null -> rest
-            | earlier -> Array.append earlier rest
+            | earlier -> Array.append earlier rest)
 
 // Sends ups after the unsent ones (in order, with retries); the rest stays unsent
 let private sendUps (ups: WinAPI.MINPUT[]) =
@@ -218,7 +218,13 @@ let private createRandomNumber (): uint32 =
     res
 
 let private resendTag = createRandomNumber()
-let private resendClickTag = createRandomNumber()
+// Not the same as resendTag: a click would be taken for another resend (see isResendInfo)
+let private resendClickTag =
+    let rec loop () =
+        match createRandomNumber() with
+        | n when n = resendTag -> loop ()
+        | n -> n
+    loop ()
 
 // The kind of a resent input and the ID of the physical press it is for, in the upper half of
 // dwExtraInfo (resendTag in the lower half): see dropResent. In a 32-bit process dwExtraInfo
