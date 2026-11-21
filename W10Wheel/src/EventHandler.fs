@@ -99,7 +99,27 @@ let private skipFirstUp (me: MouseEvent): nativeint option =
         None
 
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
-    if me.SameEvent lastEvent then
+    if me.IsDown && me.SameEvent lastEvent then
+        // A down again with no up of the button between (the buttons do not repeat): the up of
+        // the earlier press was missed (e.g. released on the secure desktop or over a window of
+        // a higher integrity level). A new press: passed, its up would be handled by the state of
+        // the earlier one (e.g. suppressed as the trigger's), leaving the button pressed. The
+        // scroll mode that press held could not end by its up any more: it is taken for locked,
+        // so that this down ends it (checkExitScrollDown, its up suppressed too). Only the scroll
+        // mode of this button: of the single or drag trigger (triggerStarted), or of the LR, left
+        // and right triggers (their buttons), not e.g. the middle trigger's for an X1 down.
+        debug "down again (the up was missed)" me
+        let isLR = match me with LeftDown(_) | RightDown(_) -> true | _ -> false
+        let held = triggerStarted.SameEvent me || (Ctx.isDoubleTrigger() && isLR)
+        if held && Ctx.isPressedMouseScrollMode() then
+            Ctx.setReleasedScrollMode()
+
+        if triggerStarted.SameEvent me then
+            triggerStarted <- NonEvent
+
+        lastEvent <- me
+        None
+    elif me.SameEvent lastEvent then
         debug "same last event" me
         callNextHook()
         //suppress()
