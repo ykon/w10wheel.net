@@ -1565,6 +1565,12 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
+    // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+    // progress (Reload, switching properties) ends, so that the new ones apply from the next. The
+    // keyboard trigger's ended already (setKeyboardHookOf), not the mouse triggers' if the
+    // trigger did not change. Their trigger's up is still suppressed.
+    exitScrollMode()
+
     if not defaultSaved then
         setSettings defaultProp
         defaultSaved <- true
