@@ -266,9 +266,13 @@ let private checkSuppressedDown (up: MouseEvent): nativeint option =
     else
         None
 
+// Also before skipFirstUp (lrUp): the flag is of this press (reset at its down), e.g. the last
+// event was reset by a trigger change after the down was resent. The last event is this up then,
+// as checkSameLastEvent would set it.
 let private checkResentDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_ResentDown up then
         debug "resendUp and suppress (checkResentDown)" up
+        lastEvent <- up
         Windows.resendUp up
         suppress()
     else
@@ -464,11 +468,13 @@ let private lrUp (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkEscape
+        // The down was resent: its up must be resent (and the down it follows), even without a
+        // last event (skipFirstUp would pass this up, and the hook drop the down not sent yet)
+        checkResentDown
         skipFirstUp
         checkSameLastEvent
         //checkSingleSuppressed
         checkPassedDown
-        checkResentDown
         checkExitScrollUpLR
         checkStartingScroll
         offerEventWaiter
