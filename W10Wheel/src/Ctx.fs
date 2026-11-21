@@ -922,11 +922,16 @@ let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
 let setChangeTrigger (f: bool -> unit) =
     changeTrigger <- f
 
+// The last mouse trigger other than None (in this session, or LR): the settings dialog shows it
+// while the trigger is None (Mouse unchecked) and sets it again when Mouse is checked
+let mutable private lastMouseTrigger = LRTrigger
+
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine("setTrigger: " + res.Name)
     let changed = res <> getFirstTrigger()
     Volatile.Write(firstTrigger, res)
+    if not res.IsNone then lastMouseTrigger <- res
 
     changeTrigger changed
 
@@ -1369,14 +1374,19 @@ let private switchProperties name =
     storeProperties()
     setProperties name
 
+// Not None: it is Mouse unchecked in the settings dialog
 let private triggerItems =
     [DataID.LR, DataID.LR + " (Left <<-->> Right)";
      DataID.Left, DataID.Left + " (Left -->> Right)";
      DataID.Right, DataID.Right + " (Right -->> Left)";
      DataID.Middle, DataID.Middle; DataID.X1, DataID.X1; DataID.X2, DataID.X2;
      DataID.LeftDrag, DataID.LeftDrag; DataID.RightDrag, DataID.RightDrag;
-     DataID.MiddleDrag, DataID.MiddleDrag; DataID.X1Drag, DataID.X1Drag; DataID.X2Drag, DataID.X2Drag;
-     DataID.None, DataID.None]
+     DataID.MiddleDrag, DataID.MiddleDrag; DataID.X1Drag, DataID.X1Drag; DataID.X2Drag, DataID.X2Drag]
+
+// The mouse trigger shown in the settings dialog: the last one while it is None
+let private getShownMouseTrigger () =
+    let t = getFirstTrigger()
+    if t.IsNone then lastMouseTrigger else t
 
 let private keyboardItems =
     [DataID.VK_TAB, " (Tab)"; DataID.VK_PAUSE, " (Pause)"; DataID.VK_CAPITAL, " (Caps Lock)";
@@ -1434,16 +1444,18 @@ let private createSettingsDialog () =
                         (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority)
 
     let trigger = dialog.AddPage "Trigger"
-    trigger.AddComboBox("Mouse", triggerItems, (fun id -> Mouse.getTriggerOfStr id = getFirstTrigger()), setTrigger)
+    // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
+    trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
+                             (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
+                             triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger)
     trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
-                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger)
+                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true)
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
-                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger)
-    trigger.AddGap()
-    trigger.AddCheck("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
-        setBooleanOfName DataID.keyboardHook b
-        setKeyboardHookOf b))
-    trigger.AddComboBox("Key", keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode)
+                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true)
+    trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
+                                 setBooleanOfName DataID.keyboardHook b
+                                 setKeyboardHookOf b),
+                             keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode)
     trigger.AddGap()
     addNumber trigger DataID.pollTimeout 50 500
     addNumber trigger DataID.scrollLocktime 150 500

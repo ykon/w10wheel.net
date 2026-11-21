@@ -32,7 +32,6 @@ let private JapaneseMessage =
         "General", "全般";
         "Scroll", "スクロール";
         "Mouse", "マウス";
-        "Key", "キー";
         "Enabled", "有効";
         "Changes are applied and saved at once.", "変更はすぐに反映・保存されます。";
         "Close", "閉じる";

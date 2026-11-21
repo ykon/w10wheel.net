@@ -64,19 +64,46 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             set ()
             changed ()
 
+    // items: the IDs of the choices and their texts; isCurrent: whether the ID is the setting
+    let comboBox (items: (string * string) list) (isCurrent: string -> bool) (set: string -> unit) =
+        let ids = items |> List.map fst |> Array.ofList
+        let cb = new ComboBox(DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left)
+        cb.SelectedIndexChanged.Add(fun _ ->
+            if cb.SelectedIndex >= 0 then onChange (fun () -> set ids.[cb.SelectedIndex]))
+        register {
+            refresh = (fun () -> cb.SelectedIndex <- Array.tryFindIndex isCurrent ids |> Option.defaultValue -1)
+            retext = (fun () ->
+                cb.Items.Clear()
+                items |> List.iter (fun (_, text) -> cb.Items.Add(conv text) |> ignore)
+                fitComboBox cb) }
+        cb
+
+    let checkBox (engText: string) (get: unit -> bool) (set: bool -> unit) =
+        let cb = new CheckBox(AutoSize = true, Anchor = AnchorStyles.Left)
+        cb.CheckedChanged.Add(fun _ -> onChange (fun () -> set cb.Checked))
+        register { refresh = (fun () -> cb.Checked <- get()); retext = (fun () -> cb.Text <- conv engText) }
+        cb
+
     member _.AddGap () =
         gap <- true
 
-    // enabled: whether it can be changed (e.g. Dragged Lock for a drag trigger only)
-    member _.AddCheck (engText: string, get: unit -> bool, set: bool -> unit, ?enabled: unit -> bool) =
-        let cb = new CheckBox(AutoSize = true, Anchor = AnchorStyles.Left)
-        cb.CheckedChanged.Add(fun _ -> onChange (fun () -> set cb.Checked))
-        register {
-            refresh = (fun () ->
-                cb.Checked <- get()
-                enabled |> Option.iter (fun f -> cb.Enabled <- f()))
-            retext = (fun () -> cb.Text <- conv engText) }
+    // enabled: whether it can be changed (e.g. Dragged Lock for a drag trigger only); indent: an
+    // option of the setting above (e.g. of the mouse trigger)
+    member _.AddCheck (engText: string, get: unit -> bool, set: bool -> unit, ?enabled: unit -> bool, ?indent: bool) =
+        let cb = checkBox engText get set
+        enabled |> Option.iter (fun f -> register { refresh = (fun () -> cb.Enabled <- f()); retext = ignore })
+        if defaultArg indent false then
+            cb.Margin <- Padding(cb.Margin.Left + 16, cb.Margin.Top, cb.Margin.Right, cb.Margin.Bottom)
         addRow [cb :> Control, 3]
+
+    // A check box with the ComboBox of its choice on its right, enabled while it is checked (e.g.
+    // the keyboard trigger and its key)
+    member _.AddCheckComboBox (engText: string, get: unit -> bool, set: bool -> unit,
+                               items: (string * string) list, isCurrent: string -> bool, setItem: string -> unit) =
+        let check = checkBox engText get set
+        let cb = comboBox items isCurrent setItem
+        register { refresh = (fun () -> cb.Enabled <- check.Checked); retext = ignore }
+        addRow [check :> Control, 1; cb :> Control, 2]
 
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range)
     member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit) =
@@ -90,16 +117,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
 
     // items: the IDs of the choices and their texts; isCurrent: whether the ID is the setting
     member _.AddComboBox (engText: string, items: (string * string) list, isCurrent: string -> bool, set: string -> unit) =
-        let ids = items |> List.map fst |> Array.ofList
-        let cb = new ComboBox(DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left)
-        cb.SelectedIndexChanged.Add(fun _ ->
-            if cb.SelectedIndex >= 0 then onChange (fun () -> set ids.[cb.SelectedIndex]))
-        register {
-            refresh = (fun () -> cb.SelectedIndex <- Array.tryFindIndex isCurrent ids |> Option.defaultValue -1)
-            retext = (fun () ->
-                cb.Items.Clear()
-                items |> List.iter (fun (_, text) -> cb.Items.Add(conv text) |> ignore)
-                fitComboBox cb) }
+        let cb = comboBox items isCurrent set
         addRow [label engText :> Control, 1; cb :> Control, 2]
 
     // A group of its own (one panel): the other radio buttons of the page are not unchecked

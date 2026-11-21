@@ -217,7 +217,8 @@ URL:
                 Language: 言語設定
                 Priority: プロセスの優先度を変更
         Trigger タブ:
-                トリガーを変更 (設定項目を参照)
+                Mouse: マウスのトリガーを変更 (設定項目を参照)
+                        チェックを外すとマウスのトリガーなし (NoneTrigger)
                 Keyboard: キーボードトリガー
                 pollTimeout, scrollLocktime: 数値をセット (設定項目を参照)
         Scroll タブ:
@@ -262,6 +263,8 @@ URL:
                 X2DragTrigger: # 固定なし
                         X2ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとX2クリックを送ります。
+                NoneTrigger:
+                        マウスのトリガーなし (キーボードトリガーだけで使う場合)
         
         processPriority: string (default: AboveNormal)
                 High: 高
