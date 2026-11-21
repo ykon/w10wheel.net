@@ -646,6 +646,12 @@ let private changeTrigger (changed: bool): unit =
     // (e.g. the up of the drag trigger is not handled as such). End it (not the keyboard
     // trigger's), and suppress the up of its down before the new handlers (see canceledDowns).
     if changed then
+        // A pending LR trigger wait would still resend its down: cancel it, the down was
+        // suppressed and so is its up
+        match EventWaiter.cancel () with
+        | Some(down) when down.IsDown -> canceledDowns.[buttonIndex down] <- true
+        | _ -> ()
+
         if (Ctx.isScrollMode() || Ctx.isStartingScrollMode()) && not (Ctx.isKeyboardScrollMode()) then
             Debug.WriteLine("changeTrigger: exit scroll mode")
             Ctx.exitScrollMode()

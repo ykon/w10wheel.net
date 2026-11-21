@@ -86,6 +86,12 @@ let offer me: bool =
     else
         false
 
+// Cancels the wait (on the hook thread, e.g. when the trigger changes): the down that was
+// waiting, if the wait was canceled (the down is not resent)
+let cancel (): MouseEvent option =
+    let down = waitingEvent
+    if offer Cancel then Some(down) else None
+
 let setOfferEW () =
     Ctx.setOfferEW offer
 
