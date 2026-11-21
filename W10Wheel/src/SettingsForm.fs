@@ -26,7 +26,15 @@ let private fitComboBox (cb: ComboBox) =
     let button = SystemInformation.GetVerticalScrollBarWidthForDpi(cb.DeviceDpi)
     cb.Width <- textWidth + button + cb.LogicalToDeviceUnits(10)
 
-// A tab page: rows of a label and a control (with the range of a number), or of a check box. A
+// The highlight color of the theme mixed with the window color (amount: 0.0 - 1.0 of the
+// highlight), as the selected item in the list of the settings of the browsers
+let private highlightTint (amount: float) =
+    let h = SystemColors.Highlight
+    let w = SystemColors.Window
+    let mix (a: byte) (b: byte) = int (float b + (float a - float b) * amount)
+    Color.FromArgb(mix h.R w.R, mix h.G w.G, mix h.B w.B)
+
+// A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed; a change by refresh (isRefreshing) does not.
 type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, register: Binding -> unit,
                             isRefreshing: unit -> bool, changed: unit -> unit) =
@@ -108,8 +116,9 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             panel.Controls.Add(rb))
         addRow [panel :> Control, 3]
 
-// The dialog: the properties at the top (AddPropertiesComboBox, AddPropertiesButton), the tab
-// pages (AddPage) and Close. Closing hides it: it is made once, and shown again (Show).
+// The dialog: the properties at the top (AddPropertiesComboBox, AddPropertiesButton), the pages
+// (AddPage) with their list on the left, and Close. Closing hides it: it is made once, and shown
+// again (Show).
 type SettingsDialog(conv: string -> string) =
     let bindings = ResizeArray<Binding>()
     let mutable refreshing = false
@@ -119,8 +128,19 @@ type SettingsDialog(conv: string -> string) =
     let root = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                     ColumnCount = 1, Padding = Padding(8))
     let top = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                  WrapContents = false, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
-    let tabs = new TabControl(Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
+                                  WrapContents = false, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right),
+                                  Margin = Padding(3, 3, 3, 8))
+    // The pages are chosen in a list on the left (as in the settings of the browsers), and shown
+    // on the right, one at a time
+    let middle = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                      ColumnCount = 2, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
+    let nav = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                  FlowDirection = FlowDirection.TopDown, WrapContents = false,
+                                  Anchor = (AnchorStyles.Top ||| AnchorStyles.Left), Margin = Padding(3, 3, 8, 3))
+    let content = new Panel(BackColor = SystemColors.Window, Padding = Padding(12),
+                            Anchor = (AnchorStyles.Top ||| AnchorStyles.Left))
+    let navButtons = ResizeArray<RadioButton>()
+    let pages = ResizeArray<TableLayoutPanel>()
     let bottom = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                       ColumnCount = 2, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
     let closeButton = new Button(AutoSize = true, Anchor = AnchorStyles.Right)
@@ -135,20 +155,27 @@ type SettingsDialog(conv: string -> string) =
     let refresh () =
         withRefreshing (fun () -> for b in bindings do b.refresh())
 
-    // The TabControl does not size itself: fit the largest page and all the tabs
-    let fitTabs () =
+    let fitPages () =
+        // The items of the list are as wide as the widest
+        for b in navButtons do b.MinimumSize <- Size.Empty
+        let navW = navButtons |> Seq.map (fun b -> b.GetPreferredSize(Size.Empty).Width) |> Seq.fold max 0
+        for b in navButtons do b.MinimumSize <- Size(navW, 0)
+
+        // The area of the pages does not size itself: as large as the largest page (it does not
+        // change with the page), as high as the list, and as wide as the properties above
         let mutable w = 0
         let mutable h = 0
-        for page in tabs.TabPages do
-            let size = page.Controls.[0].GetPreferredSize(Size.Empty)
-            w <- max w (size.Width + page.Padding.Horizontal)
-            h <- max h (size.Height + page.Padding.Vertical)
+        for page in pages do
+            let size = page.GetPreferredSize(Size.Empty)
+            w <- max w size.Width
+            h <- max h size.Height
 
-        let chromeW = tabs.Width - tabs.DisplayRectangle.Width
-        let chromeH = tabs.Height - tabs.DisplayRectangle.Height
-        let tabsW =
-            if tabs.TabCount > 0 then tabs.GetTabRect(tabs.TabCount - 1).Right + tabs.LogicalToDeviceUnits(4) else 0
-        tabs.Size <- Size(max (w + chromeW) tabsW, h + chromeH)
+        let navSize = nav.GetPreferredSize(Size.Empty)
+        let besideNav =
+            top.GetPreferredSize(Size.Empty).Width + top.Margin.Horizontal
+            - (navSize.Width + nav.Margin.Horizontal) - content.Margin.Horizontal
+        content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
+                             max (h + content.Padding.Vertical) navSize.Height)
 
     let retext () =
         withRefreshing (fun () ->
@@ -156,7 +183,7 @@ type SettingsDialog(conv: string -> string) =
             for b in bindings do b.retext()
             for b in bindings do b.refresh())
         // The sizes of the texts: after the first show (Load), when the handles have been created
-        if form.IsHandleCreated then fitTabs()
+        if form.IsHandleCreated then fitPages()
 
     do
         form.SuspendLayout()
@@ -187,12 +214,15 @@ type SettingsDialog(conv: string -> string) =
         bottom.Controls.Add(hint, 0, 0)
         bottom.Controls.Add(closeButton, 1, 0)
 
+        middle.Controls.Add(nav, 0, 0)
+        middle.Controls.Add(content, 1, 0)
+
         root.Controls.Add(top, 0, 0)
-        root.Controls.Add(tabs, 0, 1)
+        root.Controls.Add(middle, 0, 1)
         root.Controls.Add(bottom, 0, 2)
         form.Controls.Add(root)
 
-        form.Load.Add(fun _ -> fitTabs())
+        form.Load.Add(fun _ -> fitPages())
         // After the controls have been scaled to the new DPI: the texts are measured again
         form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(retext)) |> ignore)
 
@@ -210,13 +240,32 @@ type SettingsDialog(conv: string -> string) =
     member _.Changed with set (f: unit -> unit) = changed <- f
 
     member _.AddPage (engText: string) =
-        let page = new TabPage(Padding = Padding(8), UseVisualStyleBackColor = true)
-        register { refresh = ignore; retext = (fun () -> page.Text <- conv engText) }
+        let index = pages.Count
         // Top, not Fill: the rows would be spread over the height of the largest page
         let table = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                         ColumnCount = 3, Dock = DockStyle.Top)
-        page.Controls.Add(table)
-        tabs.TabPages.Add(page)
+                                         ColumnCount = 3, Dock = DockStyle.Top, Visible = false)
+        content.Controls.Add(table)
+        pages.Add(table)
+
+        // A radio button drawn as a flat button: one is checked, and the arrow keys move in the list
+        let item = new RadioButton(Appearance = Appearance.Button, AutoSize = true,
+                                   TextAlign = ContentAlignment.MiddleLeft,
+                                   Padding = Padding(6, 3, 12, 3), Margin = Padding(0, 0, 0, 2))
+        // In high contrast, the standard pressed button shows the page (no colors of their own)
+        if not SystemInformation.HighContrast then
+            item.FlatStyle <- FlatStyle.Flat
+            item.FlatAppearance.BorderSize <- 0
+            item.FlatAppearance.CheckedBackColor <- highlightTint 0.2
+            item.FlatAppearance.MouseOverBackColor <- highlightTint 0.1
+            item.FlatAppearance.MouseDownBackColor <- highlightTint 0.3
+        item.CheckedChanged.Add(fun _ ->
+            if item.Checked then
+                pages |> Seq.iteri (fun i page -> page.Visible <- (i = index)))
+        register { refresh = ignore; retext = (fun () -> item.Text <- conv engText) }
+        navButtons.Add(item)
+        nav.Controls.Add(item)
+        if index = 0 then item.Checked <- true
+
         SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()))
 
     member _.AddPropertiesLabel (engText: string) =
