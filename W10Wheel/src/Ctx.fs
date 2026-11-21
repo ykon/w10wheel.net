@@ -1815,12 +1815,14 @@ let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
 let initState () =
-    // Cancel the LR trigger wait first: its timeout could set the flags again after Init
-    offerEW(Cancel) |> ignore
     // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
     // received before, and the wheel events queued are not sent. A down resent before and
-    // sent after its physical up is dropped by the hook (Windows.dropResent).
+    // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass Mode
+    // does: a wait timing out while it is canceled below sees the new generation and does not
+    // resend its down (its flag would be reset by Init, and its up not resent).
     newPassModeGeneration ()
+    // Cancel the LR trigger wait before Init: its timeout could set the flags again after it
+    offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
