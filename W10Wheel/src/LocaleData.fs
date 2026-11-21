@@ -95,7 +95,7 @@ let private JapaneseMessage =
         
         "Cursor Change", "カーソル変更";
         "Horizontal Scroll", "水平スクロール";
-        "Reverse Scroll (Flip)", "垂直スクロール反転";
+        "Reverse Scroll (Flip)", "スクロール反転";
         "Swap Scroll (V.H)", "垂直/水平スクロール入れ替え";
         "Pass Mode", "制御停止";
         

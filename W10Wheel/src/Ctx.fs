@@ -112,7 +112,10 @@ let private resetMenuText (): unit =
         match list with
         | [] -> ()
         | item :: rest ->
-            item.Text <- convLang (tagToEngText item)
+            // Not the items whose text is not translated (the names of the properties files)
+            match item.Tag with
+            | :? string as engText -> item.Text <- convLang engText
+            | _ -> ()
 
             match (toList item.DropDownItems) with
             | [] -> ()
@@ -1380,6 +1383,7 @@ let private setUILanguage lang =
     if reset && isCreatedMenuItems() then
         resetMenuText()
         resetNumberMenuItems()
+        notifyIcon.Text <- getTrayText Pass.Mode
 
 let private createLanguageMenu () =
     let menu = createMenuItem_NonID "Language"
@@ -1697,7 +1701,9 @@ let private createDeletePropertiesMenuItem () =
     )
 
 let private createPropertiesMenuItem (name: string) =
-    let item = createMenuItem_NonID name
+    // Only Default is translated: the other names are the user's (e.g. "Middle" is not "中央")
+    let item =
+        if name = DEFAULT_DEF then createMenuItem_NonID name else new ToolStripMenuItem(name)
     item.CheckState <-
         if name = getSelectedProperties() then
             CheckState.Indeterminate
