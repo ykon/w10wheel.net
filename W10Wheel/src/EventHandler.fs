@@ -61,10 +61,6 @@ let private initState () =
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
 
-let private resetLastFlagsLR (me: MouseEvent): nativeint option =
-    Ctx.LastFlags.ResetLRFor me
-    None
-
 let private getLastResendEvent me =
     match me with
     | LeftEvent(_) -> lastResendLeftEvent
@@ -426,7 +422,6 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
-        resetLastFlagsLR
         skipExcludeWindow
         checkExitScrollDown
         passPressedScrollMode
@@ -551,9 +546,9 @@ let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nati
         canceledDowns.[buttonIndex d] <- false
 
         // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
-        // whatever the trigger (only the LR trigger's handlers did, so after changing the
-        // trigger they could take e.g. the next up for that of a resent or suppressed down)
-        Ctx.LastFlags.ResetLRFor d
+        // whatever the trigger, for all the buttons (e.g. the up of a suppressed middle down
+        // that was missed would make the up of the next middle click suppressed)
+        Ctx.LastFlags.ResetFor d
 
     Volatile.Read(&proc.contents)(d)
 
@@ -580,7 +575,7 @@ let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): native
     // them whatever handled the up (e.g. after changing the trigger, the handlers of the new one
     // do not use them, and they would be taken for those of a later up whose down was not seen)
     if not (Windows.isInjectedEvent u) then
-        Ctx.LastFlags.ResetLRFor u
+        Ctx.LastFlags.ResetFor u
 
     res
 

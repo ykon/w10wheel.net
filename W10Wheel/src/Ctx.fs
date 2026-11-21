@@ -737,11 +737,14 @@ type LastFlags() =
         | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
 
-    // The flags of the press of a left or right event (nothing for the other buttons)
-    static member ResetLRFor (me: MouseEvent) =
+    // The flags of the press of the button of an event (resent, suppressed, passed)
+    static member ResetFor (me: MouseEvent) =
         match me with
         | LeftEvent(_) -> ldR <- false; ldS <- false; ldP <- false
         | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
+        | MiddleEvent(_) -> mdS <- false
+        | X1Event(_) -> x1S <- false
+        | X2Event(_) -> x2S <- false
         | _ -> ()
 
     (*
