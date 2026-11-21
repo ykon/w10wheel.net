@@ -283,12 +283,17 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
 let private dragDefault info = ()
 let mutable private drag: HookInfo -> unit = dragDefault
 
-let private dragStart info =
-    if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
-        WinCursor.changeV()
+// Dragged only when the cursor would have moved from the start point (scroll mode suppresses
+// the moves): not for a move at the same point (e.g. a slight move with enhanced pointer
+// precision) or of other software (injected), the click is resent at the up then
+let private dragStart (info: HookInfo) =
+    let sx, sy = Ctx.getScrollStartPoint()
+    if not (Windows.isInjectedEvent (Move(info))) && (info.pt.x <> sx || info.pt.y <> sy) then
+        if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
+            WinCursor.changeV()
 
-    drag <- dragDefault
-    dragged <- true
+        drag <- dragDefault
+        dragged <- true
 
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
@@ -612,6 +617,11 @@ let move (info: HookInfo) =
         drag info
         //Windows.sendWheel info.pt
         suppress().Value
+    // The moves of other software (injected) and those at the point of the waiting down (the
+    // cursor has not moved) do not end the LR trigger wait (its down would be resent as for a
+    // drag): they pass
+    elif Windows.isInjectedEvent (Move(info)) || EventWaiter.isWaitingAt (Move(info)) then
+        callNextHook().Value
     elif EventWaiter.offer (Move(info)) then
         Debug.WriteLine("success to offer: Move")
         suppress().Value

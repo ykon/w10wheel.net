@@ -98,6 +98,11 @@ let cancel (): MouseEvent option =
 let isWaitingOtherThan (up: MouseEvent): bool =
     sync.IsWaiting && not (waitingEvent.SameButton up)
 
+// Whether a wait is in progress for a down at the point of me (on the hook thread): a move
+// there has not moved the cursor
+let isWaitingAt (me: MouseEvent): bool =
+    sync.IsWaiting && Mouse.samePoint waitingEvent me
+
 let setOfferEW () =
     Ctx.setOfferEW offer
 
