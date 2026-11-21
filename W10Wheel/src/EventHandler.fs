@@ -25,9 +25,15 @@ let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
 // The down of the single or drag trigger that started scroll mode (and was suppressed). Reset
-// by its up. An up of another button (e.g. the trigger was changed by Reload while pressed), or
-// without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+// by its up, or by the next down of its button (the up was missed, see checkSameLastEvent). An
+// up of another button (e.g. the trigger was changed by Reload while pressed), or without it,
+// has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
 let mutable private triggerStarted: MouseEvent = NonEvent
+
+// The earlier down of the button of the down handled was suppressed, and no up of the button
+// has come since (the flag before procDown resets it for this down): the up was missed, the
+// buttons do not repeat (see checkSameLastEvent)
+let mutable private earlierDownSuppressed = false
 
 // The downs that started scroll mode of a trigger before it was changed (changeTrigger), by
 // button (buttonIndex): changed again while pressed, there can be several. Their up is
@@ -98,19 +104,27 @@ let private skipFirstUp (me: MouseEvent): nativeint option =
     else
         None
 
+// The earlier press of the button of a down held scroll mode, and its up was missed: the press
+// of the single or drag trigger (triggerStarted), or one of the pair of the LR, left and right
+// triggers (both downs suppressed, see EventWaiter.setFlagsOffer; earlierDownSuppressed). Not
+// e.g. the middle trigger's for an X1 down, nor a down passed in the LR trigger's scroll mode
+// after the first up (the other button still holds it). By button, whatever the other buttons
+// have done since (lastEvent).
+let private isHeldByEarlierPress (down: MouseEvent): bool =
+    let isLR = match down with LeftDown(_) | RightDown(_) -> true | _ -> false
+    triggerStarted.SameEvent down || (Ctx.isDoubleTrigger() && isLR && earlierDownSuppressed)
+
 let private checkSameLastEvent (me: MouseEvent): nativeint option =
-    if me.IsDown && me.SameEvent lastEvent then
+    let held = me.IsDown && isHeldByEarlierPress me
+    if me.IsDown && (me.SameEvent lastEvent || held) then
         // A down again with no up of the button between (the buttons do not repeat): the up of
         // the earlier press was missed (e.g. released on the secure desktop or over a window of
         // a higher integrity level). A new press: passed, its up would be handled by the state of
         // the earlier one (e.g. suppressed as the trigger's), leaving the button pressed. The
         // scroll mode that press held could not end by its up any more: it is taken for locked,
         // so that this down ends it (checkExitScrollDown, its up suppressed too). Only the scroll
-        // mode of this button: of the single or drag trigger (triggerStarted), or of the LR, left
-        // and right triggers (their buttons), not e.g. the middle trigger's for an X1 down.
+        // mode of this button (isHeldByEarlierPress), also if other buttons were pressed since.
         debug "down again (the up was missed)" me
-        let isLR = match me with LeftDown(_) | RightDown(_) -> true | _ -> false
-        let held = triggerStarted.SameEvent me || (Ctx.isDoubleTrigger() && isLR)
         if held && Ctx.isPressedMouseScrollMode() then
             Ctx.setReleasedScrollMode()
 
@@ -580,8 +594,12 @@ let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 
 // Before the handlers of the trigger (see canceledDowns)
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
+    earlierDownSuppressed <- false
     if not (Windows.isInjectedEvent d) then
         canceledDowns.[buttonIndex d] <- false
+
+        // Before the reset (see checkSameLastEvent)
+        earlierDownSuppressed <- Ctx.LastFlags.IsSuppressedDown d
 
         // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
         // whatever the trigger, for all the buttons (e.g. the up of a suppressed middle down

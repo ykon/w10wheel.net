@@ -800,6 +800,16 @@ type LastFlags() =
         | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
 
+    // The down of the button of an event was suppressed and its up has not come yet
+    static member IsSuppressedDown (me: MouseEvent): bool =
+        match me with
+        | LeftEvent(_) -> ldS
+        | RightEvent(_) -> rdS
+        | MiddleEvent(_) -> mdS
+        | X1Event(_) -> x1S
+        | X2Event(_) -> x2S
+        | _ -> false
+
     // The flags of the press of the button of an event (resent, suppressed, passed)
     static member ResetFor (me: MouseEvent) =
         match me with
