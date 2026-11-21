@@ -145,6 +145,11 @@ let main argv =
     // Before any window or message box (procArgv can show one): without it, they are drawn in the
     // classic style
     Application.EnableVisualStyles()
+    // Also before any window: the windows of the modules (Ctx.notifyIcon, RawInput.messageWindow)
+    // are created when the modules are first used, after this. Without it (no manifest either),
+    // the menu and the dialogs are stretched and blurred on a scaled display. Scrolling does not
+    // depend on it: the hook coordinates are physical and RawInput moves are relative.
+    Application.SetHighDpiMode(HighDpiMode.PerMonitorV2) |> ignore
     procArgv argv
 
     Ctx.loadPropertiesFileOnly ()
