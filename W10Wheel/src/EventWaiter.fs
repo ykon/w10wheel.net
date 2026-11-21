@@ -98,6 +98,10 @@ let cancel (): MouseEvent option =
 let isWaitingOtherThan (up: MouseEvent): bool =
     sync.IsWaiting && not (waitingEvent.SameButton up)
 
+// Whether a wait is in progress for a down of the same button as down's (on the hook thread)
+let isWaitingFor (down: MouseEvent): bool =
+    sync.IsWaiting && waitingEvent.SameEvent down
+
 // Whether a wait is in progress for a down at the point of me (on the hook thread): a move
 // there has not moved the cursor
 let isWaitingAt (me: MouseEvent): bool =

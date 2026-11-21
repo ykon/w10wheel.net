@@ -243,6 +243,13 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
+    // A down of the button whose down is waiting (e.g. of another mouse, or the up was missed):
+    // not the second down of the trigger (the same button would start scroll mode), nor a new
+    // wait (one is in progress). Suppressed with its up, the wait goes on.
+    elif me.IsDown && EventWaiter.isWaitingFor me then
+        debug "suppress (down of the waiting button)" me
+        Ctx.LastFlags.SetSuppressed me
+        suppress()
     elif EventWaiter.offer me then
         debug "success to offer" me
         // The second down starts LR scroll mode: no up of the pair counted yet (the count
