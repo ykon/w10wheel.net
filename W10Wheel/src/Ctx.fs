@@ -678,6 +678,11 @@ type LastFlags() =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        LastFlags.SuppressedKeysToLoneUp()
+
+    // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
+    // missed is not suppressed again (see Init, and KEventHandler.hookInstalled)
+    static member SuppressedKeysToLoneUp () =
         for vk in 0 .. kdS.Length - 1 do
             if kdS.[vk] then kdL.[vk] <- true
         Array.fill kdS 0 (kdS.Length) false
