@@ -160,6 +160,8 @@ let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
     let kd = KeyDown(info)
+    Ctx.LastFlags.NewKeyDown kd.VKCode
+
     // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
     // the trigger changed): its repeats are suppressed too, whatever the trigger is now
     if Ctx.LastFlags.IsSuppressedKey kd.VKCode then

@@ -634,17 +634,17 @@ type LastFlags() =
         flag <- false
         res
 
-    // Keys whose up may not come (the Pause key may send only a down): not recorded, or their
-    // next down would be taken for a repeat
-    static let isKeyWithUp (vk: int) =
-        vk >= 0 && vk < kdS.Length && vk <> 0x13 // VK_PAUSE
+    static let isKey (vk: int) =
+        vk >= 0 && vk < kdS.Length
 
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
-        Array.fill kdP 0 (kdP.Length) false
+        // Not kdP: the ups of the passed keys pass (also in Pass Mode, see Dispatcher) and
+        // reset them; reset, a key pressed before would lose it (e.g. Pass Mode turned on and
+        // off while pressed: its repeats would start scroll mode if it became the trigger)
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -681,7 +681,7 @@ type LastFlags() =
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> if isKeyWithUp down.VKCode then kdS.[down.VKCode] <- true
+        | KeyDown(_) -> if isKey down.VKCode then kdS.[down.VKCode] <- true
         | _ -> raise (ArgumentException())
 
     // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
@@ -690,10 +690,10 @@ type LastFlags() =
 
     // The keyboard trigger changed while the old key was pressed (its down was suppressed)
     static member SetSuppressedKey (vk: int) =
-        if isKeyWithUp vk then kdS.[vk] <- true
+        if isKey vk then kdS.[vk] <- true
 
     static member SetPassedKey (vk: int) =
-        if isKeyWithUp vk then kdP.[vk] <- true
+        if isKey vk then kdP.[vk] <- true
 
     // The key's down passed: its repeats and its up pass too, even if it is the trigger now
     static member IsPassedKey (vk: int): bool =
@@ -701,6 +701,13 @@ type LastFlags() =
 
     static member GetAndReset_PassedKey (vk: int): bool =
         vk >= 0 && vk < kdP.Length && getAndReset(&kdP.[vk])
+
+    // A key that does not repeat (the Pause key): its down is always a new press, its flags
+    // are reset (it may send only a down, the flags of the previous press would remain)
+    static member NewKeyDown (vk: int) =
+        if vk = 0x13 then // VK_PAUSE
+            kdS.[vk] <- false
+            kdP.[vk] <- false
 
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
