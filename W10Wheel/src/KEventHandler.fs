@@ -73,7 +73,8 @@ let private checkExitScrollDown (ke: KeyboardEvent): nativeint option =
         None
 
 let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
-    if Ctx.isPressedScrollMode() then
+    // Only the scroll mode it started: a mouse trigger can start scroll mode while it is pressed
+    if Ctx.isPressedKeyboardScrollMode() then
         if Ctx.checkExitScroll ke.Info.time then
             debug "exit scroll mode (Pressed)" ke
             Ctx.exitScrollMode()

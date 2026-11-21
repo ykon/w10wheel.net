@@ -549,6 +549,7 @@ let isPressedScrollMode () = Scroll.IsMode && not (Scroll.ReleasedMode)
 // trigger start is pending); their ups are then suppressed like their downs.
 let isPressedMouseScrollMode () = isPressedScrollMode() && not Scroll.ByKeyboard
 let isKeyboardScrollMode () = Scroll.IsMode && Scroll.ByKeyboard
+let isPressedKeyboardScrollMode () = isPressedScrollMode() && Scroll.ByKeyboard
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 
 let setStartingScrollMode () = Scroll.SetStarting()
