@@ -142,6 +142,9 @@ let private initSetFunctions () =
 [<STAThread>]
 [<EntryPoint>]
 let main argv =
+    // Before any window or message box (procArgv can show one): without it, they are drawn in the
+    // classic style
+    Application.EnableVisualStyles()
     procArgv argv
 
     Ctx.loadPropertiesFileOnly ()
