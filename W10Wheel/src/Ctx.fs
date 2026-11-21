@@ -151,9 +151,11 @@ let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 let passModeLock = new Object()
 
 // Incremented under passModeLock whenever Pass Mode is turned on, and when the state is
-// initialized (initState). Windows records it when queuing and does not send a down queued
-// before it, even if Pass Mode has been turned off again by then: the physical up may have
-// passed W10Wheel since (in Pass Mode, or without the flags reset by initState).
+// initialized (initState): the physical ups pass W10Wheel since. Recorded when the LR trigger
+// starts waiting and when inputs are queued: the LR trigger neither resends nor starts scroll
+// mode for a down received before, and Windows does not send the wheel events queued before,
+// even if Pass Mode has been turned off again by then. (The resent downs and ups are checked
+// by the hook: Windows.dropResent.)
 let private passModeGeneration = ref 0
 let getPassModeGeneration () = Volatile.Read(&passModeGeneration.contents)
 
