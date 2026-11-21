@@ -36,17 +36,6 @@ let private keyboardHook = ref false
 let private targetVKCode = ref (Keyboard.getVKCode(DataID.VK_NONCONVERT))
 let private uiLanguage = ref (Locale.getLanguage())
 
-type MenuDict = Dictionary<string, ToolStripMenuItem>
-
-let private boolMenuDict = new MenuDict()
-let private triggerMenuDict = new MenuDict()
-let private accelMenuDict = new MenuDict()
-let private priorityMenuDict = new MenuDict()
-let private languageMenuDict = new MenuDict()
-let private numberMenuDict = new MenuDict()
-let private keyboardMenuDict = new MenuDict()
-let private vhAdjusterMenuDict = new MenuDict()
-
 let isKeyboardHook () =
     Volatile.Read(&keyboardHook.contents)
 
@@ -88,14 +77,6 @@ let private tagToEngText (item: ToolStripMenuItem): string =
     | :? string as engText -> engText
     | _ -> raise (ArgumentException("Tag is not string."))
 
-let private getFirstWord (s: string): string =
-    s.Split([|' '|]).[0]
-
-let private isNumberMenuItem (item: ToolStripItem): bool =
-     match item.Tag with
-     | :? string as engText -> numberMenuDict.ContainsKey(getFirstWord engText)
-     | _ -> false
-
 let private resetMenuText (): unit =        
     let toList = fun (mc: ToolStripItemCollection) ->
         if mc.Count = 0 then
@@ -105,14 +86,13 @@ let private resetMenuText (): unit =
             mc.CopyTo(array, 0)
             List.ofArray array
             |> List.filter (not << isSeparator)
-            |> List.filter (not << isNumberMenuItem)
             |> List.map (fun item -> item :?> ToolStripMenuItem)
 
     let rec loop (list: ToolStripMenuItem list): unit =
         match list with
         | [] -> ()
         | item :: rest ->
-            // Not the items whose text is not translated (the names of the properties files)
+            // Only the items with an English text (Tag) are translated
             match item.Tag with
             | :? string as engText -> item.Text <- convLang engText
             | _ -> ()
@@ -931,35 +911,10 @@ let private makeSetBooleanEvent id =
         let b = item.Checked
         setBooleanOfName id b
 
-// A setting changed in the menu is stored at once (storeProperties, set after it is defined).
-// Not for Pass Mode: it is not stored, and storing would overwrite the file edited outside
-// W10Wheel and not reloaded yet.
-let mutable private storeChangedSettings: unit -> unit = (fun () -> ())
-
 // Set when the settings dialog is made (see createSettingsDialog): it shows the settings again
-// when they have been loaded or changed in the menu, and its texts when the language has changed
+// when they have been loaded, and its texts when the language has changed
 let mutable private refreshSettingsDialog: unit -> unit = (fun () -> ())
 let mutable private retextSettingsDialog: unit -> unit = (fun () -> ())
-
-let private createBoolMenuItem (data: MenuData) enabled =
-    let item = createMenuItem data
-    item.Click.AddHandler(new EventHandler(makeSetBooleanEvent data.id.Value))
-    item.Click.Add(fun _ -> storeChangedSettings())
-    item.CheckOnClick <- true
-    item.Enabled <- enabled
-    boolMenuDict.[data.id.Value] <- item
-    item
-
-let private createBoolMenuItemS name =
-    createBoolMenuItem ({engText = name; id = Some(name)}) true
-
-let private uncheckAllItems (dict: MenuDict) =
-    for KeyValue(name, item) in dict do
-        item.CheckState <- CheckState.Unchecked
-
-let private setMenuEnabled (dict:MenuDict) key enabled =
-    if dict.ContainsKey(key) then
-        dict.[key].Enabled <- enabled
 
 // Called with whether the trigger has changed (not on every properties load)
 let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
@@ -973,142 +928,24 @@ let private setTrigger (text: string) =
     let changed = res <> getFirstTrigger()
     Volatile.Write(firstTrigger, res)
 
-    setMenuEnabled boolMenuDict DataID.sendMiddleClick res.IsSingle
-    setMenuEnabled boolMenuDict DataID.draggedLock res.IsDrag
-
     changeTrigger changed
 
 let private addClick (item: ToolStripMenuItem) f =
     item.Click.Add (fun e -> f (e))
     item
 
-(*
-let private addClickDictMenuItem (item: ToolStripMenuItem) dict f =
-    Debug.WriteLine("addClickDictMenuItem")
-
-    addClick item (fun e -> 
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems dict
-            item.CheckState <- CheckState.Indeterminate
-            f (e)
-    )
-*)
-
-let private createDictMenuItem (data: MenuData) (dict: MenuDict) (setID: (string -> unit)): ToolStripMenuItem =
-    let item = createMenuItem data
-    let id = data.id.Value
-    dict.[id] <- item
-
-    addClick item (fun _ ->
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems dict
-            item.CheckState <- CheckState.Indeterminate
-            setID(id)
-            storeChangedSettings()
-    )
-
 let private addSeparator (col: ToolStripItemCollection) =
     col.Add(new ToolStripSeparator()) |> ignore
-
-let private createTriggerMenu () =
-    let menu = createMenuItem_NonID "Trigger"
-    let items = menu.DropDownItems
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord text)}
-        createDictMenuItem data triggerMenuDict setTrigger
-    let add = fun text -> items.Add(create text) |> ignore
-
-    add (DataID.LR + " (Left <<-->> Right)")
-    add (DataID.Left + " (Left -->> Right)")
-    add (DataID.Right + " (Right -->> Left)")
-    addSeparator items
-
-    add DataID.Middle
-    add DataID.X1
-    add DataID.X2
-    addSeparator items
-
-    add DataID.LeftDrag
-    add DataID.RightDrag
-    add DataID.MiddleDrag
-    add DataID.X1Drag
-    add DataID.X2Drag
-    addSeparator items
-
-    add DataID.None
-    addSeparator items
-
-    items.Add(createBoolMenuItem {engText = "Send MiddleClick"; id = Some(DataID.sendMiddleClick)} (isSingleTrigger())) |> ignore
-    items.Add(createBoolMenuItem {engText = "Dragged Lock"; id = Some(DataID.draggedLock)} (isDragTrigger())) |> ignore
-
-    menu
-
-let private getOnOffText (b: bool) =
-    //if b then "ON (-->> OFF)" else "OFF (-->> ON)"
-    "ON / OFF"
-
-let private createOnOffMenuItem (id:string) (action: bool -> unit) =
-    //let item = new ToolStripMenuItem(getOnOffText(getBooleanOfName id))
-    let item = createMenuItem {engText = getOnOffText(getBooleanOfName id); id = Some(id)}
-    item.CheckOnClick <- true
-    boolMenuDict.[id] <- item
-
-    addClick item (fun _ ->
-        let b  = item.Checked
-        item.Text <- convLang(getOnOffText b)
-        setBooleanOfName id b
-        action(b)
-        // After the action: the keyboard hook is off again if it could not be installed
-        storeChangedSettings()
-    )
-
-let private createOnOffMenuItemNA (id:string) =
-    createOnOffMenuItem id (fun _ -> ())
 
 let private setAccelMultiplier name =
     Debug.WriteLine("setAccelMultiplier " + name)
     Accel.Multiplier <- getAccelMultiplierOfName name
-
-let private createAccelTableMenu () =
-    let menu = createMenuItem_NonID "Accel Table"
-    let items = menu.DropDownItems
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord text)}
-        createDictMenuItem data accelMenuDict setAccelMultiplier
-    let add = fun text -> items.Add(create text) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.accelTable) |> ignore
-    addSeparator items
-
-    add (DataID.M5 + " (1.0 ... 4.8)")
-    add (DataID.M6 + " (1.2 ... 5.8)")
-    add (DataID.M7 + " (1.4 ... 6.7)")
-    add (DataID.M8 + " (1.6 ... 7.7)")
-    add (DataID.M9 + " (1.8 ... 8.7)")
-    addSeparator items
-
-    items.Add(createBoolMenuItem {engText = "Custom Table"; id = Some(DataID.customAccelTable)} (not Accel.CustomDisabled)) |> ignore
-    
-    menu
 
 let private setPriority name =
     let p = ProcessPriority.getPriority name
     Debug.WriteLine("setPriority: " + p.Name)
     Volatile.Write(processPriority, p)
     ProcessPriority.setPriority p
-
-let private createPriorityMenu () =
-    let menu = createMenuItem_NonID "Priority"
-    let create = fun name id ->
-        let data = {engText = name; id = Some(id)}
-        createDictMenuItem data priorityMenuDict setPriority
-    let add = fun name id -> menu.DropDownItems.Add(create name id) |> ignore
-
-    add "High" DataID.High
-    add "Above Normal" DataID.AboveNormal
-    add "Normal" DataID.Normal
-
-    menu
 
 let private getNumberOfName (name: string): int =
     match name with
@@ -1137,61 +974,6 @@ let private setNumberOfName (name: string) (n: int): unit =
     | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold <- n
     | e -> raise (ArgumentException(e))
 
-let private makeNumberText (name: string) (num: int) =
-    sprintf "%s = %d" (convLang name) num
-
-let private createNumberMenuItem name low up =
-    let item = createMenuItem {engText = name; id = Some(name)}
-    numberMenuDict.[name] <- item
-
-    addClick item (fun _ ->
-        let cur = getNumberOfName name
-        let num = Dialog.openNumberInputBox (convLang name) (convLang "Set Number") low up cur
-        match num with
-        | Ok n ->
-            setNumberOfName name n
-            item.Text <- makeNumberText name n
-            storeChangedSettings()
-        | Error s ->
-            if s <> "" then
-                Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Number") s) (convLang "Error")
-    )
-
-let private createSetNumberMenu () =
-    let menu = createMenuItem_NonID "Set Number"
-    let add = fun name low up ->
-        menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
-
-    add DataID.pollTimeout 50 500
-    add DataID.scrollLocktime 150 500
-    addSeparator menu.DropDownItems
-
-    add DataID.verticalThreshold 0 500
-    add DataID.horizontalThreshold 0 500
-
-    menu
-
-let private createRealWheelModeMenu () =
-    let menu = createMenuItem_NonID "Real Wheel Mode"
-    let items = menu.DropDownItems
-    let addNum = fun name low up ->
-        items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool = fun name ->
-        items.Add(createBoolMenuItemS name) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.realWheelMode) |> ignore
-    addSeparator items
-
-    addNum DataID.wheelDelta 10 500
-    addNum DataID.vWheelMove 10 500
-    addNum DataID.hWheelMove 10 500
-    addSeparator items
-        
-    addBool DataID.quickFirst
-    addBool DataID.quickTurn
-        
-    menu
-
 let private getVhAdjusterMethodOfName name =
     match name with
     | DataID.Fixed -> Fixed
@@ -1201,34 +983,6 @@ let private getVhAdjusterMethodOfName name =
 let private setVhAdjusterMethod name =
     Debug.WriteLine("setVhAdjusterMethod: " + name)
     VHAdjuster.Method <- (getVhAdjusterMethodOfName name)
-
-let private createVhAdjusterMenu () =
-    let menu = createMenuItem_NonID "VH Adjuster"
-    let items = menu.DropDownItems
-
-    let create = fun text ->
-        let data = {engText = text; id = Some(text)}
-        createDictMenuItem data vhAdjusterMenuDict setVhAdjusterMethod
-    let add = fun name -> items.Add(create name) |> ignore
-
-    let addNum = fun name low up ->
-        items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool = fun name ->
-        items.Add(createBoolMenuItemS name) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.vhAdjusterMode) |> ignore
-    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
-    addSeparator items
-
-    add DataID.Fixed
-    add DataID.Switching
-    addSeparator items
-
-    addBool DataID.firstPreferVertical
-    addNum DataID.firstMinThreshold 1 10
-    addNum DataID.switchingThreshold 10 500
-
-    menu
 
 // Called with the old trigger key when the key changes (true), or when the keyboard hook is
 // removed (false): see KEventHandler.changeTrigger
@@ -1255,13 +1009,9 @@ let private setTargetVKCode name =
 let private setKeyboardHookOf (b: bool) =
     match WinHook.setOrUnsetKeyboardHook b with
     | Some(err) ->
-        // Not installed (the previous hook removed): off, as the menu shows
+        // Not installed (the previous hook removed): off, as the settings dialog shows (refreshed
+        // after the change or the load)
         Volatile.Write(keyboardHook, false)
-        match boolMenuDict.TryGetValue DataID.keyboardHook with
-        | true, item ->
-            item.Checked <- false
-            item.Text <- convLang(getOnOffText false)
-        | _ -> ()
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
@@ -1274,62 +1024,6 @@ let private setKeyboardHookOf (b: bool) =
             changeKeyboardTrigger (getTargetVKCode()) false
 
 
-
-let private createKeyboardMenu () =
-    let menu = createMenuItem_NonID "Keyboard"
-    let items = menu.DropDownItems
-
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord(text))}
-        createDictMenuItem data keyboardMenuDict setTargetVKCode
-    let add = fun text -> items.Add(create text) |> ignore
-
-    items.Add(createOnOffMenuItem DataID.keyboardHook setKeyboardHookOf) |> ignore
-    addSeparator items
-
-    add (DataID.VK_TAB + " (Tab)")
-    add (DataID.VK_PAUSE + " (Pause)")
-    add (DataID.VK_CAPITAL + " (Caps Lock)")
-    add (DataID.VK_CONVERT + " (Henkan)")
-    add (DataID.VK_NONCONVERT + " (Muhenkan)")
-    add (DataID.VK_PRIOR + " (Page Up)")
-    add (DataID.VK_NEXT + " (Page Down)")
-    add (DataID.VK_END + " (End)")
-    add (DataID.VK_HOME + " (Home)")
-    add (DataID.VK_SNAPSHOT + " (Print Screen)")
-    add (DataID.VK_INSERT + " (Insert)")
-    add (DataID.VK_DELETE + " (Delete)")
-    add (DataID.VK_LWIN + " (Left Windows)")
-    add (DataID.VK_RWIN + " (Right Windows)")
-    add (DataID.VK_APPS + " (Application)")
-    add (DataID.VK_NUMLOCK + " (Number Lock)")
-    add (DataID.VK_SCROLL + " (Scroll Lock)")
-    add (DataID.VK_LSHIFT + " (Left Shift)")
-    add (DataID.VK_RSHIFT + " (Right Shift)")
-    add (DataID.VK_LCONTROL + " (Left Ctrl)")
-    add (DataID.VK_RCONTROL + " (Right Ctrl)")
-    add (DataID.VK_LMENU + " (Left Alt)")
-    add (DataID.VK_RMENU + " (Right Alt)")
-
-    addSeparator items
-    add DataID.None
-
-    menu
-
-let private createCursorChangeMenuItem () =
-    createBoolMenuItem {engText = "Cursor Change"; id = Some(DataID.cursorChange)} true
-
-let private createHorizontalScrollMenuItem () =
-    let item = createBoolMenuItem {engText = "Horizontal Scroll"; id = Some(DataID.horizontalScroll)} true
-    addClick item (fun _ ->
-        boolMenuDict.[DataID.vhAdjusterMode].Enabled <- item.Checked
-    )
-
-let private createReverseScrollMenuItem () =
-    createBoolMenuItem {engText = "Reverse Scroll (Flip)"; id = Some(DataID.reverseScroll)} true
-
-let private createSwapScrollMenuItem () =
-    createBoolMenuItem {engText = "Swap Scroll (V.H)"; id = Some(DataID.swapScroll)} true
 
 let private createPassModeMenuItem () =
     let id = DataID.passMode
@@ -1376,48 +1070,6 @@ let private BooleanNames: string[] =
      DataID.vhAdjusterMode; DataID.firstPreferVertical;
      DataID.excludeAvast|]
 
-let private OnOffNames: string[] =
-    [|DataID.realWheelMode; DataID.accelTable; DataID.keyboardHook; DataID.vhAdjusterMode|]
-
-let private resetDictMenuItems (dict: MenuDict) pred =
-    Debug.WriteLine("resetDictMenuItems")
-    for KeyValue(id, item) in dict do
-        item.CheckState <-
-            if pred id then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
-
-let private resetTriggerMenuItems () =
-    resetDictMenuItems triggerMenuDict
-        (fun id -> Mouse.getTriggerOfStr id = getFirstTrigger())
-
-let private resetAccelMenuItems () =
-    resetDictMenuItems accelMenuDict
-        (fun id -> id = Accel.Multiplier.Name)
-
-let private resetPriorityMenuItems () =
-    resetDictMenuItems priorityMenuDict
-        (fun id -> ProcessPriority.getPriority id = getProcessPriority())
-
-let private resetLanguageMenuItems () =
-    resetDictMenuItems languageMenuDict
-        (fun id -> id = getUILanguage())
-
-let private resetKeyboardMenuItems () =
-    resetDictMenuItems keyboardMenuDict
-        (fun id -> Keyboard.getVKCode id = getTargetVKCode())
-
-let private resetVhAdjusterMenuItems () =
-    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
-    resetDictMenuItems vhAdjusterMenuDict
-        (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod())
-
-let private resetNumberMenuItems () =
-    for KeyValue(id, item) in numberMenuDict do
-        let num = getNumberOfName id
-        item.Text <- makeNumberText id num
-
 let private isCreatedMenuItems (): bool =
     notifyIcon.ContextMenuStrip <> null
 
@@ -1428,51 +1080,8 @@ let private setUILanguage lang =
 
     if reset && isCreatedMenuItems() then
         resetMenuText()
-        resetNumberMenuItems()
         notifyIcon.Text <- getTrayText Pass.Mode
         retextSettingsDialog()
-
-let private createLanguageMenu () =
-    let menu = createMenuItem_NonID "Language"
-    let create = fun text id ->
-        createDictMenuItem {engText = text; id = Some(id)} languageMenuDict setUILanguage
-    let add = fun text id ->
-        menu.DropDownItems.Add(create text id) |> ignore
-
-    add "English" DataID.English
-    add "Japanese" DataID.Japanese
-
-    menu 
-
-let private resetBoolNumberMenuItems () =
-    for KeyValue(name, item) in boolMenuDict do
-        item.Checked <- getBooleanOfName name
-
-let private resetOnOffMenuItems () =
-    OnOffNames |> Array.iter (fun name ->
-        let item = boolMenuDict.[name]
-        item.Text <- convLang(getOnOffText(getBooleanOfName name))
-    )
-
-// Reload or switching properties can add or remove the custom table
-let private resetCustomAccelMenuItem () =
-    match boolMenuDict.TryGetValue DataID.customAccelTable with
-    | true, item -> item.Enabled <- not Accel.CustomDisabled
-    | _ -> ()
-
-let private resetAllMenuItems () =
-    Debug.WriteLine("resetAllMenuItems")
-    resetTriggerMenuItems()
-    resetKeyboardMenuItems()
-    resetAccelMenuItems()
-    resetPriorityMenuItems()
-    resetLanguageMenuItems()
-    resetNumberMenuItems()
-    resetBoolNumberMenuItems()
-    resetCustomAccelMenuItem()
-    resetVhAdjusterMenuItems()
-    resetOnOffMenuItems()
-    refreshSettingsDialog()
 
 let private prop = Properties.Properties()
 
@@ -1695,25 +1304,13 @@ let storeProperties () =
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
-storeChangedSettings <- (fun () ->
-    storeProperties()
-    refreshSettingsDialog())
-
 let reloadProperties () =
     prop.Clear()
     loadProperties true
-    resetAllMenuItems()
-
-let private createReloadPropertiesMenuItem () =
-    let item = createMenuItem_NonID "Reload"
-    addClick item (fun _ -> reloadProperties ())
+    refreshSettingsDialog()
 
 let private openPropertiesDir () =
     Process.Start(ProcessStartInfo(Properties.USER_DIR, UseShellExecute = true)) |> ignore
-
-let private createOpenDirMenuItem () =
-    let item = createMenuItem_NonID "Open Dir"
-    addClick item (fun _ -> openPropertiesDir())
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
@@ -1742,10 +1339,6 @@ let private addProperties () =
     with
         | e -> Dialog.errorMessageE e
 
-let private createAddPropertiesMenuItem () =
-    let item = createMenuItem_NonID "Add"
-    addClick item (fun _ -> addProperties())
-
 let private openYesNoMessage msg =
     let res = MessageBox.Show(msg, (convLang "Question"), MessageBoxButtons.YesNo, MessageBoxIcon.Information)
     res = DialogResult.Yes
@@ -1758,7 +1351,7 @@ let private setProperties name =
         // Do not keep the keys of the previous file (they would be stored in this file)
         prop.Clear()
         loadProperties true
-        resetAllMenuItems()
+        refreshSettingsDialog()
 
 // The selected properties (not Default), then Default is selected
 let private deleteProperties () =
@@ -1770,58 +1363,10 @@ let private deleteProperties () =
     with
         | e -> Dialog.errorMessageE e
 
-let private createDeletePropertiesMenuItem () =
-    let item = createMenuItem_NonID "Delete"
-    item.Enabled <- (getSelectedProperties() <> DEFAULT_DEF)
-    addClick item (fun _ -> deleteProperties())
-
 // The settings of the selected properties are stored first
 let private switchProperties name =
     storeProperties()
     setProperties name
-
-let private createPropertiesMenuItem (name: string) =
-    // Only Default is translated: the other names are the user's (e.g. "Middle" is not "中央")
-    let item =
-        if name = DEFAULT_DEF then createMenuItem_NonID name else new ToolStripMenuItem(name)
-    item.CheckState <-
-        if name = getSelectedProperties() then
-            CheckState.Indeterminate
-        else
-            CheckState.Unchecked
-
-    addClick item (fun _ -> switchProperties name)
-
-let private createPropertiesMenu () =
-    let menu = createMenuItem_NonID "Properties"
-    let items = menu.DropDownItems
-    addSeparator items
-
-    let addItem = fun (menuItem: ToolStripMenuItem) -> items.Add(menuItem) |> ignore
-    let addDefault = fun () -> addItem (createPropertiesMenuItem DEFAULT_DEF)
-    let add = fun path -> addItem (createPropertiesMenuItem (Properties.getUserDefName path))
-
-    menu.DropDownOpening.Add(fun _ ->
-        // The items made the last time are released (Clear does not dispose them)
-        let old = Array.init items.Count (fun i -> items.[i])
-        items.Clear()
-        old |> Array.iter (fun item -> item.Dispose())
-
-        addItem (createReloadPropertiesMenuItem())
-        addSeparator items
-
-        addItem (createOpenDirMenuItem())
-        addItem (createAddPropertiesMenuItem())
-        addItem (createDeletePropertiesMenuItem())
-        addSeparator items
-
-        addDefault()
-        addSeparator items
-
-        Properties.getPropFiles() |> Array.iter add
-    )
-
-    menu
 
 let private triggerItems =
     [DataID.LR, DataID.LR + " (Left <<-->> Right)";
@@ -1850,14 +1395,16 @@ let private accelItems =
      DataID.M7, DataID.M7 + " (1.4 ... 6.7)"; DataID.M8, DataID.M8 + " (1.6 ... 7.7)";
      DataID.M9, DataID.M9 + " (1.8 ... 8.7)"]
 
-// The settings of the menu in a dialog. A change is applied and stored at once, as in the menu.
+// The settings dialog. A change is applied and stored at once. Not for Pass Mode (in the tray
+// menu): it is not stored, and storing would overwrite the file edited outside W10Wheel and not
+// reloaded yet.
 let private createSettingsDialog () =
     let dialog = SettingsForm.SettingsDialog(convLang)
     dialog.Changed <- (fun () ->
         storeProperties()
-        // The menu shows it too, and the dialog the settings depending on it (e.g. Dragged Lock is
-        // for a drag trigger only, the keyboard hook is off again if it could not be installed)
-        resetAllMenuItems())
+        // The settings depending on it (e.g. Dragged Lock is for a drag trigger only, the keyboard
+        // hook is off again if it could not be installed)
+        dialog.RefreshValues())
 
     let addBool (page: SettingsForm.SettingsPage) engText id =
         page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id)
@@ -1949,35 +1496,13 @@ let private createSettingsMenuItem () =
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
     let add = fun (item: ToolStripMenuItem) -> menu.Items.Add(item) |> ignore
+    // The settings are in the dialog. Pass Mode is also switched by a double click on the icon.
     add (createSettingsMenuItem())
-    addSeparator menu.Items
-
-    add (createTriggerMenu())
-    add (createKeyboardMenu())
-    addSeparator menu.Items
-
-    add (createAccelTableMenu())
-    add (createPriorityMenu())
-    add (createSetNumberMenu())
-    add (createRealWheelModeMenu())
-    add (createVhAdjusterMenu())
-    addSeparator menu.Items
-
-    add (createPropertiesMenu())
-    addSeparator menu.Items
-    
-    add (createCursorChangeMenuItem())
-    add (createHorizontalScrollMenuItem())
-    add (createReverseScrollMenuItem())
-    add (createSwapScrollMenuItem())
     add (createPassModeMenuItem())
     addSeparator menu.Items
 
-    add (createLanguageMenu())
     add (createInfoMenuItem())
     add (createExitMenuItem())
-
-    resetAllMenuItems()
 
     menu
 

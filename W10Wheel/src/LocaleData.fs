@@ -23,7 +23,6 @@ let private JapaneseMessage =
         "Properties Name", "設定ファイル名";
         "Add Properties", "設定ファイル追加";
         "Invalid Name", "無効な名前";
-        "Invalid Number", "無効な数値";
         "Name Error", "名前のエラー";
         "Delete properties", "設定ファイル削除";
         "Set Text", "テキストを設定";
@@ -55,7 +54,6 @@ let private JapaneseMessage =
         "Dragged Lock", "ドラッグ後固定";
         
         "Keyboard", "キーボード";
-        "ON / OFF", "有効 / 無効";
         "VK_CONVERT (Henkan)", "VK_CONVERT (変換)";
         "VK_NONCONVERT (Muhenkan)", "VK_NONCONVERT (無変換)";
         "VK_LWIN (Left Windows)", "VK_LWIN (左 Windows)";
@@ -75,7 +73,6 @@ let private JapaneseMessage =
         "Above Normal", "通常以上";
         "Normal", "通常";
         
-        "Set Number", "パラメーターを設定";
         "pollTimeout", "同時押し判定時間";
         "scrollLocktime", "スクロールモード固定判定時間";
         "verticalThreshold", "垂直スクロール閾値";
