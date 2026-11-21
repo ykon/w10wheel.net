@@ -714,8 +714,13 @@ let private __resendUp (me: MouseEvent) (kind: uint64) (pressId: int) =
 // The up of a down resent alone, for the physical up (suppressed) of the current press: called
 // on the hook thread
 let resendUp (me: MouseEvent) =
+    let button =
+        match me with
+        | LeftUp(_) -> 0
+        | RightUp(_) -> 1
+        | _ -> raise (ArgumentException())
     let id = pressIdOf me
-    releaseQueuedId.[match me with LeftUp(_) -> 0 | _ -> 1] <- id
+    releaseQueuedId.[button] <- id
     __resendUp me KIND_RELEASE id
 
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
