@@ -416,15 +416,11 @@ type private Scroll() =
         let canceled = generation.IsSome && startCanceled
         if generation.IsSome then startCanceled <- false
 
-        if not closed && not passMode && sameGeneration && not canceled then
-            if mode then
-                // The LR trigger pressed while the keyboard trigger's scroll mode is held (its
-                // buttons wait then, see EventHandler.passPressedScrollMode): it ends it, as
-                // another trigger does. Not started: the handlers of the other triggers end the
-                // scroll mode before.
-                if generation.IsSome then exit ()
+        // Not while in scroll mode: the handlers end it before, another trigger's included (for
+        // the LR trigger, EventWaiter.waiterThread)
+        if not closed && not passMode && sameGeneration && not canceled && not mode then
             // Without RawInput, the moves would be suppressed with no scroll: refused
-            elif RawInput.register() then
+            if RawInput.register() then
                 stime <- info.time
                 setStartPoint(info.pt.x, info.pt.y)
                 initScroll()

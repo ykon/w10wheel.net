@@ -187,8 +187,17 @@ let private waiterThread = new Thread(fun () ->
         sync.poll (Ctx.getPollTimeout()) (fun res ->
             match res with
             | Some(LeftDown(_) | RightDown(_) as d2) ->
-                Ctx.setStartingScrollModeFor generation
-                second.Value <- d2
+                // The keyboard trigger's scroll mode is held (see EventHandler.
+                // passPressedScrollMode): the LR trigger ends it instead of starting one, as
+                // another trigger does. Decided here, before the offer returns: the hook waits
+                // for it, so the keyboard trigger cannot end the scroll mode meanwhile (its up),
+                // which would let the LR trigger start one after (not as starting either).
+                if Ctx.isKeyboardScrollMode() then
+                    Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): exit scroll mode (keyboard)" down.Name d2.Name)
+                    Ctx.exitScrollMode()
+                else
+                    Ctx.setStartingScrollModeFor generation
+                    second.Value <- d2
             | Some(res) -> dispatchEvent generation pressId down res
             | None -> fromTimeout generation pressId down)
 
