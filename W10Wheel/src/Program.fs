@@ -113,6 +113,7 @@ let private initSetFunctions () =
     EventWaiter.setOfferEW ()
     EventHandler.setInitStateMEH ()
     KEventHandler.setInitStateKEH ()
+    KEventHandler.setChangeTrigger ()
 
 [<STAThread>]
 [<EntryPoint>]

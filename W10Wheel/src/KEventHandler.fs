@@ -17,8 +17,14 @@ let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NonEvent
 
+// The old trigger key, pressed when the trigger key changed (see changeTrigger): its down was
+// suppressed, so are its repeats and its up (it is not the trigger any more)
+let private NO_KEY = -1
+let mutable private canceledKey = NO_KEY
+
 let private initState () =
     lastEvent <- NonEvent
+    canceledKey <- NO_KEY
 
 let setInitStateKEH () =
     Ctx.setInitStateKEH initState
@@ -155,12 +161,38 @@ let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
     let kd = KeyDown(info)
-    if Ctx.isTriggerKey kd then singleDown kd else noneDown kd
+    if kd.VKCode = canceledKey then
+        debug "suppress (the old trigger key)" kd
+        IntPtr(1)
+    elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 
 let keyUp (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyUp: %d" info.vkCode)
 
     let ku = KeyUp(info)
-    if Ctx.isTriggerKey ku then singleUp ku else noneUp ku
+    if ku.VKCode = canceledKey then
+        debug "suppress (the old trigger key)" ku
+        canceledKey <- NO_KEY
+        IntPtr(1)
+    elif Ctx.isTriggerKey ku then singleUp ku else noneUp ku
+
+// The trigger key has changed (cancelPressed), or the keyboard hook is removed: the scroll
+// mode the old key started would not end (its up is not the trigger's any more, or not seen).
+// End it. If the old key is pressed (its down suppressed), suppress it until its up.
+let private changeTrigger (oldVK: int) (cancelPressed: bool) =
+    let pressed =
+        match lastEvent with
+        | KeyDown(_) -> lastEvent.VKCode = oldVK
+        | _ -> false
+
+    canceledKey <- if cancelPressed && pressed then oldVK else NO_KEY
+    lastEvent <- NonEvent
+
+    if Ctx.isKeyboardScrollMode() then
+        Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
+        Ctx.exitScrollMode()
+
+let setChangeTrigger () =
+    Ctx.setChangeKeyboardTrigger changeTrigger
 
 

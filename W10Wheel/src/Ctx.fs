@@ -1098,9 +1098,26 @@ let private createVhAdjusterMenu () =
 
     menu
 
+// Called with the old trigger key when the key changes (true), or when the keyboard hook is
+// removed (false): see KEventHandler.changeTrigger
+let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
+
+let setChangeKeyboardTrigger f =
+    changeKeyboardTrigger <- f
+
 let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
-    Volatile.Write(targetVKCode, Keyboard.getVKCode name)
+    let old = getTargetVKCode()
+    let code = Keyboard.getVKCode name
+    Volatile.Write(targetVKCode, code)
+
+    if code <> old then
+        changeKeyboardTrigger old true
+
+let private setKeyboardHookOf (b: bool) =
+    WinHook.setOrUnsetKeyboardHook b
+    if not b then
+        changeKeyboardTrigger (getTargetVKCode()) false
 
 
 
@@ -1113,7 +1130,7 @@ let private createKeyboardMenu () =
         createDictMenuItem data keyboardMenuDict setTargetVKCode
     let add = fun text -> items.Add(create text) |> ignore
 
-    items.Add(createOnOffMenuItem DataID.keyboardHook WinHook.setOrUnsetKeyboardHook) |> ignore
+    items.Add(createOnOffMenuItem DataID.keyboardHook setKeyboardHookOf) |> ignore
     addSeparator items
 
     add (DataID.VK_TAB + " (Tab)")
@@ -1426,7 +1443,7 @@ let loadProperties (update:bool): unit =
         setUILanguageOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
-        WinHook.setOrUnsetKeyboardHook (Volatile.Read(&keyboardHook.contents))
+        setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
 
         Debug.WriteLine("setNumberOfProperties")
         let setNum = setNumberOfProperty
