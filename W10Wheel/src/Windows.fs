@@ -260,7 +260,7 @@ let private downPassedId = Array.create 5 NO_PRESS
 let private downSuppressed = Array.create 5 false
 let mutable private lastPressId = 0
 
-// Called by the mouse hook for a left or right down or up before it is handled, also in
+// Called by the mouse hook for a button down or up before it is handled, also in
 // Pass Mode: true to drop it.
 // - A down resent alone for a press whose physical up has passed (or for an earlier press)
 //   would leave the button pressed.
@@ -279,7 +279,7 @@ let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
     | _ ->
         false
 
-// Called by the mouse hook before handling a left or right down or up that is not dropped:
+// Called by the mouse hook before handling a button down or up that is not dropped:
 // a physical down starts a new press
 let handlingButton (button: int) (isDown: bool) (info: HookInfo) =
     if isDown && not (isInjected info) then
@@ -288,7 +288,7 @@ let handlingButton (button: int) (isDown: bool) (info: HookInfo) =
         upPassed.[button] <- false
         downSuppressed.[button] <- false
 
-// Called by the mouse hook after handling a left or right down or up (passed: passed on)
+// Called by the mouse hook after handling a button down or up (passed: passed on)
 let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
     if isDown && not passed && not (isInjected info) then
         downSuppressed.[button] <- true
@@ -309,7 +309,7 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
     if not isDown && not (isInjected info) then
         downSuppressed.[button] <- false
 
-// Called by the mouse hook when a left or right up is about to be passed on (by the handlers,
+// Called by the mouse hook when a button up is about to be passed on (by the handlers,
 // or in Pass Mode): true to suppress it instead. If the physical down of its press was
 // suppressed and no down resent alone for it reached the application, the application has the
 // button released (or got a whole click instead): the up alone would be an up without a down

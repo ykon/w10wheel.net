@@ -60,12 +60,12 @@ let private procMouseEvent (wParam: nativeint) (info: HookInfo) (callNextHook: u
 
 let private procMouse nCode (wParam: nativeint) (info: HookInfo): nativeint =
     //Debug.WriteLine("mouseProc")
-    let lr = if nCode < 0 then None else buttonOf (wParam.ToInt32()) info
+    let buttonEvent = if nCode < 0 then None else buttonOf (wParam.ToInt32()) info
     let passed = ref false
 
     // Passes the event on, unless it is an up without its down (Windows.dropLoneUp)
     let callNextHook = (fun () ->
-        match lr with
+        match buttonEvent with
         | Some(button, false) when Windows.dropLoneUp button info -> IntPtr(1)
         | _ ->
             passed.Value <- true
@@ -82,12 +82,12 @@ let private procMouse nCode (wParam: nativeint) (info: HookInfo): nativeint =
         try
             // Before Pass Mode and the triggers: the resent downs and ups are checked whatever
             // handles them, in the order the application gets them
-            match lr with
+            match buttonEvent with
             | Some(button, isDown) when Windows.dropResent button isDown info -> IntPtr(1)
             | _ ->
-                lr |> Option.iter (fun (button, isDown) -> Windows.handlingButton button isDown info)
+                buttonEvent |> Option.iter (fun (button, isDown) -> Windows.handlingButton button isDown info)
                 let res = procMouseEvent wParam info callNextHook
-                lr |> Option.iter (fun (button, isDown) ->
+                buttonEvent |> Option.iter (fun (button, isDown) ->
                     Windows.handledButton button isDown info passed.Value)
                 res
         finally

@@ -62,7 +62,7 @@ let setInitStateMEH () =
     Ctx.setInitStateMEH initState
 
 let private resetLastFlagsLR (me: MouseEvent): nativeint option =
-    Ctx.LastFlags.ResetLR me
+    Ctx.LastFlags.ResetLRFor me
     None
 
 let private getLastResendEvent me =
@@ -553,9 +553,7 @@ let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nati
         // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
         // whatever the trigger (only the LR trigger's handlers did, so after changing the
         // trigger they could take e.g. the next up for that of a resent or suppressed down)
-        match d with
-        | LeftDown(_) | RightDown(_) -> Ctx.LastFlags.ResetLR d
-        | _ -> ()
+        Ctx.LastFlags.ResetLRFor d
 
     Volatile.Read(&proc.contents)(d)
 

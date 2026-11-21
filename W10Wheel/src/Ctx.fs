@@ -744,13 +744,6 @@ type LastFlags() =
         | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
         | _ -> ()
 
-    static member ResetLR (down: MouseEvent) =
-        match down with
-        | LeftDown(_) -> ldR <- false; ldS <- false; ldP <- false
-        | RightDown(_) -> rdR <- false; rdS <- false; rdP <- false
-        //| MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
-        | _ -> raise (ArgumentException())
-
     (*
     static member Reset (down: KeyboardEvent) =
         match down with
