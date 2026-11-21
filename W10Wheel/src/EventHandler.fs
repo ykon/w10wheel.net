@@ -250,6 +250,15 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
     else
         None
 
+// The wait of the earlier press of the button of a down may have timed out after procDown reset
+// the flags of this down: its resent flag (EventWaiter.fromTimeout) is not of this press, whose
+// up would be resent for a down the hook drops (its press is not the current one), with the
+// wait of this press not offered that up (its down resent later, left pressed). Reset it when no
+// wait is in progress any more: a timeout is handled before the wait ends (EventWaiter.
+// SynchronousQueue.poll). No flag of this press has been set yet (lrDown).
+let private resetRacedResentDown (down: MouseEvent) =
+    Ctx.LastFlags.ResetFor down
+
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     // The up of the other button than the waiting down, whose own down did not reach the
     // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
@@ -257,13 +266,15 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
-    // A down of the button whose down is waiting (e.g. of another mouse, or the up was missed):
-    // not the second down of the trigger (the same button would start scroll mode), nor a new
-    // wait (one is in progress). Suppressed with its up, the wait goes on.
+    // A down of the button whose down is waiting (the up was missed, or of another mouse): not
+    // the second down of the trigger (the same button would start scroll mode). A new press, as
+    // for checkSameLastEvent: the wait is canceled (its down is not resent: the hook would drop
+    // it, its press is not the current one, see Windows.dropResent), this down is handled after.
     elif me.IsDown && EventWaiter.isWaitingFor me then
-        debug "suppress (down of the waiting button)" me
-        Ctx.LastFlags.SetSuppressed me
-        suppress()
+        debug "cancel the wait (down of the waiting button)" me
+        EventWaiter.cancel () |> ignore
+        resetRacedResentDown me
+        None
     elif EventWaiter.offer me then
         debug "success to offer" me
         // The second down starts LR scroll mode: no up of the pair counted yet (the count
@@ -271,6 +282,7 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
         if me.IsDown then secondTriggerUp <- false
         suppress()
     else
+        if me.IsDown then resetRacedResentDown me
         None
 
 let private checkSuppressedDown (up: MouseEvent): nativeint option =
