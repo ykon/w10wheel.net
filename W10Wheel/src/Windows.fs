@@ -242,7 +242,8 @@ let private resendKind (info: HookInfo): (uint64 * int) option =
     else
         None
 
-// The physical presses and the downs resent alone (LR trigger) by button (0: left, 1: right),
+// The physical presses and the downs resent alone (LR trigger) by button (0: left, 1: right,
+// 2: middle, 3: X1, 4: X2; only left and right are resent alone),
 // as the hook sees them: in the order the target application gets the inputs, whenever
 // SendInput returns. Used on the hook thread only.
 // pressId: the ID of the last physical down (see handlingButton); the waits and resends for
@@ -252,11 +253,11 @@ let private resendKind (info: HookInfo): (uint64 * int) option =
 // downPassedId: the press whose down resent alone has reached the application, with no up
 // since (NO_PRESS if none).
 let private NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
-let private pressId = Array.create 2 NO_PRESS
-let private upPassed = Array.create 2 false
-let private downPassedId = Array.create 2 NO_PRESS
+let private pressId = Array.create 5 NO_PRESS
+let private upPassed = Array.create 5 false
+let private downPassedId = Array.create 5 NO_PRESS
 // downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it)
-let private downSuppressed = Array.create 2 false
+let private downSuppressed = Array.create 5 false
 let mutable private lastPressId = 0
 
 // Called by the mouse hook for a left or right down or up before it is handled, also in

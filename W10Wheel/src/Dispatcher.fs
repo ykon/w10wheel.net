@@ -22,12 +22,18 @@ let private procCommand (info: HookInfo): bool =
         else
             W10Message.procMessage (int (uint32 extra))
 
-// The button (0: left, 1: right) and whether it is a down, for Windows.dropResent
-let private lrButton (msg: int): (int * bool) option =
+// The button (0: left, 1: right, 2: middle, 3: X1, 4: X2) and whether it is a down, for the
+// checks of Windows (dropResent, dropLoneUp)
+let private buttonOf (msg: int) (info: HookInfo): (int * bool) option =
+    let x () = if Mouse.isXButton1 info.mouseData then 3 else 4
     if msg = WM_LBUTTONDOWN then Some(0, true)
     elif msg = WM_LBUTTONUP then Some(0, false)
     elif msg = WM_RBUTTONDOWN then Some(1, true)
     elif msg = WM_RBUTTONUP then Some(1, false)
+    elif msg = WM_MBUTTONDOWN then Some(2, true)
+    elif msg = WM_MBUTTONUP then Some(2, false)
+    elif msg = WM_XBUTTONDOWN then Some(x (), true)
+    elif msg = WM_XBUTTONUP then Some(x (), false)
     else None
 
 let private procMouseEvent (wParam: nativeint) (info: HookInfo) (callNextHook: unit -> nativeint): nativeint =
@@ -54,7 +60,7 @@ let private procMouseEvent (wParam: nativeint) (info: HookInfo) (callNextHook: u
 
 let private procMouse nCode (wParam: nativeint) (info: HookInfo): nativeint =
     //Debug.WriteLine("mouseProc")
-    let lr = if nCode < 0 then None else lrButton (wParam.ToInt32())
+    let lr = if nCode < 0 then None else buttonOf (wParam.ToInt32()) info
     let passed = ref false
 
     // Passes the event on, unless it is an up without its down (Windows.dropLoneUp)
