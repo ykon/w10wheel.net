@@ -388,7 +388,7 @@ type private Scroll() =
         sy <- y
 
     static let exit () =
-        RawInput.unregister()
+        RawInput.unregister() |> ignore
 
         mode <- false
         releasedMode <- false
@@ -406,18 +406,20 @@ type private Scroll() =
         let canceled = generation.IsSome && startCanceled
         if generation.IsSome then startCanceled <- false
 
-        if not closed && not passMode && sameGeneration && not canceled then
-            stime <- info.time
-            setStartPoint(info.pt.x, info.pt.y)
-            initScroll()
+        // Not while in scroll mode: the handlers leave it before (another trigger's included)
+        if not closed && not passMode && sameGeneration && not canceled && not mode then
+            // Without RawInput, the moves would be suppressed with no scroll: refused
+            if RawInput.register() then
+                stime <- info.time
+                setStartPoint(info.pt.x, info.pt.y)
+                initScroll()
 
-            RawInput.register()
+                if cursorChange && not (isDragTrigger()) then
+                    WinCursor.changeV()
 
-            if cursorChange && not (isDragTrigger()) then
-                WinCursor.changeV()
+                byKeyboard <- false
+                mode <- true
 
-            byKeyboard <- false
-            mode <- true
             starting <- false
         else
             // Refused (exiting, Pass Mode or canceled): do not leave the LR trigger in the
@@ -437,18 +439,18 @@ type private Scroll() =
         // again after this one has ended
         if starting then startCanceled <- true
 
-        if not closed && not passMode then
-            stime <- info.time
-            setStartPoint(Cursor.Position.X, Cursor.Position.Y)
-            initScroll()
+        if not closed && not passMode && not mode then
+            if RawInput.register() then
+                stime <- info.time
+                setStartPoint(Cursor.Position.X, Cursor.Position.Y)
+                initScroll()
 
-            RawInput.register()
+                if cursorChange then
+                    WinCursor.changeV()
 
-            if cursorChange then
-                WinCursor.changeV()
+                byKeyboard <- true
+                mode <- true
 
-            byKeyboard <- true
-            mode <- true
             starting <- false
         else
             // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state

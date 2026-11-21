@@ -57,10 +57,17 @@ let private registerMouseRawInputDevice (dwFlags:uint32) (hwnd:nativeint) =
     let ridSize = uint32 <| Marshal.SizeOf(typeof<WinAPI.RAWINPUTDEVICE>)
     WinAPI.RegisterRawInputDevices(rid, 1u, ridSize)
 
-let register () =
-    if not (registerMouseRawInputDevice RIDEV_INPUTSINK messageWindow.Handle) then
-        Dialog.errorMessage ("Failed register RawInput: " + (WinError.getLastErrorMessage())) "Error"
+// Called by Ctx.Scroll under its lock, maybe on the EventWaiter thread (LR trigger): no dialog,
+// it would block the lock that the hook waits for (no mouse input, the dialog could not be
+// closed). Returns whether it succeeded: scroll mode does not start if it failed.
+let register (): bool =
+    let res = registerMouseRawInputDevice RIDEV_INPUTSINK messageWindow.Handle
+    if not res then
+        Debug.WriteLine("Failed register RawInput: " + (WinError.getLastErrorMessage()))
+    res
          
-let unregister () =
-    if not (registerMouseRawInputDevice RIDEV_REMOVE IntPtr.Zero) then
-        Dialog.errorMessage ("Failed unregister RawInput: " + (WinError.getLastErrorMessage())) "Error"
+let unregister (): bool =
+    let res = registerMouseRawInputDevice RIDEV_REMOVE IntPtr.Zero
+    if not res then
+        Debug.WriteLine("Failed unregister RawInput: " + (WinError.getLastErrorMessage()))
+    res
