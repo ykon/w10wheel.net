@@ -21,6 +21,8 @@ type private SynchronousQueue() =
     member self.setWaiting () =
         waiting <- true
 
+    member self.IsWaiting = waiting
+
     // handle is called with the result (None: timeout) before waiting is reset, so before an
     // offer made meanwhile returns: what it queues (resends) comes before what the hook queues
     // for the events after (e.g. the resent up for the physical up of a resent down)
@@ -91,6 +93,10 @@ let offer me: bool =
 let cancel (): MouseEvent option =
     let down = waitingEvent
     if offer Cancel then Some(down) else None
+
+// Whether a wait is in progress for a down of another button than up's (on the hook thread)
+let isWaitingOtherThan (up: MouseEvent): bool =
+    sync.IsWaiting && not (waitingEvent.SameButton up)
 
 let setOfferEW () =
     Ctx.setOfferEW offer

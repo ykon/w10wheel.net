@@ -239,7 +239,13 @@ let private passSingleEvent (me: MouseEvent): nativeint option =
         None
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
-    if EventWaiter.offer me then
+    // The up of the other button than the waiting down, whose own down did not reach the
+    // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
+    // with the waiting down, it would be an up without a down. Suppress it, the wait goes on.
+    if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
+        debug "suppress (up without its down, other button)" me
+        suppress()
+    elif EventWaiter.offer me then
         debug "success to offer" me
         // The second down starts LR scroll mode: no up of the pair counted yet (the count
         // of an earlier one may remain, e.g. when the keyboard trigger took over its scroll)

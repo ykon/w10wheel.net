@@ -316,6 +316,13 @@ let dropLoneUp (button: int) (info: HookInfo): bool =
     else
         false
 
+// dropLoneUp for a left or right up (on the hook thread)
+let dropLoneUpOf (up: MouseEvent): bool =
+    match up with
+    | LeftUp(info) -> dropLoneUp 0 info
+    | RightUp(info) -> dropLoneUp 1 info
+    | _ -> false
+
 // The ID of the current press of the button of a left or right event (on the hook thread)
 let pressIdOf (me: MouseEvent): int =
     match me with
