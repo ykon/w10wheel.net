@@ -637,21 +637,16 @@ type LastFlags() =
     static let isKey (vk: int) =
         vk >= 0 && vk < kdS.Length
 
-    // Pass Mode turned on: not the keys passed (kdP), whose ups pass (also in Pass Mode, see
-    // Dispatcher) and reset them; reset, a key pressed before would lose it (e.g. Pass Mode
-    // turned on and off while pressed: its repeats would start scroll mode if it became the
-    // trigger). Whether a key is still pressed cannot be told: GetAsyncKeyState may fail, and
-    // a key whose down was suppressed is not pressed for it.
-    static member InitAtPassMode () =
+    // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Dispatcher) and reset
+    // them; reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats
+    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
+    // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
+    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
+    static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
-
-    // Initializing the state (initState): all, also the keys passed whose up may have been missed
-    static member Init () =
-        LastFlags.InitAtPassMode()
-        Array.fill kdP 0 (kdP.Length) false
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -1738,4 +1733,4 @@ onPassModeOn <- (fun () ->
     offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()
-    LastFlags.InitAtPassMode())
+    LastFlags.Init())
