@@ -27,7 +27,17 @@ let private JapaneseMessage =
         "Name Error", "名前のエラー";
         "Delete properties", "設定ファイル削除";
         "Set Text", "テキストを設定";
-        
+
+        "Settings...", "設定...";
+        "Settings", "設定";
+        "General", "全般";
+        "Scroll", "スクロール";
+        "Mouse", "マウス";
+        "Key", "キー";
+        "Enabled", "有効";
+        "Changes are applied and saved at once.", "変更はすぐに反映・保存されます。";
+        "Close", "閉じる";
+
         "Trigger", "トリガー";
         "LR (Left <<-->> Right)", "左右 (左 <<-->> 右)";
         "Left (Left -->> Right)", "左 (左 -->> 右)";

@@ -936,6 +936,11 @@ let private makeSetBooleanEvent id =
 // W10Wheel and not reloaded yet.
 let mutable private storeChangedSettings: unit -> unit = (fun () -> ())
 
+// Set when the settings dialog is made (see createSettingsDialog): it shows the settings again
+// when they have been loaded or changed in the menu, and its texts when the language has changed
+let mutable private refreshSettingsDialog: unit -> unit = (fun () -> ())
+let mutable private retextSettingsDialog: unit -> unit = (fun () -> ())
+
 let private createBoolMenuItem (data: MenuData) enabled =
     let item = createMenuItem data
     item.Click.AddHandler(new EventHandler(makeSetBooleanEvent data.id.Value))
@@ -1425,6 +1430,7 @@ let private setUILanguage lang =
         resetMenuText()
         resetNumberMenuItems()
         notifyIcon.Text <- getTrayText Pass.Mode
+        retextSettingsDialog()
 
 let private createLanguageMenu () =
     let menu = createMenuItem_NonID "Language"
@@ -1466,6 +1472,7 @@ let private resetAllMenuItems () =
     resetCustomAccelMenuItem()
     resetVhAdjusterMenuItems()
     resetOnOffMenuItems()
+    refreshSettingsDialog()
 
 let private prop = Properties.Properties()
 
@@ -1688,7 +1695,9 @@ let storeProperties () =
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
-storeChangedSettings <- storeProperties
+storeChangedSettings <- (fun () ->
+    storeProperties()
+    refreshSettingsDialog())
 
 let reloadProperties () =
     prop.Clear()
@@ -1699,9 +1708,12 @@ let private createReloadPropertiesMenuItem () =
     let item = createMenuItem_NonID "Reload"
     addClick item (fun _ -> reloadProperties ())
 
-let private createOpenDirMenuItem (dir: string) =
+let private openPropertiesDir () =
+    Process.Start(ProcessStartInfo(Properties.USER_DIR, UseShellExecute = true)) |> ignore
+
+let private createOpenDirMenuItem () =
     let item = createMenuItem_NonID "Open Dir"
-    addClick item (fun _ -> Process.Start(ProcessStartInfo(dir, UseShellExecute = true)) |> ignore)
+    addClick item (fun _ -> openPropertiesDir())
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
@@ -1713,23 +1725,26 @@ let private isValidPropertiesName (name: string) =
     not (name.StartsWith("--")) &&
     name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
 
+// The new properties are a copy of the selected ones, and selected (the settings do not change)
+let private addProperties () =
+    let res = Dialog.openTextInputBox (convLang "Properties Name") (convLang "Add Properties")
+
+    try
+        res |> Option.iter (fun name ->
+            if isValidPropertiesName name then
+                storeProperties()
+                Properties.copy (getSelectedProperties()) name
+                setSelectedProperties name
+                refreshSettingsDialog()
+            else
+                Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
+        )
+    with
+        | e -> Dialog.errorMessageE e
+
 let private createAddPropertiesMenuItem () =
     let item = createMenuItem_NonID "Add"
-    addClick item (fun _ ->
-        let res = Dialog.openTextInputBox (convLang "Properties Name") (convLang "Add Properties")
-
-        try
-            res |> Option.iter (fun name ->
-                if isValidPropertiesName name then
-                    storeProperties()
-                    Properties.copy (getSelectedProperties()) name
-                    setSelectedProperties name
-                else
-                    Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
-            )
-        with
-            | e -> Dialog.errorMessageE e 
-    )
+    addClick item (fun _ -> addProperties())
 
 let private openYesNoMessage msg =
     let res = MessageBox.Show(msg, (convLang "Question"), MessageBoxButtons.YesNo, MessageBoxIcon.Information)
@@ -1745,18 +1760,25 @@ let private setProperties name =
         loadProperties true
         resetAllMenuItems()
 
+// The selected properties (not Default), then Default is selected
+let private deleteProperties () =
+    let name = getSelectedProperties()
+    try
+        if openYesNoMessage (sprintf "%s: %s" (convLang "Delete properties") name) then
+            Properties.delete name
+            setProperties DEFAULT_DEF
+    with
+        | e -> Dialog.errorMessageE e
+
 let private createDeletePropertiesMenuItem () =
     let item = createMenuItem_NonID "Delete"
-    let name = getSelectedProperties()
-    item.Enabled <- (name <> DEFAULT_DEF)
-    addClick item (fun _ ->
-        try
-            if openYesNoMessage (sprintf "%s: %s" (convLang "Delete properties") name) then
-                Properties.delete name
-                setProperties DEFAULT_DEF
-        with
-            | e -> Dialog.errorMessageE e
-    )
+    item.Enabled <- (getSelectedProperties() <> DEFAULT_DEF)
+    addClick item (fun _ -> deleteProperties())
+
+// The settings of the selected properties are stored first
+let private switchProperties name =
+    storeProperties()
+    setProperties name
 
 let private createPropertiesMenuItem (name: string) =
     // Only Default is translated: the other names are the user's (e.g. "Middle" is not "中央")
@@ -1768,10 +1790,7 @@ let private createPropertiesMenuItem (name: string) =
         else
             CheckState.Unchecked
 
-    addClick item (fun _ ->
-        storeProperties()
-        setProperties name
-    )
+    addClick item (fun _ -> switchProperties name)
 
 let private createPropertiesMenu () =
     let menu = createMenuItem_NonID "Properties"
@@ -1791,7 +1810,7 @@ let private createPropertiesMenu () =
         addItem (createReloadPropertiesMenuItem())
         addSeparator items
 
-        addItem (createOpenDirMenuItem(Properties.USER_DIR))
+        addItem (createOpenDirMenuItem())
         addItem (createAddPropertiesMenuItem())
         addItem (createDeletePropertiesMenuItem())
         addSeparator items
@@ -1804,9 +1823,135 @@ let private createPropertiesMenu () =
 
     menu
 
+let private triggerItems =
+    [DataID.LR, DataID.LR + " (Left <<-->> Right)";
+     DataID.Left, DataID.Left + " (Left -->> Right)";
+     DataID.Right, DataID.Right + " (Right -->> Left)";
+     DataID.Middle, DataID.Middle; DataID.X1, DataID.X1; DataID.X2, DataID.X2;
+     DataID.LeftDrag, DataID.LeftDrag; DataID.RightDrag, DataID.RightDrag;
+     DataID.MiddleDrag, DataID.MiddleDrag; DataID.X1Drag, DataID.X1Drag; DataID.X2Drag, DataID.X2Drag;
+     DataID.None, DataID.None]
+
+let private keyboardItems =
+    [DataID.VK_TAB, " (Tab)"; DataID.VK_PAUSE, " (Pause)"; DataID.VK_CAPITAL, " (Caps Lock)";
+     DataID.VK_CONVERT, " (Henkan)"; DataID.VK_NONCONVERT, " (Muhenkan)";
+     DataID.VK_PRIOR, " (Page Up)"; DataID.VK_NEXT, " (Page Down)"; DataID.VK_END, " (End)";
+     DataID.VK_HOME, " (Home)"; DataID.VK_SNAPSHOT, " (Print Screen)"; DataID.VK_INSERT, " (Insert)";
+     DataID.VK_DELETE, " (Delete)"; DataID.VK_LWIN, " (Left Windows)"; DataID.VK_RWIN, " (Right Windows)";
+     DataID.VK_APPS, " (Application)"; DataID.VK_NUMLOCK, " (Number Lock)"; DataID.VK_SCROLL, " (Scroll Lock)";
+     DataID.VK_LSHIFT, " (Left Shift)"; DataID.VK_RSHIFT, " (Right Shift)";
+     DataID.VK_LCONTROL, " (Left Ctrl)"; DataID.VK_RCONTROL, " (Right Ctrl)";
+     DataID.VK_LMENU, " (Left Alt)"; DataID.VK_RMENU, " (Right Alt)"]
+    |> List.map (fun (id, name) -> id, id + name)
+    |> fun items -> items @ [DataID.None, DataID.None]
+
+let private accelItems =
+    [DataID.M5, DataID.M5 + " (1.0 ... 4.8)"; DataID.M6, DataID.M6 + " (1.2 ... 5.8)";
+     DataID.M7, DataID.M7 + " (1.4 ... 6.7)"; DataID.M8, DataID.M8 + " (1.6 ... 7.7)";
+     DataID.M9, DataID.M9 + " (1.8 ... 8.7)"]
+
+// The settings of the menu in a dialog. A change is applied and stored at once, as in the menu.
+let private createSettingsDialog () =
+    let dialog = SettingsForm.SettingsDialog(convLang)
+    dialog.Changed <- (fun () ->
+        storeProperties()
+        // The menu shows it too, and the dialog the settings depending on it (e.g. Dragged Lock is
+        // for a drag trigger only, the keyboard hook is off again if it could not be installed)
+        resetAllMenuItems())
+
+    let addBool (page: SettingsForm.SettingsPage) engText id =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id)
+    // The ranges of loadProperties
+    let addNumber (page: SettingsForm.SettingsPage) id low up =
+        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id)
+
+    dialog.AddPropertiesLabel "Properties"
+    dialog.AddPropertiesComboBox(
+        (fun () ->
+            // Only Default is translated: the other names are the user's
+            (DEFAULT_DEF, convLang DEFAULT_DEF) ::
+            (Properties.getPropFiles() |> Array.map Properties.getUserDefName
+             |> Array.map (fun name -> name, name) |> List.ofArray)),
+        (fun name -> name = getSelectedProperties()),
+        switchProperties)
+    dialog.AddPropertiesButton("Add", addProperties)
+    dialog.AddPropertiesButton("Delete", deleteProperties, enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
+    dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
+    dialog.AddPropertiesButton("Reload", reloadProperties)
+
+    let general = dialog.AddPage "General"
+    general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
+                        (fun id -> id = getUILanguage()), setUILanguage)
+    general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
+                        (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority)
+
+    let trigger = dialog.AddPage "Trigger"
+    trigger.AddComboBox("Mouse", triggerItems, (fun id -> Mouse.getTriggerOfStr id = getFirstTrigger()), setTrigger)
+    trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
+                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger)
+    trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
+                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger)
+    trigger.AddGap()
+    trigger.AddCheck("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
+        setBooleanOfName DataID.keyboardHook b
+        setKeyboardHookOf b))
+    trigger.AddComboBox("Key", keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode)
+    trigger.AddGap()
+    addNumber trigger DataID.pollTimeout 50 500
+    addNumber trigger DataID.scrollLocktime 150 500
+
+    let scroll = dialog.AddPage "Scroll"
+    addBool scroll "Cursor Change" DataID.cursorChange
+    addBool scroll "Horizontal Scroll" DataID.horizontalScroll
+    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll
+    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll
+    scroll.AddGap()
+    addNumber scroll DataID.verticalThreshold 0 500
+    addNumber scroll DataID.horizontalThreshold 0 500
+
+    let accel = dialog.AddPage "Accel Table"
+    addBool accel "Enabled" DataID.accelTable
+    accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier)
+    accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
+                   setBooleanOfName DataID.customAccelTable, enabled = (fun () -> not Accel.CustomDisabled))
+
+    let realWheel = dialog.AddPage "Real Wheel Mode"
+    addBool realWheel "Enabled" DataID.realWheelMode
+    realWheel.AddGap()
+    addNumber realWheel DataID.wheelDelta 10 500
+    addNumber realWheel DataID.vWheelMove 10 500
+    addNumber realWheel DataID.hWheelMove 10 500
+    realWheel.AddGap()
+    addBool realWheel DataID.quickFirst DataID.quickFirst
+    addBool realWheel DataID.quickTurn DataID.quickTurn
+
+    let vhAdjuster = dialog.AddPage "VH Adjuster"
+    vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
+                        setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal))
+    vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
+                               (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod)
+    vhAdjuster.AddGap()
+    addBool vhAdjuster DataID.firstPreferVertical DataID.firstPreferVertical
+    addNumber vhAdjuster DataID.firstMinThreshold 1 10
+    addNumber vhAdjuster DataID.switchingThreshold 10 500
+
+    refreshSettingsDialog <- dialog.RefreshValues
+    retextSettingsDialog <- dialog.RetextLater
+    dialog
+
+// Made when it is opened first (not at startup), then kept: closing hides it
+let private settingsDialog = lazy (createSettingsDialog())
+
+let private createSettingsMenuItem () =
+    let item = createMenuItem_NonID "Settings..."
+    addClick item (fun _ -> settingsDialog.Value.Show())
+
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
     let add = fun (item: ToolStripMenuItem) -> menu.Items.Add(item) |> ignore
+    add (createSettingsMenuItem())
+    addSeparator menu.Items
+
     add (createTriggerMenu())
     add (createKeyboardMenu())
     addSeparator menu.Items
