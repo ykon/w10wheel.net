@@ -133,13 +133,13 @@ URL:
 使用方法:
         W10Wheel.exe を実行してください。
         タスクトレイにアイコンが表示されます。
-        こちらから右クリックメニューで設定を変更できます。
+        右クリックメニューの Settings... で設定ダイアログを開き、設定を変更できます。
         詳しい方は、設定ファイル (.W10Wheel.properties) を直接編集してください。
-        メニューで設定を変更するとすぐに保存されます。
+        設定ダイアログで設定を変更するとすぐに反映され、保存されます。
         設定を変更するか、一度起動して終了すれば、設定ファイルはユーザーディレクトリに生成されます。
-        実行中に設定ファイルを編集した場合は、Properties メニューの Reload か
+        実行中に設定ファイルを編集した場合は、設定ダイアログの Reload か
         --sendReloadProp コマンドで読み込み直してください。
-        読み込み直さずにメニューで設定を変更するか終了すると、実行中の設定で上書きされます。
+        読み込み直さずに設定ダイアログで設定を変更するか終了すると、実行中の設定で上書きされます。
         
         あとの使い方は WheelBall など同種のソフトと同様になります。
         各トリガーを押すと、スクロールモードに移行します。
@@ -155,7 +155,8 @@ URL:
         *Dragのトリガーではドラッグしている間だけスクロールします。
         スクロールモードに固定されません。(Dragged Lock が無効の場合)
         
-        タスクトレイのアイコンをダブルクリックするとPassModeを切り替えます。
+        タスクトレイのアイコンをダブルクリックするか、右クリックメニューの Pause を選択すると
+        PassMode (一時停止) を切り替えます。
         PassModeを有効にするとアイコンが赤色に変更されます。
         
         終了するには、右クリックメニューから Exit を選択してください。
@@ -181,7 +182,7 @@ URL:
         実行中のプロセスを終了します。
         
 設定ファイル:        
-        Propertiesメニューで他のPropertiesを選択すると
+        設定ダイアログの Properties で他のPropertiesを選択すると
         現在の設定は保存されて
         選択されたPropertiesから設定が読み込まれます。
         
@@ -203,22 +204,31 @@ URL:
         引数を渡さない場合は、終了時の設定に関わらず、Defaultで起動します。
         
 メニュー項目:
-        Trigger: トリガーを変更 (設定項目を参照)
-        Keyboard: キーボードトリガー
-        Accel Table: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
-        Priority: プロセスの優先度を変更
-        Set Number: 数値をセット (設定項目を参照)
-        Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
-        VH Adjuster: 垂直、水平の方向固定、切り替え機能
-        Properties: 設定ファイル関連
-        Cursor Change: スクロールモードのカーソル変更
-        Horizontal Scroll: 水平スクロール
-        Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
-        Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
-        Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
-        Language: 言語設定
-        Info: バージョン番号を表示
+        Settings...: 設定ダイアログを開く
+        Pause: 全てのメッセージをそのまま通す (PassMode) # WheelBall の制御停止
+        About: バージョン番号を表示
         Exit: 終了
+
+設定ダイアログ:
+        設定を変更するとすぐに反映され、設定ファイルに保存されます。
+        Properties: 設定ファイルの切り替え、Add (追加)、Delete (削除)、
+                Open Dir (フォルダを開く)、Reload (再読み込み)
+        General タブ:
+                Language: 言語設定
+                Priority: プロセスの優先度を変更
+        Trigger タブ:
+                トリガーを変更 (設定項目を参照)
+                Keyboard: キーボードトリガー
+                pollTimeout, scrollLocktime: 数値をセット (設定項目を参照)
+        Scroll タブ:
+                Cursor Change: スクロールモードのカーソル変更
+                Horizontal Scroll: 水平スクロール
+                Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
+                Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
+                verticalThreshold, horizontalThreshold: 数値をセット (設定項目を参照)
+        Accel Table タブ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
+        Real Wheel Mode タブ: 実際のホイールに近いスクロール (設定項目を参照)
+        VH Adjuster タブ: 垂直、水平の方向固定、切り替え機能
         
 設定項目:
         firstTrigger: string (default: LRTrigger)
