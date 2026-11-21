@@ -42,17 +42,13 @@ let private JapaneseMessage =
         "Close", "閉じる";
 
         "Trigger", "トリガー";
-        "LR (Left <<-->> Right)", "左右 (左 <<-->> 右)";
-        "Left (Left -->> Right)", "左 (左 -->> 右)";
-        "Right (Right -->> Left)", "右 (右 -->> 左)";
-        "Middle", "中央";
+        // The names of the mouse triggers stay English, as in the Readme and the properties
+        // (LRTrigger...): only what is in parentheses is translated
+        "LR (Left <<-->> Right)", "LR (左 <<-->> 右)";
+        "Left (Left -->> Right)", "Left (左 -->> 右)";
+        "Right (Right -->> Left)", "Right (右 -->> 左)";
         "X1", "X1 (拡張1)";
         "X2", "X2 (拡張2)";
-        "LeftDrag", "左ドラッグ";
-        "RightDrag", "右ドラッグ";
-        "MiddleDrag", "中央ドラッグ";
-        "X1Drag", "X1 ドラッグ";
-        "X2Drag", "X2 ドラッグ";
         "Send MiddleClick", "中央クリック送信";
         "Dragged Lock", "ドラッグ後固定";
         
