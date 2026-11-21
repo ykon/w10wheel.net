@@ -162,6 +162,16 @@ let keyDown (info: KHookInfo) =
     let kd = KeyDown(info)
     Ctx.LastFlags.NewKeyDown kd.VKCode
 
+    // The trigger key that does not repeat (Pause) may send no up: a down after its down was
+    // released, quickly. As its up would, lock the scroll it started (this down then ends it),
+    // and do not take the down for a repeat.
+    if Keyboard.isNoRepeatKey kd.VKCode && Ctx.isTriggerKey kd && kd.Same lastEvent then
+        debug "no up before (no repeat key)" kd
+        if Ctx.isPressedKeyboardScrollMode() then
+            Ctx.setReleasedScrollMode()
+
+        lastEvent <- KeyUp(info)
+
     // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
     // the trigger changed): its repeats are suppressed too, whatever the trigger is now
     if Ctx.LastFlags.IsSuppressedKey kd.VKCode then
