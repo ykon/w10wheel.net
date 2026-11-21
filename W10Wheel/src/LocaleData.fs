@@ -2,12 +2,17 @@
 
 [<Literal>]
 let AdminMessage =
-    "W10Wheel is not running in admin mode, so it won't work in certain windows. It's highly recommended to run it as administrator. Click 'OK' for more info."
+    "So it won't work in the windows of some programs (those running as administrator). It's highly recommended to run it as administrator."
 
 let private JapaneseMessage =
     [
         "Double Launch?", "二重起動していませんか？";
-        AdminMessage, "W10Wheelは管理者モードで実行されていないため、\n一部のプログラムでは機能しません。\nそのため、管理者として実行することを推奨します。\n詳細を確認するには、「OK」を押してください。";
+        "W10Wheel is not running as administrator", "W10Wheel は管理者として実行されていません";
+        AdminMessage, "そのため、一部のプログラム (管理者として実行されているもの) のウィンドウでは機能しません。管理者として実行することを推奨します。";
+        "Restart as administrator", "管理者として再起動";
+        "Windows asks for permission (User Account Control).", "UAC の確認が表示されます。";
+        "Continue without administrator rights", "このまま実行";
+        "More info (Wiki)", "詳細 (Wiki)";
 
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
         "Failed keyboard hook install", "キーボードフックのインストールに失敗しました";
@@ -107,7 +112,6 @@ let private JapaneseMessage =
         "English", "英語";
         "Japanese", "日本語";
         
-        "Info", "情報";
         "About", "バージョン情報";
         "Name", "名前";
         "Version", "バージョン";

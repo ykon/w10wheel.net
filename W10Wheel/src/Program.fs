@@ -33,13 +33,50 @@ let private isAdmin () =
     use identity = WindowsIdentity.GetCurrent()
     WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)
 
-let private showAdminMesssage (): DialogResult =
-    MessageBox.Show(convLangP LocaleData.AdminMessage, convLangP "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
+// Whether to restart as administrator. A task dialog, not a message box: its buttons say what they
+// do, and the restart has the shield of UAC. The link opens the wiki (startup as administrator,
+// etc.) and leaves the dialog open. Closed (Esc): continue.
+let private askRestartAsAdmin (): bool =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Information,
+                              Heading = convLangP "W10Wheel is not running as administrator",
+                              Text = convLangP LocaleData.AdminMessage, AllowCancel = true, EnableLinks = true)
+    let restart = TaskDialogCommandLinkButton(convLangP "Restart as administrator",
+                                              convLangP "Windows asks for permission (User Account Control).",
+                                              ShowShieldIcon = true)
+    page.Buttons.Add(restart)
+    page.Buttons.Add(TaskDialogCommandLinkButton(convLangP "Continue without administrator rights"))
+    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" WikiUrl (convLangP "More info (Wiki)"))
+    page.LinkClicked.Add(fun e -> Process.Start(ProcessStartInfo(e.LinkHref, UseShellExecute = true)) |> ignore)
 
-let private checkAdmin () =
-    if not (isAdmin ()) then
-        if (showAdminMesssage ()) = DialogResult.OK then
-            Process.Start(ProcessStartInfo(WikiUrl, UseShellExecute = true)) |> ignore
+    TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) = restart
+
+// ERROR_CANCELLED: the user answered No to UAC
+[<Literal>]
+let private ERROR_CANCELLED = 1223
+
+// Starts this program as administrator (UAC) with the same argument (the properties name; the
+// commands have exited before). Before the hooks and the tray icon: only the lock is released
+// first, or the new instance would take this one for a double launch. Returns whether it has
+// been started (this one exits then); if not, the lock is taken again.
+let private restartAsAdmin (argv: string[]): bool =
+    PreventMultiInstance.unlock()
+    try
+        // A properties name has no quotes (Ctx.isValidPropertiesName, Properties.exists)
+        let args = argv |> Array.map (fun a -> "\"" + a + "\"") |> String.concat " "
+        let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
+                                   WorkingDirectory = Environment.CurrentDirectory)
+        Process.Start(psi) |> ignore
+        true
+    with
+        | :? System.ComponentModel.Win32Exception as e ->
+            if e.NativeErrorCode <> ERROR_CANCELLED then
+                Dialog.errorMessageE e
+            checkDoubleLaunch ()
+            false
+
+let private checkAdmin (argv: string[]) =
+    if not (isAdmin ()) && askRestartAsAdmin () && restartAsAdmin argv then
+        Environment.Exit(0)
 
 let private closeAll () =
     Debug.WriteLine("procExit")
@@ -163,7 +200,7 @@ let main argv =
 
     Ctx.loadPropertiesFileOnly ()
     checkDoubleLaunch ()
-    checkAdmin ()
+    checkAdmin argv
 
     // Not at SessionEnding: the shutdown can still be canceled there (and W10Wheel kept running)
     SystemEvents.SessionEnded.Add (fun _ -> procExit())
