@@ -129,11 +129,15 @@ let private getTrayText b =
     sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
 
 let private getIcon (name: string) =
-    let stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+    use stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
     new Drawing.Icon(stream)
 
+// Made once: a new icon for every switch of Pass Mode would not be released
+let private trayIconRun = lazy (getIcon ICON_RUN_NAME)
+let private trayIconStop = lazy (getIcon ICON_STOP_NAME)
+
 let private getTrayIcon b =
-    getIcon(if b then ICON_STOP_NAME else ICON_RUN_NAME)
+    if b then trayIconStop.Value else trayIconRun.Value
 
 let private changeNotifyIcon b =
     notifyIcon.Text <- (getTrayText b)
@@ -1715,7 +1719,10 @@ let private createPropertiesMenu () =
     let add = fun path -> addItem (createPropertiesMenuItem (Properties.getUserDefName path))
 
     menu.DropDownOpening.Add(fun _ ->
+        // The items made the last time are released (Clear does not dispose them)
+        let old = Array.init items.Count (fun i -> items.[i])
         items.Clear()
+        old |> Array.iter (fun item -> item.Dispose())
 
         addItem (createReloadPropertiesMenuItem())
         addItem (createSavePropertiesMenuItem())

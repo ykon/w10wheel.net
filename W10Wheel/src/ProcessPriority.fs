@@ -24,7 +24,7 @@ let getPriority = function
 // A failure is ignored (the priority is not changed): thrown, it would stop loading the other
 // settings, which would then be stored with their default values
 let setPriority p =
-    let cp = Process.GetCurrentProcess()
+    use cp = Process.GetCurrentProcess()
     try
         match p with
         | Normal -> cp.PriorityClass <- ProcessPriorityClass.Normal

@@ -234,6 +234,10 @@ extern nativeint CopyIcon(nativeint hIcon)
 [<DllImport("user32.dll")>]
 extern bool SetSystemCursor(nativeint hCur, uint32 id)
 
+// https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-destroycursor
+[<DllImport("user32.dll")>]
+extern bool DestroyCursor(nativeint hCursor)
+
 let SPI_SETCURSORS = 0x0057
 
 // https://msdn.microsoft.com/library/windows/desktop/ms724947.aspx

@@ -30,11 +30,17 @@ let private copy (hCur:nativeint): nativeint =
 // trigger), and whatever the setting is now (it may have been changed while scrolling)
 let private changed = ref false
 
+// SetSystemCursor destroys the copy only if it succeeds: destroyed here otherwise
+let private setSystemCursor (hCur: nativeint) (id: int) =
+    let h = copy hCur
+    if h <> IntPtr.Zero && not (WinAPI.SetSystemCursor(h, uint32 id)) then
+        WinAPI.DestroyCursor(h) |> ignore
+
 let change (hCur: nativeint) =
     Volatile.Write(changed, true)
-    WinAPI.SetSystemCursor(copy(hCur), uint32 OCR_NORMAL) |> ignore
-    WinAPI.SetSystemCursor(copy(hCur), uint32 OCR_IBEAM) |> ignore
-    WinAPI.SetSystemCursor(copy(hCur), uint32 OCR_HAND) |> ignore
+    setSystemCursor hCur OCR_NORMAL
+    setSystemCursor hCur OCR_IBEAM
+    setSystemCursor hCur OCR_HAND
 
 let changeV () =
     change(CURSOR_V)
