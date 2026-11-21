@@ -227,6 +227,13 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
 // suppressed and passed keys are kept until their up: whether a key is still pressed cannot
 // be told for sure.
 let private hookInstalled () =
+    // The trigger key pressed (its down suppressed, as the scroll it started): suppress its
+    // repeats and its up until the up (keyUp), or the up alone would pass, or the repeats start
+    // scroll mode again. If its up was missed, its next press is suppressed once.
+    match lastEvent with
+    | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
+    | _ -> ()
+
     lastEvent <- NonEvent
 
     if Ctx.isKeyboardScrollMode() then
