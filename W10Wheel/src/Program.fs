@@ -50,7 +50,12 @@ let private closeAll () =
 
     // Cancel an LR trigger wait: after its timeout it would resend a down whose up does not
     // come any more (the hook is removed)
-    EventWaiter.offer Mouse.Cancel |> ignore
+    // Maybe on another thread (SessionEnded): an offer made by the hook at the same time throws
+    // (EventWaiter), which must not stop the rest (storing the properties included)
+    try
+        EventWaiter.offer Mouse.Cancel |> ignore
+    with
+        | e -> Debug.WriteLine("procExit: " + e.Message)
 
     // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
     // This also waits for a scroll start in progress and refuses later ones.
