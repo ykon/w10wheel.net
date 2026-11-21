@@ -150,6 +150,10 @@ let main argv =
     // Net11, not Latest: the look does not change with a newer .NET. SettingsForm adjusts the
     // widths for it (isModernStyles).
     Application.SetDefaultVisualStylesMode(VisualStylesMode.Net11)
+    // Dark or light as the apps mode of Windows (the settings dialog, the tray menu, the input
+    // box). SystemColors then return the colors of the mode, which SettingsForm uses. The message
+    // boxes (MessageBox, drawn by Windows) stay light.
+    Application.SetColorMode(SystemColorMode.System)
     // Also before any window: the windows of the modules (Ctx.notifyIcon, RawInput.messageWindow)
     // are created when the modules are first used, after this. Without it (no manifest either),
     // the menu and the dialogs are stretched and blurred on a scaled display. Scrolling does not
