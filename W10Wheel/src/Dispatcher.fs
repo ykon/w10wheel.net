@@ -112,15 +112,23 @@ let private procKeyboardEvent nCode (wParam: nativeint) (info:KHookInfo) (callNe
         callNextHook()
     elif Ctx.isPassMode() then
         // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned off,
-        // even if they have become the trigger (see KEventHandler.keyDown)
+        // even if they have become the trigger (see KEventHandler.keyDown). The up alone of a
+        // key whose down was suppressed before Pass Mode is suppressed (LastFlags.Init), as the
+        // hook does for the buttons (Windows.dropLoneUp).
+        let vk = int info.vkCode
         match wParam.ToInt32() with
         | WM_KEYDOWN | WM_SYSKEYDOWN ->
-            Ctx.LastFlags.NewKeyDown (int info.vkCode)
-            Ctx.LastFlags.SetPassedKey (int info.vkCode)
-        | WM_KEYUP | WM_SYSKEYUP -> Ctx.LastFlags.GetAndReset_PassedKey (int info.vkCode) |> ignore
-        | _ -> ()
-
-        callNextHook()
+            Ctx.LastFlags.NewKeyDown vk
+            Ctx.LastFlags.ResetLoneUpKey vk
+            Ctx.LastFlags.SetPassedKey vk
+            callNextHook()
+        | WM_KEYUP | WM_SYSKEYUP when Ctx.LastFlags.GetAndReset_LoneUpKey vk ->
+            Debug.WriteLine(sprintf "Pass Mode: suppress the up alone of a suppressed down: %d" vk)
+            IntPtr(1)
+        | WM_KEYUP | WM_SYSKEYUP ->
+            Ctx.LastFlags.GetAndReset_PassedKey vk |> ignore
+            callNextHook()
+        | _ -> callNextHook()
     else
         match wParam.ToInt32() with
         | WM_KEYDOWN | WM_SYSKEYDOWN -> KEventHandler.keyDown info

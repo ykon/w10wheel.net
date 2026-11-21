@@ -628,6 +628,10 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up has
+    // not come yet: their up alone is suppressed (the application did not get the down). Their
+    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
+    static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
         let res = flag
@@ -642,10 +646,15 @@ type LastFlags() =
     // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
     // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
     // suppressed is not pressed for it. A key whose up was missed passes its next down once.
+    // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
+    // suppressed again: only their up alone is (kdL), as the hook does for the buttons
+    // (Windows.dropLoneUp).
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        for vk in 0 .. kdS.Length - 1 do
+            if kdS.[vk] then kdL.[vk] <- true
         Array.fill kdS 0 (kdS.Length) false
 
     static member SetResent (down: MouseEvent): unit =
@@ -712,10 +721,24 @@ type LastFlags() =
             kdS.[vk] <- false
             kdP.[vk] <- false
 
+    // A down of a key (kdL): its up is not alone any more
+    static member ResetLoneUpKey (vk: int) =
+        if isKey vk then kdL.[vk] <- false
+
+    // The up of a key whose down was suppressed before Init (kdL), with no down since; resets it
+    static member GetAndReset_LoneUpKey (vk: int): bool =
+        isKey vk && getAndReset(&kdL.[vk])
+
+    // The keyboard hook is installed again: a key whose up was missed while it was removed may
+    // have been pressed since, its down passing (no hook): do not suppress its up
+    static member ResetLoneUpKeys () =
+        Array.fill kdL 0 kdL.Length false
+
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdP 0 kdP.Length false
+        Array.fill kdL 0 kdL.Length false
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
