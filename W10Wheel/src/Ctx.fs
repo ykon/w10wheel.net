@@ -387,14 +387,15 @@ type private Scroll() =
         sx <- x
         sy <- y
 
+    // Also called when not in scroll mode (e.g. initState, or the drag trigger clicked): only
+    // what was done is undone (RawInput is registered in scroll mode only, see WinCursor.restore)
     static let exit () =
-        RawInput.unregister() |> ignore
+        if mode then RawInput.unregister() |> ignore
 
         mode <- false
         releasedMode <- false
 
-        if cursorChange then
-            WinCursor.restore() |> ignore
+        WinCursor.restore() |> ignore
 
     static let start (info: HookInfo) (generation: int option) =
         let sameGeneration =
@@ -472,7 +473,7 @@ type private Scroll() =
     // RawInput is not registered again afterwards.
     static member Close () = lock monitor (fun () ->
         closed <- true
-        if mode then exit ()
+        exit ()
     )
 
     // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
@@ -483,7 +484,7 @@ type private Scroll() =
         // A pending LR trigger start is refused (Pass Mode generation): do not leave it
         // starting, the ups after Pass Mode is turned off would be taken for it
         if b then starting <- false
-        if b && mode then exit ()
+        if b then exit ()
     )
 
     static member CheckExit (time: uint32) =
