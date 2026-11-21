@@ -140,7 +140,7 @@ let private changeNotifyIcon b =
     notifyIcon.Icon <- (getTrayIcon b)
 
 // Set to Scroll.SetPassMode after Scroll is defined (see below)
-let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
+let mutable private setScrollPassMode: unit -> unit = (fun () -> ())
 
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
@@ -172,10 +172,12 @@ type private Pass() =
             lock passModeLock (fun () ->
                 if b then Volatile.Write(passModeGeneration, passModeGeneration.Value + 1)
                 mode <- b)
-            setScrollPassMode b
+            setScrollPassMode ()
             if b then onPassModeOn()
-            changeNotifyIcon b
-            passModeMenuItem.Checked <- b
+            // As it is now, as Scroll.SetPassMode does: switched again while waiting for its lock,
+            // the other call has shown it already
+            changeNotifyIcon mode
+            passModeMenuItem.Checked <- mode
 
     static member toggleMode () =
         Pass.Mode <- not mode
@@ -478,8 +480,11 @@ type private Scroll() =
 
     // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
     // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
-    // lock, so that a Start in progress on the EventWaiter thread is not missed.
-    static member SetPassMode (b: bool) = lock monitor (fun () ->
+    // lock, so that a Start in progress on the EventWaiter thread is not missed. Applies Pass
+    // Mode as it is now: waiting for the lock on the UI thread can dispatch messages, e.g.
+    // another --sendPassMode that switched it again (and applied it) meanwhile.
+    static member SetPassMode () = lock monitor (fun () ->
+        let b = Pass.Mode
         passMode <- b
         // A pending LR trigger start is refused (Pass Mode generation): do not leave it
         // starting, the ups after Pass Mode is turned off would be taken for it
@@ -539,7 +544,7 @@ let exitScrollMode (): unit = Scroll.Exit()
 let closeScrollMode (): unit = Scroll.Close()
 
 // Pass.Mode (menu, tray icon and --sendPassMode) tells Scroll about Pass Mode
-setScrollPassMode <- (fun b -> Scroll.SetPassMode b)
+setScrollPassMode <- (fun () -> Scroll.SetPassMode())
 
 let checkExitScroll (time: uint32) = Scroll.CheckExit time
 let getScrollStartPoint () = Scroll.StartPoint
