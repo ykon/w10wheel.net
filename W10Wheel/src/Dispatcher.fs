@@ -107,8 +107,19 @@ let private getMouseDispatcher () = new WinAPI.LowLevelMouseProc(mouseProc)
 let setMouseDispatcher () =
     WinHook.setMouseDispatcher (getMouseDispatcher ())
 
+// LLKHF_INJECTED (0x10), LLKHF_LOWER_IL_INJECTED (0x02, set with LLKHF_INJECTED): the bits are
+// tested, as for the mouse (Windows.isInjectedEvent). Not LLKHF_EXTENDED (0x01).
+let private isInjectedKey (info: KHookInfo) =
+    (info.flags &&& 0x12u) <> 0u
+
 let private procKeyboardEvent nCode (wParam: nativeint) (info:KHookInfo) (callNextHook: unit -> nativeint): nativeint =
     if nCode < 0 then
+        callNextHook()
+    // The keys of other software (injected, e.g. the auto-type of a password manager sending
+    // Tab, or a macro) pass without being handled, as the mouse events of other software do: the
+    // trigger key sent would start scroll mode and be suppressed (then the next key, ending it).
+    // They do not change the flags of the physical keys either.
+    elif isInjectedKey info then
         callNextHook()
     elif Ctx.isPassMode() then
         // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned off,
