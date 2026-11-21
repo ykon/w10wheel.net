@@ -147,7 +147,7 @@ let private changeNotifyIcon b =
     notifyIcon.Icon <- (getTrayIcon b)
 
 // Set to Scroll.SetPassMode after Scroll is defined (see below)
-let mutable private setScrollPassMode: unit -> unit = (fun () -> ())
+let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
@@ -179,8 +179,10 @@ type private Pass() =
             lock passModeLock (fun () ->
                 if b then Volatile.Write(passModeGeneration, passModeGeneration.Value + 1)
                 mode <- b)
-            setScrollPassMode ()
+            // Before waiting for the lock of Scroll (setScrollPassMode), which can dispatch
+            // messages: switched off again meanwhile, it would reset the handlers' state after
             if b then onPassModeOn()
+            setScrollPassMode b
             // As it is now, as Scroll.SetPassMode does: switched again while waiting for its lock,
             // the other call has shown it already
             changeNotifyIcon mode
@@ -490,14 +492,17 @@ type private Scroll() =
     // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
     // lock, so that a Start in progress on the EventWaiter thread is not missed. Applies Pass
     // Mode as it is now: waiting for the lock on the UI thread can dispatch messages, e.g.
-    // another --sendPassMode that switched it again (and applied it) meanwhile.
-    static member SetPassMode () = lock monitor (fun () ->
+    // another --sendPassMode that switched it again (and applied it) meanwhile. Scroll mode is
+    // left if this call turned it on (turnedOn), even if it is off again: the handlers' state
+    // has been reset (onPassModeOn), the trigger could not end it.
+    static member SetPassMode (turnedOn: bool) = lock monitor (fun () ->
         let b = Pass.Mode
         passMode <- b
-        // A pending LR trigger start is refused (Pass Mode generation): do not leave it
-        // starting, the ups after Pass Mode is turned off would be taken for it
-        if b then starting <- false
-        if b then exit ()
+        if b || turnedOn then
+            // A pending LR trigger start is refused (Pass Mode generation): do not leave it
+            // starting, the ups after Pass Mode is turned off would be taken for it
+            starting <- false
+            exit ()
     )
 
     static member CheckExit (time: uint32) =
@@ -552,7 +557,7 @@ let exitScrollMode (): unit = Scroll.Exit()
 let closeScrollMode (): unit = Scroll.Close()
 
 // Pass.Mode (menu, tray icon and --sendPassMode) tells Scroll about Pass Mode
-setScrollPassMode <- (fun () -> Scroll.SetPassMode())
+setScrollPassMode <- (fun b -> Scroll.SetPassMode b)
 
 let checkExitScroll (time: uint32) = Scroll.CheckExit time
 let getScrollStartPoint () = Scroll.StartPoint
