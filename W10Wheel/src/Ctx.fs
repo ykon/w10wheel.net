@@ -1529,6 +1529,9 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
+// The default values are kept (defaultProp) once, before the first load: not after a load that
+// failed (loaded is false again), the settings are not the default values then
+let mutable private defaultSaved = false
 
 let loadPropertiesFileOnly (): unit =
     try
@@ -1542,8 +1545,9 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
-    if not loaded then
+    if not defaultSaved then
         setSettings defaultProp
+        defaultSaved <- true
 
     try
         // Not loaded if the file could not be read (e.g. locked): the settings are not stored
