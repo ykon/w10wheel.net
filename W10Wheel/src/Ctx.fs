@@ -676,6 +676,12 @@ type LastFlags() =
         | KeyDown(_) -> kdS.[down.VKCode] <- true
         | _ -> raise (ArgumentException())
 
+    // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
+    static member TakeSuppressedDowns (): bool[] =
+        let res = [| ldS; rdS; mdS; x1S; x2S |]
+        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        res
+
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldS)

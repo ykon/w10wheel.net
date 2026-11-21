@@ -660,6 +660,11 @@ let private changeTrigger (changed: bool): unit =
         if triggerStarted.IsDown then
             canceledDowns.[buttonIndex triggerStarted] <- true
 
+        // The downs suppressed by the old trigger (e.g. the LR trigger's pair) too: the new
+        // handlers could take their up first (e.g. a new LR trigger wait)
+        Ctx.LastFlags.TakeSuppressedDowns() |> Array.iteri (fun i b ->
+            if b then canceledDowns.[i] <- true)
+
         triggerStarted <- NonEvent
         drag <- dragDefault
         dragged <- false
