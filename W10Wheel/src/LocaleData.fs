@@ -10,6 +10,7 @@ let private JapaneseMessage =
         AdminMessage, "W10Wheelは管理者モードで実行されていないため、\n一部のプログラムでは機能しません。\nそのため、管理者として実行することを推奨します。\n詳細を確認するには、「OK」を押してください。";
 
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
+        "Failed keyboard hook install", "キーボードフックのインストールに失敗しました";
         "Properties does not exist", "設定ファイルが存在しません";
         "Unknown Command", "不明なコマンド";
         "Command Error", "コマンドのエラー";

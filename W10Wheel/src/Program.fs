@@ -87,14 +87,19 @@ let private getBool (sl: string list): bool =
             Environment.Exit(1)
             false
 
+// The errors of the arguments are shown in the language of the properties (Default: no other
+// is selected then)
 let private setSelectedProperties name =
-    if Properties.exists(name) then
+    // Default is always valid (its file is not written until exit)
+    if name = Properties.DEFAULT_DEF || Properties.exists(name) then
         Ctx.setSelectedProperties name
     else
-        Dialog.errorMessage (sprintf "%s: %s" (convLang "Properties does not exist") name) (convLang "Error")
+        Ctx.loadPropertiesFileOnly ()
+        Dialog.errorMessage (sprintf "%s: %s" (convLangP "Properties does not exist") name) (convLangP "Error")
 
 let private unknownCommand name =
-    Dialog.errorMessage (sprintf "%s: %s" (convLang "Unknown Command") name) (convLang "Command Error")
+    Ctx.loadPropertiesFileOnly ()
+    Dialog.errorMessage (sprintf "%s: %s" (convLangP "Unknown Command") name) (convLangP "Command Error")
     Environment.Exit(1)
 
 let private procArgv (argv: string[]) =
@@ -145,9 +150,12 @@ let main argv =
 
     Ctx.loadProperties false
     Ctx.setSystemTray ()
-    if not (WinHook.setMouseHook ()) then
-        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") (WinError.getLastErrorMessage())) (convLang "Error")
+    match WinHook.setMouseHook () with
+    | Some(err) ->
+        Ctx.hideSystemTray ()
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") err) (convLang "Error")
         Environment.Exit(1)
+    | None -> ()
 
     Application.Run()
     Debug.WriteLine("Exit message loop")

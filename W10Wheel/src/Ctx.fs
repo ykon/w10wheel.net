@@ -1200,13 +1200,25 @@ let private setTargetVKCode name =
         changeKeyboardTrigger old true
 
 let private setKeyboardHookOf (b: bool) =
-    WinHook.setOrUnsetKeyboardHook b
-    if b then
-        // Installed again on every load (e.g. Reload after Windows removed it): ups may have
-        // been missed
-        keyboardHookInstalled ()
-    else
+    match WinHook.setOrUnsetKeyboardHook b with
+    | Some(err) ->
+        // Not installed (the previous hook removed): off, as the menu shows
+        Volatile.Write(keyboardHook, false)
+        match boolMenuDict.TryGetValue DataID.keyboardHook with
+        | true, item ->
+            item.Checked <- false
+            item.Text <- convLang(getOnOffText false)
+        | _ -> ()
+
         changeKeyboardTrigger (getTargetVKCode()) false
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
+    | None ->
+        if b then
+            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
+            // been missed
+            keyboardHookInstalled ()
+        else
+            changeKeyboardTrigger (getTargetVKCode()) false
 
 
 
@@ -1281,6 +1293,10 @@ let private createInfoMenuItem () =
         let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
         MessageBox.Show(msg, convLang("Info"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
+
+// Before exiting without the message loop (Environment.Exit): the icon would remain in the tray
+let hideSystemTray () =
+    notifyIcon.Visible <- false
 
 let exitAction () =
     notifyIcon.Visible <- false
