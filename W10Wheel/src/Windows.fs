@@ -639,16 +639,6 @@ let private __resendUp (me: MouseEvent) (kind: uint64) (pressId: int) =
 let resendUp (me: MouseEvent) =
     __resendUp me KIND_RELEASE (pressIdOf me)
 
-// Sends a resent up again as it came, with its kind and press (a later press may have started
-// since): see EventHandler.skipResendEventLR
-let resendUpAgain (me: MouseEvent) =
-    let send (info: HookInfo) flags =
-        enqueue (Ctx.getPassModeGeneration()) [| createInput info.pt 0 flags 0u (info.dwExtraInfo.ToUInt64()) |]
-    match me with
-    | LeftUp(info) -> send info MOUSEEVENTF_LEFTUP
-    | RightUp(info) -> send info MOUSEEVENTF_RIGHTUP
-    | _ -> raise (ArgumentException())
-
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
 // alone (the up of such a down is resent by checkResentDown before the wait is offered): it
 // passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.

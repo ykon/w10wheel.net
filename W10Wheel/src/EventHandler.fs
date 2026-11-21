@@ -21,10 +21,6 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NonEvent
-let private lastResendLeftEvent: MouseEvent ref = ref NonEvent
-let private lastResendRightEvent: MouseEvent ref = ref NonEvent
-
-let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
@@ -50,9 +46,6 @@ let private buttonIndex (me: MouseEvent): int =
 
 let private initState () =
     lastEvent <- NonEvent
-    lastResendLeftEvent := NonEvent
-    lastResendRightEvent := NonEvent
-    resentDownUp <- false
     secondTriggerUp <- false
     dragged <- false
     triggerStarted <- NonEvent
@@ -61,50 +54,21 @@ let private initState () =
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
 
-let private getLastResendEvent me =
-    match me with
-    | LeftEvent(_) -> lastResendLeftEvent
-    | RightEvent(_) -> lastResendRightEvent
-    | _ -> raise (InvalidOperationException())
-
-let private isCorrectOrder pre cur =
-    match pre, cur with
-    | NonEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NonEvent, RightUp(_) | RightUp(_), RightUp(_) ->
-        false
-    | _ -> true
-
-let private checkCorrectOrder me =
-    isCorrectOrder !(getLastResendEvent me) me
-
 let private debug (msg: string) (me: MouseEvent) =
     Debug.WriteLine(msg + ": " + me.Name)
 
+// The injected events pass: W10Wheel's own resends (checked by the hook before, see
+// Windows.dropResent) and those of other software. A resent up cannot come before its down:
+// the down is queued first and the sender sends in order, so they are not reordered here.
 let private skipResendEventLR (me: MouseEvent): nativeint option =
-    let pass () =
-        debug "pass resend event" me
-        (getLastResendEvent me) := me
-        callNextHook()
-
     if not (Windows.isInjectedEvent me) then
         None
     elif Windows.isResendClickEvent me then
         debug "pass resendClick event" me
         callNextHook()
     elif Windows.isResendEvent me then
-        if resentDownUp then
-            debug "ResendEvent: resentDownUp" me
-            resentDownUp <- false
-
-            if checkCorrectOrder me then
-                pass()
-            else
-                debug "Bad: resendUp retry" me
-                Thread.Sleep(1)
-                Windows.resendUpAgain me
-                suppress()
-        else
-            pass()
-
+        debug "pass resend event" me
+        callNextHook()
     else
         debug "pass other software event" me
         callNextHook()
@@ -260,7 +224,6 @@ let private checkSuppressedDown (up: MouseEvent): nativeint option =
 let private checkResentDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_ResentDown up then
         debug "resendUp and suppress (checkResentDown)" up
-        resentDownUp <- true
         Windows.resendUp up
         suppress()
     else
