@@ -108,10 +108,22 @@ let rec private getResult (cs:Checkers) (ke:KeyboardEvent) =
         | None -> getResult fs ke
     | _ -> raise (ArgumentException())
 
+// The scroll mode of a mouse trigger is held (or its start pending): pressing the keyboard
+// trigger ends it. Its down is suppressed, and so are its repeats and its up (keyUp).
+let private checkExitOtherScroll (ke: KeyboardEvent): nativeint option =
+    if Ctx.isPressedMouseScrollMode() || Ctx.isStartingScrollMode() then
+        debug "exit scroll mode (other trigger)" ke
+        Ctx.exitScrollMode()
+        Ctx.LastFlags.SetSuppressed ke
+        suppress()
+    else
+        None
+
 let private singleDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkSameLastEvent
         checkExitScrollDown
+        checkExitOtherScroll
         checkTriggerScrollStart
         endIllegalState
     ]

@@ -116,6 +116,24 @@ let private checkExitScrollDown (me: MouseEvent): nativeint option =
     else
         None
 
+// The scroll mode of the keyboard trigger is held: pressing a mouse trigger ends it. Its down is
+// suppressed, and so is its up (checkSuppressedDown).
+let private checkExitOtherScroll (down: MouseEvent): nativeint option =
+    if Ctx.isPressedKeyboardScrollMode() then
+        debug "exit scroll mode (other trigger)" down
+        Ctx.exitScrollMode()
+        Ctx.LastFlags.SetSuppressed down
+        suppress()
+    else
+        None
+
+// For the LR, left and right triggers: their buttons only (another button passes as before)
+let private checkExitOtherScrollLR (down: MouseEvent): nativeint option =
+    if Ctx.isLRTrigger() || Ctx.isTriggerEvent down then
+        checkExitOtherScroll down
+    else
+        None
+
 let private passPressedScrollMode (down: MouseEvent): nativeint option =
     if Ctx.isPressedScrollMode() then
         debug "pass scroll mode (Pressed)" down
@@ -387,6 +405,7 @@ let private lrDown (me: MouseEvent): nativeint =
         checkSameLastEvent
         skipExcludeWindow
         checkExitScrollDown
+        checkExitOtherScrollLR
         passPressedScrollMode
         //passSingleEvent
         offerEventWaiter
@@ -425,6 +444,7 @@ let private singleDown (me: MouseEvent): nativeint =
         //resetLastFlags
         checkExitScrollDown
         passNotTrigger
+        checkExitOtherScroll
         checkKeySendMiddle
         checkTriggerScrollStart
         endIllegalState
@@ -456,6 +476,7 @@ let private dragDown (me: MouseEvent): nativeint =
         //resetLastFlags
         checkExitScrollDown
         passNotDragTrigger
+        checkExitOtherScroll
         startScrollDrag
     ]
 
