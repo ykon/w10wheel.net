@@ -71,7 +71,7 @@ let private JapaneseMessage =
         "verticalThreshold", "垂直スクロール閾値";
         "horizontalThreshold", "水平スクロール閾値";
 
-        "Real Wheel Mode", "擬似ホイールモード";
+        "Real Wheel Mode", "リアルホイールモード";
         "wheelDelta", "ホイール回転値";
         "vWheelMove", "垂直ホイール移動値";
         "hWheelMove", "水平ホイール移動値";
