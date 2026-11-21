@@ -634,6 +634,11 @@ type LastFlags() =
         flag <- false
         res
 
+    // Keys whose up may not come (the Pause key may send only a down): not recorded, or their
+    // next down would be taken for a repeat
+    static let isKeyWithUp (vk: int) =
+        vk >= 0 && vk < kdS.Length && vk <> 0x13 // VK_PAUSE
+
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
@@ -676,7 +681,7 @@ type LastFlags() =
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdS.[down.VKCode] <- true
+        | KeyDown(_) -> if isKeyWithUp down.VKCode then kdS.[down.VKCode] <- true
         | _ -> raise (ArgumentException())
 
     // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
@@ -685,10 +690,10 @@ type LastFlags() =
 
     // The keyboard trigger changed while the old key was pressed (its down was suppressed)
     static member SetSuppressedKey (vk: int) =
-        if vk >= 0 && vk < kdS.Length then kdS.[vk] <- true
+        if isKeyWithUp vk then kdS.[vk] <- true
 
     static member SetPassedKey (vk: int) =
-        if vk >= 0 && vk < kdP.Length then kdP.[vk] <- true
+        if isKeyWithUp vk then kdP.[vk] <- true
 
     // The key's down passed: its repeats and its up pass too, even if it is the trigger now
     static member IsPassedKey (vk: int): bool =
