@@ -1575,12 +1575,6 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
-    // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
-    // progress (Reload, switching properties) ends, so that the new ones apply from the next. The
-    // keyboard trigger's ended already (setKeyboardHookOf), not the mouse triggers' if the
-    // trigger did not change. Their trigger's up is still suppressed.
-    exitScrollMode()
-
     if not defaultSaved then
         setSettings defaultProp
         defaultSaved <- true
@@ -1623,6 +1617,14 @@ let loadProperties (update:bool): unit =
 
         setNum DataID.firstMinThreshold 1 10
         setNum DataID.switchingThreshold 10 500
+
+        // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+        // progress (Reload, switching properties) ends once they are set, so that the new ones
+        // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+        // keyboard hook). Not if the file could not be read: the settings have not changed. The
+        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+        exitScrollMode()
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
