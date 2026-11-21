@@ -55,6 +55,57 @@ let private isDown =
     hasFlags (WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_RIGHTDOWN |||
               WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN ||| WinAPI.Event.MOUSEEVENTF_XDOWN)
 
+let private rand = Random()
+
+let private createRandomNumber (): uint32 =
+    let mutable res = 0u
+
+    while res = 0u do
+        res <- uint32 (rand.Next())
+
+    res
+
+let private resendTag = createRandomNumber()
+// Not the same as resendTag: a click would be taken for another resend (see isResendInfo)
+let private resendClickTag =
+    let rec loop () =
+        match createRandomNumber() with
+        | n when n = resendTag -> loop ()
+        | n -> n
+    loop ()
+
+// The kind of a resent input and the ID of the physical press it is for, in the upper half of
+// dwExtraInfo (resendTag in the lower half): see dropResent. In a 32-bit process dwExtraInfo
+// has only the tag (all are KIND_PLAIN).
+let private KIND_PLAIN = 0UL   // passed as is (e.g. a down and up pair)
+let private KIND_DOWN = 1UL    // a down resent alone (its up comes later)
+let private KIND_RELEASE = 2UL // the up resent for a down resent alone
+
+let private PRESS_ID_MASK = 0xFFFFFF
+
+// The kind and press of an input resent alone (see resendExtra): None for the others, and in a
+// 32-bit process (no kind)
+let private inputResendKind (input: WinAPI.MINPUT): (uint64 * int) option =
+    let extra = input.mi.dwExtraInfo.ToUInt64()
+    if IntPtr.Size = 8 && (extra &&& 0xFFFFFFFFUL) = uint64 resendTag then
+        let upper = extra >>> 32
+        Some(upper >>> 24, int (upper &&& uint64 PRESS_ID_MASK))
+    else
+        None
+
+// Left (0) or right (1): only their downs and ups are resent alone
+let private inputButton (input: WinAPI.MINPUT): int =
+    if hasFlags (WinAPI.Event.MOUSEEVENTF_LEFTDOWN ||| WinAPI.Event.MOUSEEVENTF_LEFTUP) input then 0 else 1
+
+// The press of the last down resent alone that was sent, by button (left, right; 0: none), for
+// the exit (see isSendableAtExit). Under sendLock.
+let private sentDownId = Array.create 2 0
+
+let private recordSentDown (input: WinAPI.MINPUT) =
+    match inputResendKind input with
+    | Some(kind, id) when kind = KIND_DOWN -> sentDownId.[inputButton input] <- id
+    | _ -> ()
+
 // Wheel events are not sent in Pass Mode, nor if Pass Mode has been turned on (or the state
 // initialized) since they were queued (generation changed): W10Wheel does not scroll then.
 // Not checked under a lock: SendInput waits for the low-level hooks (on the UI thread), which
@@ -113,10 +164,20 @@ let private sendUps (ups: WinAPI.MINPUT[]) =
 let private isSingleUp (msgs: WinAPI.MINPUT[]) =
     msgs.Length = 1 && isUp msgs.[0]
 
+// At exit, an up for a down resent earlier is still sent. But the hooks are removed (or are
+// about to be), and nothing drops the up resent for a down resent alone that was not sent (see
+// dropResent): it is sent only if that down was, or it would be an up without a down (e.g. a
+// right up opens a context menu).
+let private isSendableAtExit (msgs: WinAPI.MINPUT[]) =
+    isSingleUp msgs &&
+        match inputResendKind msgs.[0] with
+        | Some(kind, id) when kind = KIND_RELEASE -> id = sentDownId.[inputButton msgs.[0]]
+        | _ -> true
+
 let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
     if Volatile.Read(&closing.contents) then
         // At exit: an up for a down resent earlier is still sent (see closeInput)
-        if isSingleUp msgs then
+        if isSendableAtExit msgs then
             sendUps msgs
         else
             Debug.WriteLine("sendBatch: dropped (closing)")
@@ -136,7 +197,9 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
             // sent after it, releasing it. Its up is then dropped by the hook (dropResent).
             if not (isNull unsent.Value) then
                 Debug.WriteLine("sendBatch: dropped a down (unsent ups)")
-            elif not (sendOne msgs.[0]) then
+            elif sendOne msgs.[0] then
+                recordSentDown msgs.[0]
+            else
                 Debug.WriteLine("sendBatch: SendInput failed (down)")
         | 1 -> sendUnlessPassMode generation msgs.[0] |> ignore
         | _ when not (isNull unsent.Value) ->
@@ -169,7 +232,7 @@ let closeInput () =
             let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
             while inputQueue.TryTake(&item, 0) do
                 let _, msgs = item
-                if isSingleUp msgs then addUnsent msgs
+                if isSendableAtExit msgs then addUnsent msgs
 
             retryUnsent true
         finally
@@ -206,34 +269,6 @@ let private senderThread = new Thread(fun () ->
 //let private senderThread = new Thread(sender)
 senderThread.IsBackground <- true
 senderThread.Start()
-
-let private rand = Random()
-
-let private createRandomNumber (): uint32 =
-    let mutable res = 0u
-
-    while res = 0u do
-        res <- uint32 (rand.Next())
-
-    res
-
-let private resendTag = createRandomNumber()
-// Not the same as resendTag: a click would be taken for another resend (see isResendInfo)
-let private resendClickTag =
-    let rec loop () =
-        match createRandomNumber() with
-        | n when n = resendTag -> loop ()
-        | n -> n
-    loop ()
-
-// The kind of a resent input and the ID of the physical press it is for, in the upper half of
-// dwExtraInfo (resendTag in the lower half): see dropResent. In a 32-bit process dwExtraInfo
-// has only the tag (all are KIND_PLAIN).
-let private KIND_PLAIN = 0UL   // passed as is (e.g. a down and up pair)
-let private KIND_DOWN = 1UL    // a down resent alone (its up comes later)
-let private KIND_RELEASE = 2UL // the up resent for a down resent alone
-
-let private PRESS_ID_MASK = 0xFFFFFF
 
 let private resendExtra (kind: uint64) (pressId: int): uint64 =
     if IntPtr.Size = 8 then
