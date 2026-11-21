@@ -324,11 +324,12 @@ let private passNotStartedTrigger (up: MouseEvent): nativeint option =
         debug "pass (the down passed)" up
         callNextHook()
 
-// Scroll mode started by the keyboard trigger after the drag trigger: its up neither continues
-// nor ends it (nor resends a click). Its down started the drag (suppressed), so is the up.
-let private suppressKeyboardScroll (up: MouseEvent): nativeint option =
-    if Ctx.isKeyboardScrollMode() then
-        debug "suppress (keyboard scroll mode)" up
+// The drag is not the pressed scroll mode any more: the keyboard trigger has started scroll mode
+// since (maybe ended already). Its up neither continues nor ends it (nor resends a click),
+// and its down started the drag (suppressed), so the up is suppressed.
+let private suppressNotDragScroll (up: MouseEvent): nativeint option =
+    if not (Ctx.isPressedMouseScrollMode()) then
+        debug "suppress (not drag scroll mode)" up
         suppress()
     else
         None
@@ -505,7 +506,7 @@ let private dragUp (me: MouseEvent): nativeint =
         checkSuppressedDown
         passNotDragTrigger
         passNotStartedTrigger
-        suppressKeyboardScroll
+        suppressNotDragScroll
         continueScrollDrag
         exitAndResendDrag
     ]
