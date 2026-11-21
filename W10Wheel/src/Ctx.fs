@@ -1476,7 +1476,14 @@ let private setCustomAccelOfProperty (): unit =
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
         let cam = prop.GetDoubleArray(DataID.customAccelMultiplier)
 
-        if cat.Length <> 0 && cat.Length = cam.Length then
+        // The thresholds are looked up in ascending order (Windows.getNearestIndex), and a
+        // multiplier that is not a number (NaN, Infinity: parsed without error) would make the
+        // delta invalid
+        let isAscending = cat |> Array.pairwise |> Array.forall (fun (a, b) -> a < b)
+        let isValidThreshold = cat |> Array.forall (fun n -> n >= 0) && isAscending
+        let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
+
+        if cat.Length <> 0 && cat.Length = cam.Length && isValidThreshold && isValidMultiplier then
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
 

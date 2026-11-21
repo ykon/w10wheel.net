@@ -470,8 +470,11 @@ let private sendRealVWheel pt d =
 
     vLastMove <- if d > 0 then Plus else Minus
 
+// Not a delta of 0 (e.g. a multiplier smaller than 1 for a small move): it would not scroll
 let private sendDirectVWheel (pt:WinAPI.POINT) (d:int) =
-    sendInput pt (reverseIfV (addAccelIf d)) MOUSEEVENTF_WHEEL 0u 0u
+    let delta = reverseIfV (addAccelIf d)
+    if delta <> 0 then
+        sendInput pt delta MOUSEEVENTF_WHEEL 0u 0u
 
 let private sendRealHWheel pt d =
     let send () = sendInput pt (getHWheelDelta d) MOUSEEVENTF_HWHEEL 0u 0u
@@ -488,7 +491,9 @@ let private sendRealHWheel pt d =
     hLastMove <- if d > 0 then Plus else Minus
 
 let private sendDirectHWheel (pt:WinAPI.POINT) (d:int) =
-    sendInput pt (reverseIfH (addAccelIf d)) MOUSEEVENTF_HWHEEL 0u 0u
+    let delta = reverseIfH (addAccelIf d)
+    if delta <> 0 then
+        sendInput pt delta MOUSEEVENTF_HWHEEL 0u 0u
 
 let mutable private sendVWheel = sendDirectVWheel
 let mutable private sendHWheel = sendDirectHWheel
