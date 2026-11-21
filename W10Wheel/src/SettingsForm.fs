@@ -168,8 +168,11 @@ type SettingsDialog(conv: string -> string) =
                             Anchor = (AnchorStyles.Top ||| AnchorStyles.Left))
     let navButtons = ResizeArray<RadioButton>()
     let pages = ResizeArray<TableLayoutPanel>()
+    // The buttons on the left (AddBottomButton, e.g. Reset to defaults), the hint, and Close
     let bottom = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                      ColumnCount = 2, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
+                                      ColumnCount = 3, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
+    let bottomLeft = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                         WrapContents = false, Anchor = AnchorStyles.Left, Margin = Padding(0))
     let closeButton = new Button(AutoSize = true, Anchor = AnchorStyles.Right)
 
     let register (b: Binding) = bindings.Add b
@@ -236,10 +239,12 @@ type SettingsDialog(conv: string -> string) =
         // Esc closes it. Not Enter (AcceptButton): it ends the input of a number.
         form.CancelButton <- closeButton
 
+        bottom.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100.0f)) |> ignore
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        bottom.Controls.Add(hint, 0, 0)
-        bottom.Controls.Add(closeButton, 1, 0)
+        bottom.Controls.Add(bottomLeft, 0, 0)
+        bottom.Controls.Add(hint, 1, 0)
+        bottom.Controls.Add(closeButton, 2, 0)
 
         middle.Controls.Add(nav, 0, 0)
         middle.Controls.Add(content, 1, 0)
@@ -335,6 +340,13 @@ type SettingsDialog(conv: string -> string) =
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
             retext = (fun () -> b.Text <- conv engText) }
         top.Controls.Add(b)
+
+    // A button at the bottom left, for the whole dialog (e.g. Reset to defaults)
+    member _.AddBottomButton (engText: string, onClick: unit -> unit) =
+        let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
+        b.Click.Add(fun _ -> onClick ())
+        register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
+        bottomLeft.Controls.Add(b)
 
     // Shows the settings again (e.g. after a properties load, or a change in the menu)
     member _.RefreshValues () =

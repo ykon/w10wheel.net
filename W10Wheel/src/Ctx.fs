@@ -1206,6 +1206,41 @@ let convLangWithProp (msg: string) =
     Debug.WriteLine((sprintf "convLangWithProp: lang:[%s], msg:[%s]" lang msg))
     Locale.convLang lang msg
 
+// Applies the settings in prop (a load, or a reset to the default values)
+let private applyProperties () =
+    setTriggerOfProperty()
+    setAccelOfProperty()
+    setCustomAccelOfProperty()
+    setPriorityOfProperty()
+    setVKCodeOfProperty()
+    setVhAdjusterMethodOfProperty()
+    setUILanguageOfProperty()
+
+    BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
+    setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
+
+    Debug.WriteLine("setNumberOfProperties")
+    let setNum = setNumberOfProperty
+    setNum DataID.pollTimeout 50 500
+    setNum DataID.scrollLocktime 150 500
+    setNum DataID.verticalThreshold 0 500
+    setNum DataID.horizontalThreshold 0 500
+
+    setNum DataID.wheelDelta 10 500
+    setNum DataID.vWheelMove 10 500
+    setNum DataID.hWheelMove 10 500
+
+    setNum DataID.firstMinThreshold 1 10
+    setNum DataID.switchingThreshold 10 500
+
+    // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+    // progress (Reload, switching properties) ends once they are set, so that the new ones
+    // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+    // keyboard hook). Not if the file could not be read: the settings have not changed. The
+    // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+    // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+    exitScrollMode()
+
 let loadProperties (update:bool): unit =
     if not defaultSaved then
         setSettings defaultProp
@@ -1224,39 +1259,7 @@ let loadProperties (update:bool): unit =
         loaded <- true
 
         Debug.WriteLine("Start load")
-
-        setTriggerOfProperty()
-        setAccelOfProperty()
-        setCustomAccelOfProperty()
-        setPriorityOfProperty()
-        setVKCodeOfProperty()
-        setVhAdjusterMethodOfProperty()
-        setUILanguageOfProperty()
-
-        BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
-        setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
-
-        Debug.WriteLine("setNumberOfProperties")
-        let setNum = setNumberOfProperty
-        setNum DataID.pollTimeout 50 500
-        setNum DataID.scrollLocktime 150 500
-        setNum DataID.verticalThreshold 0 500
-        setNum DataID.horizontalThreshold 0 500
-
-        setNum DataID.wheelDelta 10 500
-        setNum DataID.vWheelMove 10 500
-        setNum DataID.hWheelMove 10 500
-
-        setNum DataID.firstMinThreshold 1 10
-        setNum DataID.switchingThreshold 10 500
-
-        // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
-        // progress (Reload, switching properties) ends once they are set, so that the new ones
-        // apply from the next (also one started meanwhile, e.g. during the error dialog of the
-        // keyboard hook). Not if the file could not be read: the settings have not changed. The
-        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
-        exitScrollMode()
+        applyProperties ()
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
@@ -1369,6 +1372,31 @@ let private deleteProperties () =
     with
         | e -> Dialog.errorMessageE e
 
+// The settings of the selected properties back to their default values (defaultProp), except the
+// language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
+// applied as a load does, and stored
+let private resetSettings () =
+    let name = getSelectedProperties()
+    let shownName = if name = DEFAULT_DEF then convLang name else name
+    let msg = sprintf "%s\n%s: %s" (convLang "Reset all the settings to their defaults? The language is kept.")
+                                   (convLang "Properties") shownName
+    if openYesNoMessage msg then
+        // prop has the values of the last load (storeProperties writes a copy of the file): the
+        // current settings first, or the language changed since would be set back
+        setSettings prop
+        let keys =
+            [DataID.firstTrigger; DataID.accelMultiplier; DataID.processPriority;
+             DataID.targetVKCode; DataID.vhAdjusterMethod]
+            @ List.ofArray BooleanNames @ List.ofArray NumberNames
+        keys |> List.iter (fun key -> prop.[key] <- defaultProp.GetProperty key)
+
+        try
+            applyProperties ()
+        with
+            | e -> Debug.WriteLine("reset: " + (e.ToString()))
+        storeProperties()
+        refreshSettingsDialog()
+
 // The settings of the selected properties are stored first
 let private switchProperties name =
     storeProperties()
@@ -1437,6 +1465,7 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Delete", deleteProperties, enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
     dialog.AddPropertiesButton("Reload", reloadProperties)
+    dialog.AddBottomButton("Reset to defaults", resetSettings)
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],

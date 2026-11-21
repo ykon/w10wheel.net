@@ -214,6 +214,7 @@ URL:
 
 設定ダイアログ:
         設定を変更するとすぐに反映され、設定ファイルに保存されます。
+        Reset to defaults: 選んでいる設定ファイルの設定を既定値に戻す (言語は除く)
         Properties: 設定ファイルの切り替え、Add (追加)、Delete (削除)、
                 Open Dir (フォルダを開く)、Reload (再読み込み)
         General タブ:
