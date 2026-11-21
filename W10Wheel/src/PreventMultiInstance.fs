@@ -29,8 +29,12 @@ let tryLock (): bool =
                                  FileAccess.ReadWrite, FileShare.None))
         true
     with
-        | :? IOException -> false
+        // Also denied (e.g. the file was created by an instance running as another user, or
+        // with other rights)
+        | :? IOException | :? UnauthorizedAccessException -> false
 
 let unlock () =
-    if isLocked() then
-        Volatile.Read(&lock.contents).Close()
+    // Once (isLocked is false after)
+    let stream = Interlocked.Exchange(&lock.contents, null)
+    if not (isNull stream) then
+        stream.Close()

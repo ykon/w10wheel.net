@@ -18,7 +18,14 @@ let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: KeyboardEvent = NonEvent
 
+// The trigger key pressed (its down suppressed, as the scroll it started) is suppressed like the
+// other keys whose down was (LastFlags.Init): its up alone is suppressed, or it would pass
+// (e.g. the Alt key would activate the menu bar)
 let private initState () =
+    match lastEvent with
+    | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
+    | _ -> ()
+
     lastEvent <- NonEvent
 
 let setInitStateKEH () =
@@ -108,10 +115,22 @@ let rec private getResult (cs:Checkers) (ke:KeyboardEvent) =
         | None -> getResult fs ke
     | _ -> raise (ArgumentException())
 
+// The scroll mode of a mouse trigger is held (or its start pending): pressing the keyboard
+// trigger ends it. Its down is suppressed, and so are its repeats and its up (keyUp).
+let private checkExitOtherScroll (ke: KeyboardEvent): nativeint option =
+    if Ctx.isPressedMouseScrollMode() || Ctx.isStartingScrollMode() then
+        debug "exit scroll mode (other trigger)" ke
+        Ctx.exitScrollMode()
+        Ctx.LastFlags.SetSuppressed ke
+        suppress()
+    else
+        None
+
 let private singleDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkSameLastEvent
         checkExitScrollDown
+        checkExitOtherScroll
         checkTriggerScrollStart
         endIllegalState
     ]
@@ -154,6 +173,7 @@ let keyDown (info: KHookInfo) =
 
     let kd = KeyDown(info)
     Ctx.LastFlags.NewKeyDown kd.VKCode
+    Ctx.LastFlags.ResetLoneUpKey kd.VKCode
 
     // The trigger key that does not repeat (Pause) may send no up: a down after its down was
     // released, quickly. As its up would, lock the scroll it started (this down then ends it),
@@ -185,6 +205,11 @@ let keyUp (info: KHookInfo) =
     if Ctx.LastFlags.GetAndReset_SuppressedDown ku then
         debug "suppress (up of a suppressed down)" ku
         // As the trigger's handlers do, or its next down would be taken for a repeat
+        if Ctx.isTriggerKey ku then lastEvent <- ku
+        IntPtr(1)
+    // The up alone of a key whose down was suppressed before the state was initialized
+    elif Ctx.LastFlags.GetAndReset_LoneUpKey ku.VKCode then
+        debug "suppress (up alone of a suppressed down)" ku
         if Ctx.isTriggerKey ku then lastEvent <- ku
         IntPtr(1)
     elif Ctx.LastFlags.GetAndReset_PassedKey ku.VKCode then
@@ -227,6 +252,7 @@ let private hookInstalled () =
     | _ -> ()
 
     lastEvent <- NonEvent
+    Ctx.LastFlags.ResetLoneUpKeys()
 
     if Ctx.isKeyboardScrollMode() then
         Debug.WriteLine("hookInstalled: exit keyboard scroll mode")

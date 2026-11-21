@@ -10,6 +10,7 @@ let private JapaneseMessage =
         AdminMessage, "W10Wheelは管理者モードで実行されていないため、\n一部のプログラムでは機能しません。\nそのため、管理者として実行することを推奨します。\n詳細を確認するには、「OK」を押してください。";
 
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
+        "Failed keyboard hook install", "キーボードフックのインストールに失敗しました";
         "Properties does not exist", "設定ファイルが存在しません";
         "Unknown Command", "不明なコマンド";
         "Command Error", "コマンドのエラー";
@@ -94,7 +95,7 @@ let private JapaneseMessage =
         
         "Cursor Change", "カーソル変更";
         "Horizontal Scroll", "水平スクロール";
-        "Reverse Scroll (Flip)", "垂直スクロール反転";
+        "Reverse Scroll (Flip)", "スクロール反転";
         "Swap Scroll (V.H)", "垂直/水平スクロール入れ替え";
         "Pass Mode", "制御停止";
         

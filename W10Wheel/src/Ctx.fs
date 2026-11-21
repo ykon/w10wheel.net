@@ -112,7 +112,10 @@ let private resetMenuText (): unit =
         match list with
         | [] -> ()
         | item :: rest ->
-            item.Text <- convLang (tagToEngText item)
+            // Not the items whose text is not translated (the names of the properties files)
+            match item.Tag with
+            | :? string as engText -> item.Text <- convLang engText
+            | _ -> ()
 
             match (toList item.DropDownItems) with
             | [] -> ()
@@ -129,11 +132,15 @@ let private getTrayText b =
     sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
 
 let private getIcon (name: string) =
-    let stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+    use stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
     new Drawing.Icon(stream)
 
+// Made once: a new icon for every switch of Pass Mode would not be released
+let private trayIconRun = lazy (getIcon ICON_RUN_NAME)
+let private trayIconStop = lazy (getIcon ICON_STOP_NAME)
+
 let private getTrayIcon b =
-    getIcon(if b then ICON_STOP_NAME else ICON_RUN_NAME)
+    if b then trayIconStop.Value else trayIconRun.Value
 
 let private changeNotifyIcon b =
     notifyIcon.Text <- (getTrayText b)
@@ -172,10 +179,14 @@ type private Pass() =
             lock passModeLock (fun () ->
                 if b then Volatile.Write(passModeGeneration, passModeGeneration.Value + 1)
                 mode <- b)
-            setScrollPassMode b
+            // Before waiting for the lock of Scroll (setScrollPassMode), which can dispatch
+            // messages: switched off again meanwhile, it would reset the handlers' state after
             if b then onPassModeOn()
-            changeNotifyIcon b
-            passModeMenuItem.Checked <- b
+            setScrollPassMode b
+            // As it is now, as Scroll.SetPassMode does: switched again while waiting for its lock,
+            // the other call has shown it already
+            changeNotifyIcon mode
+            passModeMenuItem.Checked <- mode
 
     static member toggleMode () =
         Pass.Mode <- not mode
@@ -387,14 +398,15 @@ type private Scroll() =
         sx <- x
         sy <- y
 
+    // Also called when not in scroll mode (e.g. initState, or the drag trigger clicked): only
+    // what was done is undone (RawInput is registered in scroll mode only, see WinCursor.restore)
     static let exit () =
-        RawInput.unregister()
+        if mode then RawInput.unregister() |> ignore
 
         mode <- false
         releasedMode <- false
 
-        if cursorChange then
-            WinCursor.restore() |> ignore
+        WinCursor.restore() |> ignore
 
     static let start (info: HookInfo) (generation: int option) =
         let sameGeneration =
@@ -406,18 +418,21 @@ type private Scroll() =
         let canceled = generation.IsSome && startCanceled
         if generation.IsSome then startCanceled <- false
 
-        if not closed && not passMode && sameGeneration && not canceled then
-            stime <- info.time
-            setStartPoint(info.pt.x, info.pt.y)
-            initScroll()
+        // Not while in scroll mode: the handlers end it before, another trigger's included (for
+        // the LR trigger, EventWaiter.waiterThread)
+        if not closed && not passMode && sameGeneration && not canceled && not mode then
+            // Without RawInput, the moves would be suppressed with no scroll: refused
+            if RawInput.register() then
+                stime <- info.time
+                setStartPoint(info.pt.x, info.pt.y)
+                initScroll()
 
-            RawInput.register()
+                if cursorChange && not (isDragTrigger()) then
+                    WinCursor.changeV()
 
-            if cursorChange && not (isDragTrigger()) then
-                WinCursor.changeV()
+                byKeyboard <- false
+                mode <- true
 
-            byKeyboard <- false
-            mode <- true
             starting <- false
         else
             // Refused (exiting, Pass Mode or canceled): do not leave the LR trigger in the
@@ -437,18 +452,18 @@ type private Scroll() =
         // again after this one has ended
         if starting then startCanceled <- true
 
-        if not closed && not passMode then
-            stime <- info.time
-            setStartPoint(Cursor.Position.X, Cursor.Position.Y)
-            initScroll()
+        if not closed && not passMode && not mode then
+            if RawInput.register() then
+                stime <- info.time
+                setStartPoint(Cursor.Position.X, Cursor.Position.Y)
+                initScroll()
 
-            RawInput.register()
+                if cursorChange then
+                    WinCursor.changeV()
 
-            if cursorChange then
-                WinCursor.changeV()
+                byKeyboard <- true
+                mode <- true
 
-            byKeyboard <- true
-            mode <- true
             starting <- false
         else
             // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
@@ -470,18 +485,24 @@ type private Scroll() =
     // RawInput is not registered again afterwards.
     static member Close () = lock monitor (fun () ->
         closed <- true
-        if mode then exit ()
+        exit ()
     )
 
     // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
     // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
-    // lock, so that a Start in progress on the EventWaiter thread is not missed.
-    static member SetPassMode (b: bool) = lock monitor (fun () ->
+    // lock, so that a Start in progress on the EventWaiter thread is not missed. Applies Pass
+    // Mode as it is now: waiting for the lock on the UI thread can dispatch messages, e.g.
+    // another --sendPassMode that switched it again (and applied it) meanwhile. Scroll mode is
+    // left if this call turned it on (turnedOn), even if it is off again: the handlers' state
+    // has been reset (onPassModeOn), the trigger could not end it.
+    static member SetPassMode (turnedOn: bool) = lock monitor (fun () ->
+        let b = Pass.Mode
         passMode <- b
-        // A pending LR trigger start is refused (Pass Mode generation): do not leave it
-        // starting, the ups after Pass Mode is turned off would be taken for it
-        if b then starting <- false
-        if b && mode then exit ()
+        if b || turnedOn then
+            // A pending LR trigger start is refused (Pass Mode generation): do not leave it
+            // starting, the ups after Pass Mode is turned off would be taken for it
+            starting <- false
+            exit ()
     )
 
     static member CheckExit (time: uint32) =
@@ -515,9 +536,13 @@ type private Scroll() =
         with get() = releasedMode
         and set b = releasedMode <- b
 
-    static member SetStarting () = lock monitor (fun () ->
-        // Start refuses while closed or in Pass Mode, so do not wait for it then
-        starting <- (not mode) && (not closed) && (not passMode)
+    // For the LR trigger, on the EventWaiter thread before the offer of the second down returns
+    // (so before the hook handles the ups) and before Start, which resets it: set after Start,
+    // it would remain. Start refuses while closed, in Pass Mode or in another generation (see
+    // Start), so do not wait for it then.
+    static member SetStarting (generation: int) = lock monitor (fun () ->
+        let sameGeneration = generation = Volatile.Read(&passModeGeneration.contents)
+        starting <- (not mode) && (not closed) && (not passMode) && sameGeneration
         if starting then startCanceled <- false
     )
 
@@ -554,7 +579,7 @@ let isKeyboardScrollMode () = Scroll.IsMode && Scroll.ByKeyboard
 let isPressedKeyboardScrollMode () = isPressedScrollMode() && Scroll.ByKeyboard
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 
-let setStartingScrollMode () = Scroll.SetStarting()
+let setStartingScrollModeFor (generation: int) = Scroll.SetStarting(generation)
 let isStartingScrollMode () = Scroll.IsStarting
 
 type VHAdjusterMethod =
@@ -628,6 +653,10 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up has
+    // not come yet: their up alone is suppressed (the application did not get the down). Their
+    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
+    static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
         let res = flag
@@ -642,10 +671,15 @@ type LastFlags() =
     // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
     // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
     // suppressed is not pressed for it. A key whose up was missed passes its next down once.
+    // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
+    // suppressed again: only their up alone is (kdL), as the hook does for the buttons
+    // (Windows.dropLoneUp).
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        for vk in 0 .. kdS.Length - 1 do
+            if kdS.[vk] then kdL.[vk] <- true
         Array.fill kdS 0 (kdS.Length) false
 
     static member SetResent (down: MouseEvent): unit =
@@ -712,10 +746,24 @@ type LastFlags() =
             kdS.[vk] <- false
             kdP.[vk] <- false
 
+    // A down of a key (kdL): its up is not alone any more
+    static member ResetLoneUpKey (vk: int) =
+        if isKey vk then kdL.[vk] <- false
+
+    // The up of a key whose down was suppressed before Init (kdL), with no down since; resets it
+    static member GetAndReset_LoneUpKey (vk: int): bool =
+        isKey vk && getAndReset(&kdL.[vk])
+
+    // The keyboard hook is installed again: a key whose up was missed while it was removed may
+    // have been pressed since, its down passing (no hook): do not suppress its up
+    static member ResetLoneUpKeys () =
+        Array.fill kdL 0 kdL.Length false
+
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdP 0 kdP.Length false
+        Array.fill kdL 0 kdL.Length false
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
@@ -737,11 +785,14 @@ type LastFlags() =
         | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
 
-    // The flags of the press of a left or right event (nothing for the other buttons)
-    static member ResetLRFor (me: MouseEvent) =
+    // The flags of the press of the button of an event (resent, suppressed, passed)
+    static member ResetFor (me: MouseEvent) =
         match me with
         | LeftEvent(_) -> ldR <- false; ldS <- false; ldP <- false
         | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
+        | MiddleEvent(_) -> mdS <- false
+        | X1Event(_) -> x1S <- false
+        | X2Event(_) -> x2S <- false
         | _ -> ()
 
     (*
@@ -1162,13 +1213,25 @@ let private setTargetVKCode name =
         changeKeyboardTrigger old true
 
 let private setKeyboardHookOf (b: bool) =
-    WinHook.setOrUnsetKeyboardHook b
-    if b then
-        // Installed again on every load (e.g. Reload after Windows removed it): ups may have
-        // been missed
-        keyboardHookInstalled ()
-    else
+    match WinHook.setOrUnsetKeyboardHook b with
+    | Some(err) ->
+        // Not installed (the previous hook removed): off, as the menu shows
+        Volatile.Write(keyboardHook, false)
+        match boolMenuDict.TryGetValue DataID.keyboardHook with
+        | true, item ->
+            item.Checked <- false
+            item.Text <- convLang(getOnOffText false)
+        | _ -> ()
+
         changeKeyboardTrigger (getTargetVKCode()) false
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
+    | None ->
+        if b then
+            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
+            // been missed
+            keyboardHookInstalled ()
+        else
+            changeKeyboardTrigger (getTargetVKCode()) false
 
 
 
@@ -1243,6 +1306,10 @@ let private createInfoMenuItem () =
         let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
         MessageBox.Show(msg, convLang("Info"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
+
+// Before exiting without the message loop (Environment.Exit): the icon would remain in the tray
+let hideSystemTray () =
+    notifyIcon.Visible <- false
 
 let exitAction () =
     notifyIcon.Visible <- false
@@ -1322,6 +1389,7 @@ let private setUILanguage lang =
     if reset && isCreatedMenuItems() then
         resetMenuText()
         resetNumberMenuItems()
+        notifyIcon.Text <- getTrayText Pass.Mode
 
 let private createLanguageMenu () =
     let menu = createMenuItem_NonID "Language"
@@ -1414,7 +1482,14 @@ let private setCustomAccelOfProperty (): unit =
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
         let cam = prop.GetDoubleArray(DataID.customAccelMultiplier)
 
-        if cat.Length <> 0 && cat.Length = cam.Length then
+        // The thresholds are looked up in ascending order (Windows.getNearestIndex), and a
+        // multiplier that is not a number (NaN, Infinity: parsed without error) would make the
+        // delta invalid
+        let isAscending = cat |> Array.pairwise |> Array.forall (fun (a, b) -> a < b)
+        let isValidThreshold = cat |> Array.forall (fun n -> n >= 0) && isAscending
+        let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
+
+        if cat.Length <> 0 && cat.Length = cam.Length && isValidThreshold && isValidMultiplier then
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
 
@@ -1459,6 +1534,9 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
+// The default values are kept (defaultProp) once, before the first load: not after a load that
+// failed (loaded is false again), the settings are not the default values then
+let mutable private defaultSaved = false
 
 let loadPropertiesFileOnly (): unit =
     try
@@ -1472,16 +1550,21 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
-    if not loaded then
+    if not defaultSaved then
         setSettings defaultProp
+        defaultSaved <- true
 
-    loaded <- true
     try
+        // Not loaded if the file could not be read (e.g. locked): the settings are not stored
+        // (storeProperties) until a load succeeds, or they would overwrite the file (with the
+        // default values, or those of another properties file switched from)
+        loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
+        loaded <- true
 
         Debug.WriteLine("Start load")
 
@@ -1512,20 +1595,19 @@ let loadProperties (update:bool): unit =
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
-let private isChangedProperties () =
+// Whether the settings differ from the properties of the file (p)
+let private isChangedProperties (p: Properties.Properties) =
     try
-        prop.Load(getSelectedPropertiesPath(), true)
-
         let isChangedBoolean () =
             BooleanNames |>
-            Array.map (fun n -> (prop.GetBool n) <> getBooleanOfName n) |>
+            Array.map (fun n -> (p.GetBool n) <> getBooleanOfName n) |>
             Array.contains true
         let isChangedNumber () =
             NumberNames |>
-            Array.map (fun n -> (prop.GetInt n) <> getNumberOfName n) |>
+            Array.map (fun n -> (p.GetInt n) <> getNumberOfName n) |>
             Array.contains true
 
-        let check = fun n v -> prop.GetString(n) <> v
+        let check = fun n v -> p.GetString(n) <> v
 
         check DataID.firstTrigger (getFirstTrigger().Name) ||
         check DataID.accelMultiplier (Accel.Multiplier.Name) ||
@@ -1535,17 +1617,31 @@ let private isChangedProperties () =
         check DataID.uiLanguage (getUILanguage()) ||
         isChangedBoolean() || isChangedNumber() 
     with
-        | :? FileNotFoundException -> Debug.WriteLine("First write properties"); true
         | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message); true
         | e -> Debug.WriteLine("isChanged: " + (e.ToString())); true
 
+// The settings are stored in the file as it is now (read anew): its keys that are not settings
+// (e.g. customAccelThreshold) are kept as they are, and those removed from it since it was
+// loaded are not stored again. Not stored if it cannot be read (it could not be written either).
 let storeProperties () =
     try
-        if not loaded || not (isChangedProperties()) then
-            Debug.WriteLine("Not changed properties")
+        if not loaded then
+            Debug.WriteLine("Not loaded properties")
         else
-            setSettings prop
-            prop.Store(getSelectedPropertiesPath())
+            let path = getSelectedPropertiesPath()
+            let file = Properties.Properties()
+            let found =
+                try
+                    file.Load(path, true)
+                    true
+                with
+                    | :? FileNotFoundException -> Debug.WriteLine("First write properties"); false
+
+            if found && not (isChangedProperties file) then
+                Debug.WriteLine("Not changed properties")
+            else
+                setSettings file
+                file.Store(path)
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
@@ -1568,8 +1664,13 @@ let private createOpenDirMenuItem (dir: string) =
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
-let private isValidPropertiesName name =
-    (name <> DEFAULT_DEF) && not (name.StartsWith("--"))
+// A part of a file name (see Properties.getPath), not Default whatever its case (a name only
+// differing in case would be confused with it), nor a command (--)
+let private isValidPropertiesName (name: string) =
+    not (String.IsNullOrWhiteSpace(name)) && name.Trim() = name &&
+    not (String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase)) &&
+    not (name.StartsWith("--")) &&
+    name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
 
 let private createAddPropertiesMenuItem () =
     let item = createMenuItem_NonID "Add"
@@ -1617,7 +1718,9 @@ let private createDeletePropertiesMenuItem () =
     )
 
 let private createPropertiesMenuItem (name: string) =
-    let item = createMenuItem_NonID name
+    // Only Default is translated: the other names are the user's (e.g. "Middle" is not "中央")
+    let item =
+        if name = DEFAULT_DEF then createMenuItem_NonID name else new ToolStripMenuItem(name)
     item.CheckState <-
         if name = getSelectedProperties() then
             CheckState.Indeterminate
@@ -1639,7 +1742,10 @@ let private createPropertiesMenu () =
     let add = fun path -> addItem (createPropertiesMenuItem (Properties.getUserDefName path))
 
     menu.DropDownOpening.Add(fun _ ->
+        // The items made the last time are released (Clear does not dispose them)
+        let old = Array.init items.Count (fun i -> items.[i])
         items.Clear()
+        old |> Array.iter (fun item -> item.Dispose())
 
         addItem (createReloadPropertiesMenuItem())
         addItem (createSavePropertiesMenuItem())

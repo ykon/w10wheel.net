@@ -28,11 +28,10 @@ let private checkDoubleLaunch () =
         messageDoubleLaunch()
         Environment.Exit(1)
 
+// Without changing the principal policy of the process (Thread.CurrentPrincipal)
 let private isAdmin () =
-    let myDomain = Thread.GetDomain();
-    myDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
-    let myPrincipal = Thread.CurrentPrincipal :?> WindowsPrincipal
-    myPrincipal.IsInRole(WindowsBuiltInRole.Administrator)
+    use identity = WindowsIdentity.GetCurrent()
+    WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)
 
 let private showAdminMesssage (): DialogResult =
     MessageBox.Show(convLangP LocaleData.AdminMessage, convLangP "Info", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
@@ -42,24 +41,44 @@ let private checkAdmin () =
         if (showAdminMesssage ()) = DialogResult.OK then
             Process.Start(ProcessStartInfo(WikiUrl, UseShellExecute = true)) |> ignore
 
-let private procExit () =
+let private closeAll () =
     Debug.WriteLine("procExit")
 
+    // No more downs are resent: the hooks are removed next (see Windows.beginClose)
+    Windows.beginClose()
     WinHook.unhook()
 
     // Cancel an LR trigger wait: after its timeout it would resend a down whose up does not
     // come any more (the hook is removed)
-    EventWaiter.offer Mouse.Cancel |> ignore
+    // Maybe on another thread (SessionEnded): an offer made by the hook at the same time throws
+    // (EventWaiter), which must not stop the rest (storing the properties included)
+    try
+        EventWaiter.offer Mouse.Cancel |> ignore
+    with
+        | e -> Debug.WriteLine("procExit: " + e.Message)
 
     // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
     // This also waits for a scroll start in progress and refuses later ones.
     Ctx.closeScrollMode()
 
-    // Wait for a resent click being sent (so that its up is sent) and stop sending
+    // Wait for a resent click being sent (so that its up is sent), send the ups still queued
+    // and stop sending
     Windows.closeInput()
 
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
+
+let private exitLock = new Object()
+let mutable private exited = false
+
+// Called when the message loop ends and when the session ends (SessionEnded, maybe on another
+// thread): done once. The other call waits for it to be done, or the process could end while
+// the properties are stored.
+let private procExit () = lock exitLock (fun () ->
+    if not exited then
+        exited <- true
+        closeAll ()
+)
 
 let private getBool (sl: string list): bool =
     try
@@ -72,14 +91,19 @@ let private getBool (sl: string list): bool =
             Environment.Exit(1)
             false
 
+// The errors of the arguments are shown in the language of the properties (Default: no other
+// is selected then)
 let private setSelectedProperties name =
-    if Properties.exists(name) then
+    // Default is always valid (its file is not written until exit)
+    if name = Properties.DEFAULT_DEF || Properties.exists(name) then
         Ctx.setSelectedProperties name
     else
-        Dialog.errorMessage (sprintf "%s: %s" (convLang "Properties does not exist") name) (convLang "Error")
+        Ctx.loadPropertiesFileOnly ()
+        Dialog.errorMessage (sprintf "%s: %s" (convLangP "Properties does not exist") name) (convLangP "Error")
 
 let private unknownCommand name =
-    Dialog.errorMessage (sprintf "%s: %s" (convLang "Unknown Command") name) (convLang "Command Error")
+    Ctx.loadPropertiesFileOnly ()
+    Dialog.errorMessage (sprintf "%s: %s" (convLangP "Unknown Command") name) (convLangP "Command Error")
     Environment.Exit(1)
 
 let private procArgv (argv: string[]) =
@@ -130,9 +154,12 @@ let main argv =
 
     Ctx.loadProperties false
     Ctx.setSystemTray ()
-    if not (WinHook.setMouseHook ()) then
-        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") (WinError.getLastErrorMessage())) (convLang "Error")
+    match WinHook.setMouseHook () with
+    | Some(err) ->
+        Ctx.hideSystemTray ()
+        Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") err) (convLang "Error")
         Environment.Exit(1)
+    | None -> ()
 
     Application.Run()
     Debug.WriteLine("Exit message loop")

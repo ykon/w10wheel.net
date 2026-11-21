@@ -77,7 +77,7 @@ let private setFlagsOffer me =
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
-        Ctx.setStartingScrollMode()
+        // The scroll is starting already (waiterThread)
     | Cancel -> Debug.WriteLine("setFlagsOffer: cancel")
     | _ -> raise (InvalidOperationException())
 
@@ -97,6 +97,11 @@ let cancel (): MouseEvent option =
 // Whether a wait is in progress for a down of another button than up's (on the hook thread)
 let isWaitingOtherThan (up: MouseEvent): bool =
     sync.IsWaiting && not (waitingEvent.SameButton up)
+
+// Whether a wait is in progress for a down at the point of me (on the hook thread): a move
+// there has not moved the cursor
+let isWaitingAt (me: MouseEvent): bool =
+    sync.IsWaiting && Mouse.samePoint waitingEvent me
 
 let setOfferEW () =
     Ctx.setOfferEW offer
@@ -165,19 +170,34 @@ let private fromTimeout (generation: int) (pressId: int) (down: MouseEvent) =
             Windows.resendDown generation pressId down
             Ctx.LastFlags.SetResent down)
 
-// (physical down, Pass Mode generation when it was received, its press ID)
-let private waiterQueue = new BlockingCollection<MouseEvent * int * int>(1)
+// (physical down, Pass Mode generation when it was received, its press ID, whether the keyboard
+// trigger's scroll mode was on then)
+let private waiterQueue = new BlockingCollection<MouseEvent * int * int * bool>(1)
 
 let private waiterThread = new Thread(fun () ->
     while true do
-        let down, generation, pressId = waiterQueue.Take()
+        let down, generation, pressId, keyboardScroll = waiterQueue.Take()
 
         // The scroll start (second down) takes longer: it is done after the offer returns,
-        // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+        // the hook handles the ups meanwhile as starting (set before the offer returns)
         let second = ref NonEvent
         sync.poll (Ctx.getPollTimeout()) (fun res ->
             match res with
-            | Some(LeftDown(_) | RightDown(_) as d2) -> second.Value <- d2
+            | Some(LeftDown(_) | RightDown(_) as d2) ->
+                // The keyboard trigger's scroll mode is on (see EventHandler.
+                // passPressedScrollMode): the LR trigger ends it instead of starting one, as
+                // another trigger does. Decided here, before the offer returns: the hook waits
+                // for it, so the keyboard trigger cannot end the scroll mode meanwhile (its up),
+                // which would let the LR trigger start one after (not as starting either).
+                // Neither started if it was on when the wait started and has ended since (the
+                // keyboard trigger released in between): the trigger was pressed to end it.
+                if keyboardScroll || Ctx.isKeyboardScrollMode() then
+                    Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): exit scroll mode (keyboard)" down.Name d2.Name)
+                    if Ctx.isKeyboardScrollMode() then
+                        Ctx.exitScrollMode()
+                else
+                    Ctx.setStartingScrollModeFor generation
+                    second.Value <- d2
             | Some(res) -> dispatchEvent generation pressId down res
             | None -> fromTimeout generation pressId down)
 
@@ -200,6 +220,6 @@ let start (down: MouseEvent) =
     sync.setWaiting()
     // Called by the mouse hook when the physical down is received: record the Pass Mode
     // generation and the press now, the resend happens later on the waiter thread
-    waiterQueue.Add((down, Ctx.getPassModeGeneration(), Windows.pressIdOf down))
+    waiterQueue.Add((down, Ctx.getPassModeGeneration(), Windows.pressIdOf down, Ctx.isKeyboardScrollMode()))
 
 

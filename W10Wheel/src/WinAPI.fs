@@ -234,6 +234,10 @@ extern nativeint CopyIcon(nativeint hIcon)
 [<DllImport("user32.dll")>]
 extern bool SetSystemCursor(nativeint hCur, uint32 id)
 
+// https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-destroycursor
+[<DllImport("user32.dll")>]
+extern bool DestroyCursor(nativeint hCursor)
+
 let SPI_SETCURSORS = 0x0057
 
 // https://msdn.microsoft.com/library/windows/desktop/ms724947.aspx
@@ -309,7 +313,8 @@ extern uint32 GetModuleBaseName(nativeint hWnd, nativeint hModule, [<MarshalAs(U
 [<DllImport("psapi.dll")>]
 extern uint32 GetModuleFileNameEx(nativeint hProcess, nativeint hModule, [<Out>] System.Text.StringBuilder lpBaseName, [<In>] [<MarshalAs(UnmanagedType.U4)>] int32 nSize)
 
-[<DllImport("kernel32.dll", SetLastError=true)>]
+// Unicode: the ANSI version (the default) would garble or truncate the paths it cannot encode
+[<DllImport("kernel32.dll", SetLastError=true, CharSet = CharSet.Unicode)>]
 extern bool QueryFullProcessImageName([<In>]nativeint hProcess, [<In>]int32 dwFlags, [<Out>]System.Text.StringBuilder lpExeName, int32& lpdwSize)
 
 [<DllImport("user32.dll")>]

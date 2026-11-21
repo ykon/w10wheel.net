@@ -47,12 +47,19 @@ let callNextKeyboardHook nCode wParam info =
     let hhk = Volatile.Read(&keyboardHhk.contents)
     WinAPI.CallNextHookExK(hhk, nCode, wParam, info)
 
-let setMouseHook (): bool =
-    let hhk = __setMouseHook()
-    Volatile.Write(mouseHhk, hhk)
-    hhk <> IntPtr.Zero
+// The error message of a failure, read right after it (another call could change the last error)
+let private getHookError (hhk: nativeint): string option =
+    if hhk = IntPtr.Zero then Some(WinError.getLastErrorMessage()) else None
 
-let setKeyboardHook (): bool =
+// None if installed, else the error message
+let setMouseHook (): string option =
+    let hhk = __setMouseHook()
+    let err = getHookError hhk
+    Volatile.Write(mouseHhk, hhk)
+    err
+
+// None if installed, else the error message
+let setKeyboardHook (): string option =
     // setOrUnsetKeyboardHook true is called on every properties load (Reload, switching properties).
     // Remove the previous hook first: installing again would leave it installed (unhookKeyboard
     // only removes the last one). Installing anew also recovers a hook that Windows removed
@@ -62,8 +69,9 @@ let setKeyboardHook (): bool =
         __unhook old
 
     let hhk = __setKeyboardHook()
+    let err = getHookError hhk
     Volatile.Write(keyboardHhk, hhk)
-    hhk <> IntPtr.Zero
+    err
 
 let unhookMouse () =
     let hhk = Volatile.Read(&mouseHhk.contents)
@@ -77,13 +85,14 @@ let unhookKeyboard () =
         __unhook hhk
         Volatile.Write(keyboardHhk, IntPtr.Zero)
         
-let setOrUnsetKeyboardHook (b: bool): unit =
+// None if done, else the error message of the install (shown by Ctx, translated)
+let setOrUnsetKeyboardHook (b: bool): string option =
     Debug.WriteLine(sprintf "setOrUnsetKeyboardHook: %b" b)
     if b then
-        if not (setKeyboardHook()) then
-            Dialog.errorMessage ("Failed keyboard hook install: " + WinError.getLastErrorMessage()) "Error"
+        setKeyboardHook()
     else
         unhookKeyboard()
+        None
 
 let unhook () =
     unhookMouse()

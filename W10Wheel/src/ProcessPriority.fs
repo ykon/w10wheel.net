@@ -21,10 +21,15 @@ let getPriority = function
     | DataID.Normal -> Normal
     | e -> raise (ArgumentException(e))
 
+// A failure is ignored (the priority is not changed): thrown, it would stop loading the other
+// settings, which would then be stored with their default values
 let setPriority p =
-    let cp = Process.GetCurrentProcess()
-    match p with
-    | Normal -> cp.PriorityClass <- ProcessPriorityClass.Normal
-    | AboveNormal -> cp.PriorityClass <- ProcessPriorityClass.AboveNormal
-    | High -> cp.PriorityClass <- ProcessPriorityClass.High
+    use cp = Process.GetCurrentProcess()
+    try
+        match p with
+        | Normal -> cp.PriorityClass <- ProcessPriorityClass.Normal
+        | AboveNormal -> cp.PriorityClass <- ProcessPriorityClass.AboveNormal
+        | High -> cp.PriorityClass <- ProcessPriorityClass.High
+    with
+        | :? ComponentModel.Win32Exception as e -> Debug.WriteLine("setPriority: " + e.Message)
 

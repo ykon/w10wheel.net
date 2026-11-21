@@ -21,10 +21,6 @@ let private callNextHook () = Some(__callNextHook())
 let private suppress () = Some(IntPtr(1))
 
 let mutable private lastEvent: MouseEvent = NonEvent
-let private lastResendLeftEvent: MouseEvent ref = ref NonEvent
-let private lastResendRightEvent: MouseEvent ref = ref NonEvent
-
-let mutable private resentDownUp = false
 let mutable private secondTriggerUp = false
 let mutable private dragged = false
 
@@ -50,9 +46,6 @@ let private buttonIndex (me: MouseEvent): int =
 
 let private initState () =
     lastEvent <- NonEvent
-    lastResendLeftEvent := NonEvent
-    lastResendRightEvent := NonEvent
-    resentDownUp <- false
     secondTriggerUp <- false
     dragged <- false
     triggerStarted <- NonEvent
@@ -61,54 +54,21 @@ let private initState () =
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
 
-let private resetLastFlagsLR (me: MouseEvent): nativeint option =
-    Ctx.LastFlags.ResetLRFor me
-    None
-
-let private getLastResendEvent me =
-    match me with
-    | LeftEvent(_) -> lastResendLeftEvent
-    | RightEvent(_) -> lastResendRightEvent
-    | _ -> raise (InvalidOperationException())
-
-let private isCorrectOrder pre cur =
-    match pre, cur with
-    | NonEvent, LeftUp(_) | LeftUp(_), LeftUp(_) | NonEvent, RightUp(_) | RightUp(_), RightUp(_) ->
-        false
-    | _ -> true
-
-let private checkCorrectOrder me =
-    isCorrectOrder !(getLastResendEvent me) me
-
 let private debug (msg: string) (me: MouseEvent) =
     Debug.WriteLine(msg + ": " + me.Name)
 
+// The injected events pass: W10Wheel's own resends (checked by the hook before, see
+// Windows.dropResent) and those of other software. A resent up cannot come before its down:
+// the down is queued first and the sender sends in order, so they are not reordered here.
 let private skipResendEventLR (me: MouseEvent): nativeint option =
-    let pass () =
-        debug "pass resend event" me
-        (getLastResendEvent me) := me
-        callNextHook()
-
     if not (Windows.isInjectedEvent me) then
         None
     elif Windows.isResendClickEvent me then
         debug "pass resendClick event" me
         callNextHook()
     elif Windows.isResendEvent me then
-        if resentDownUp then
-            debug "ResendEvent: resentDownUp" me
-            resentDownUp <- false
-
-            if checkCorrectOrder me then
-                pass()
-            else
-                debug "Bad: resendUp retry" me
-                Thread.Sleep(1)
-                Windows.resendUpAgain me
-                suppress()
-        else
-            pass()
-
+        debug "pass resend event" me
+        callNextHook()
     else
         debug "pass other software event" me
         callNextHook()
@@ -156,8 +116,26 @@ let private checkExitScrollDown (me: MouseEvent): nativeint option =
     else
         None
 
+// The scroll mode of the keyboard trigger is held: pressing a mouse trigger ends it. Its down is
+// suppressed, and so is its up (checkSuppressedDown). For the LR, left and right triggers, see
+// passPressedScrollMode.
+let private checkExitOtherScroll (down: MouseEvent): nativeint option =
+    if Ctx.isPressedKeyboardScrollMode() then
+        debug "exit scroll mode (other trigger)" down
+        Ctx.exitScrollMode()
+        Ctx.LastFlags.SetSuppressed down
+        suppress()
+    else
+        None
+
+// While the keyboard trigger's scroll mode is held, the buttons of the LR, left and right
+// triggers wait as when not scrolling: if the trigger is pressed (the second down, offered to
+// the wait before, whichever button it is), it ends that scroll mode instead of starting one
+// (EventWaiter.waiterThread), as another trigger does; otherwise the down is resent (or the
+// click) as usual
 let private passPressedScrollMode (down: MouseEvent): nativeint option =
-    if Ctx.isPressedScrollMode() then
+    let isTriggerButton = Ctx.isLRTrigger() || Ctx.isTriggerEvent down
+    if Ctx.isPressedScrollMode() && not (Ctx.isPressedKeyboardScrollMode() && isTriggerButton) then
         debug "pass scroll mode (Pressed)" down
         Ctx.LastFlags.SetPassed(down)
         callNextHook()
@@ -166,7 +144,7 @@ let private passPressedScrollMode (down: MouseEvent): nativeint option =
 
 let private matchAvastUI (pathOpt: string option): bool =
     match pathOpt with
-    | Some (path) -> path.EndsWith("\\AvastUI.exe")
+    | Some (path) -> path.EndsWith("\\AvastUI.exe", StringComparison.OrdinalIgnoreCase)
     //| Some (path) -> path.EndsWith("\\chrome.exe") // for Debug
     | None -> false
 
@@ -264,7 +242,6 @@ let private checkSuppressedDown (up: MouseEvent): nativeint option =
 let private checkResentDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_ResentDown up then
         debug "resendUp and suppress (checkResentDown)" up
-        resentDownUp <- true
         Windows.resendUp up
         suppress()
     else
@@ -306,12 +283,17 @@ let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
 let private dragDefault info = ()
 let mutable private drag: HookInfo -> unit = dragDefault
 
-let private dragStart info =
-    if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
-        WinCursor.changeV()
+// Dragged only when the cursor would have moved from the start point (scroll mode suppresses
+// the moves): not for a move at the same point (e.g. a slight move with enhanced pointer
+// precision) or of other software (injected), the click is resent at the up then
+let private dragStart (info: HookInfo) =
+    let sx, sy = Ctx.getScrollStartPoint()
+    if not (Windows.isInjectedEvent (Move(info))) && (info.pt.x <> sx || info.pt.y <> sy) then
+        if Ctx.isCursorChange() && not (Ctx.isVhAdjusterMode()) then
+            WinCursor.changeV()
 
-    drag <- dragDefault
-    dragged <- true
+        drag <- dragDefault
+        dragged <- true
 
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
@@ -426,12 +408,17 @@ let private lrDown (me: MouseEvent): nativeint =
     let checkers = [
         skipResendEventLR
         checkSameLastEvent
-        resetLastFlagsLR
-        skipExcludeWindow
+        // A wait in progress gets the down first, whatever the scroll mode: started during the
+        // keyboard trigger's scroll mode, the second down ends it (see EventWaiter.waiterThread),
+        // also if it is locked now (the keyboard trigger released quickly in between); it would
+        // not be offered after checkExitScrollDown, and the wait would resend its down
+        offerEventWaiter
         checkExitScrollDown
         passPressedScrollMode
         //passSingleEvent
-        offerEventWaiter
+        // Only to start a wait: scroll mode is left, and a wait in progress gets the down,
+        // also on the excluded window (or the wait would resend its down after this one)
+        skipExcludeWindow
         checkTriggerWaitStart
         endNotTrigger
     ]
@@ -467,6 +454,7 @@ let private singleDown (me: MouseEvent): nativeint =
         //resetLastFlags
         checkExitScrollDown
         passNotTrigger
+        checkExitOtherScroll
         checkKeySendMiddle
         checkTriggerScrollStart
         endIllegalState
@@ -498,6 +486,7 @@ let private dragDown (me: MouseEvent): nativeint =
         //resetLastFlags
         checkExitScrollDown
         passNotDragTrigger
+        checkExitOtherScroll
         startScrollDrag
     ]
 
@@ -520,9 +509,12 @@ let private dragUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
+// As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
+// first: they neither end the locked scroll mode nor initialize the state (Escape)
 let private noneDown (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneDown")
     let checkers = [
+        skipResendEventSingle
         //resetLastFlags
         checkExitScrollDown
         endPass
@@ -533,6 +525,7 @@ let private noneDown (me: MouseEvent): nativeint =
 let private noneUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneUp")
     let checkers = [
+        skipResendEventSingle
         checkEscape
         checkSuppressedDown
         endPass
@@ -551,9 +544,9 @@ let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nati
         canceledDowns.[buttonIndex d] <- false
 
         // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
-        // whatever the trigger (only the LR trigger's handlers did, so after changing the
-        // trigger they could take e.g. the next up for that of a resent or suppressed down)
-        Ctx.LastFlags.ResetLRFor d
+        // whatever the trigger, for all the buttons (e.g. the up of a suppressed middle down
+        // that was missed would make the up of the next middle click suppressed)
+        Ctx.LastFlags.ResetFor d
 
     Volatile.Read(&proc.contents)(d)
 
@@ -580,7 +573,7 @@ let private procUp (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): native
     // them whatever handled the up (e.g. after changing the trigger, the handlers of the new one
     // do not use them, and they would be taken for those of a later up whose down was not seen)
     if not (Windows.isInjectedEvent u) then
-        Ctx.LastFlags.ResetLRFor u
+        Ctx.LastFlags.ResetFor u
 
     res
 
@@ -631,6 +624,11 @@ let move (info: HookInfo) =
         drag info
         //Windows.sendWheel info.pt
         suppress().Value
+    // The moves of other software (injected) and those at the point of the waiting down (the
+    // cursor has not moved) do not end the LR trigger wait (its down would be resent as for a
+    // drag): they pass
+    elif Windows.isInjectedEvent (Move(info)) || EventWaiter.isWaitingAt (Move(info)) then
+        callNextHook().Value
     elif EventWaiter.offer (Move(info)) then
         Debug.WriteLine("success to offer: Move")
         suppress().Value
