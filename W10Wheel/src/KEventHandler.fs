@@ -135,10 +135,15 @@ let private singleUp (ke: KeyboardEvent) =
 
     getResult checkers ke
 
+// The down of a key passed: its repeats and up pass too (see keyDown)
+let private endPassDown (ke: KeyboardEvent): nativeint option =
+    Ctx.LastFlags.SetPassedKey ke.VKCode
+    endPass ke
+
 let private noneDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkExitScrollDown
-        endPass
+        endPassDown
     ]
 
     getResult checkers ke
@@ -160,6 +165,11 @@ let keyDown (info: KHookInfo) =
     if Ctx.LastFlags.IsSuppressedKey kd.VKCode then
         debug "suppress (repeat of a suppressed down)" kd
         IntPtr(1)
+    // A key whose down passed (to the application): its repeats pass too, even if it has become
+    // the trigger since (they would start scroll mode, and its up would be suppressed)
+    elif Ctx.LastFlags.IsPassedKey kd.VKCode then
+        debug "pass (repeat of a passed down)" kd
+        __callNextHook()
     elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 
 let keyUp (info: KHookInfo) =
@@ -172,6 +182,9 @@ let keyUp (info: KHookInfo) =
         // As the trigger's handlers do, or its next down would be taken for a repeat
         if Ctx.isTriggerKey ku then lastEvent <- ku
         IntPtr(1)
+    elif Ctx.LastFlags.GetAndReset_PassedKey ku.VKCode then
+        debug "pass (up of a passed down)" ku
+        __callNextHook()
     elif Ctx.isTriggerKey ku then singleUp ku else noneUp ku
 
 // The trigger key has changed (keyChanged), or the keyboard hook is removed: the scroll mode

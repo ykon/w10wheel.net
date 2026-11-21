@@ -626,6 +626,8 @@ type LastFlags() =
     [<VolatileField>] static let mutable x2S = false
 
     static let kdS = Array.create 256 false
+    // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
+    static let kdP = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
         let res = flag
@@ -637,6 +639,7 @@ type LastFlags() =
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
+        Array.fill kdP 0 (kdP.Length) false
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -684,9 +687,20 @@ type LastFlags() =
     static member SetSuppressedKey (vk: int) =
         if vk >= 0 && vk < kdS.Length then kdS.[vk] <- true
 
+    static member SetPassedKey (vk: int) =
+        if vk >= 0 && vk < kdP.Length then kdP.[vk] <- true
+
+    // The key's down passed: its repeats and its up pass too, even if it is the trigger now
+    static member IsPassedKey (vk: int): bool =
+        vk >= 0 && vk < kdP.Length && kdP.[vk]
+
+    static member GetAndReset_PassedKey (vk: int): bool =
+        vk >= 0 && vk < kdP.Length && getAndReset(&kdP.[vk])
+
     // The keyboard hook is removed: the ups will not be seen
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
+        Array.fill kdP 0 kdP.Length false
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
