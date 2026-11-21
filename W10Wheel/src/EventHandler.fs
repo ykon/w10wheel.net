@@ -509,9 +509,12 @@ let private dragUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
+// As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
+// first: they neither end the locked scroll mode nor initialize the state (Escape)
 let private noneDown (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneDown")
     let checkers = [
+        skipResendEventSingle
         //resetLastFlags
         checkExitScrollDown
         endPass
@@ -522,6 +525,7 @@ let private noneDown (me: MouseEvent): nativeint =
 let private noneUp (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneUp")
     let checkers = [
+        skipResendEventSingle
         checkEscape
         checkSuppressedDown
         endPass
