@@ -9,9 +9,12 @@ open System
 open System.IO
 open System.Collections.Generic
 open System.Diagnostics
+open System.Globalization
 open System.Text.RegularExpressions
 
-let private propLineRegex = new Regex("^\s*\S+\s*=\s*\S+\s*$")
+// key=value: the value can have spaces (e.g. "1, 2, 3" as in AccelTable.txt), the key cannot
+// be empty or have "="
+let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
@@ -25,7 +28,8 @@ type Properties() =
     let isPropLine l = propLineRegex.Match(l).Success
 
     let getKeyValue (l:string) =
-        match l.Split('=') |> trims with
+        // At the first "=": the value can have "=" (a line with spaces is read too)
+        match l.Split([|'='|], 2) |> trims with
         | [|k; v|] -> (k, v)
         | _ -> invalidArg "l" "Invalid property line"
 
@@ -70,10 +74,10 @@ type Properties() =
         self.GetProperty(key)
 
     member self.GetInt (key:string): int =
-        Int32.Parse(self.GetString(key))
+        Int32.Parse(self.GetString(key), CultureInfo.InvariantCulture)
 
     member self.GetDouble (key:string): double =
-        Double.Parse(self.GetString(key))
+        Double.Parse(self.GetString(key), CultureInfo.InvariantCulture)
 
     member self.GetBool (key:string): bool =
         Boolean.Parse(self.GetString(key))
@@ -83,16 +87,16 @@ type Properties() =
         Array.filter (fun s -> s <> "")
 
     member self.GetIntArray (key:string): int[] =
-        self.GetArray(key) |> Array.map (fun s -> Int32.Parse(s))
+        self.GetArray(key) |> Array.map (fun s -> Int32.Parse(s, CultureInfo.InvariantCulture))
 
     member self.GetDoubleArray (key:string): double[] =
-        self.GetArray(key) |> Array.map (fun s -> Double.Parse(s))
+        self.GetArray(key) |> Array.map (fun s -> Double.Parse(s, CultureInfo.InvariantCulture))
 
     member self.SetInt (key:string, n:int): unit =
-        self.SetProperty(key, n.ToString())
+        self.SetProperty(key, n.ToString(CultureInfo.InvariantCulture))
 
     member self.SetDouble (key:string, d:double): unit =
-        self.SetProperty(key, d.ToString("F"))
+        self.SetProperty(key, d.ToString("F", CultureInfo.InvariantCulture))
 
     member self.SetBool (key:string, b:bool): unit =
         self.SetProperty(key, b.ToString())

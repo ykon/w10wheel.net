@@ -145,16 +145,23 @@ let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 
-// Pass Mode is switched under this lock, and Windows sends a resent down under it after
-// checking Pass Mode: the down is either sent before Pass Mode is on, or not sent at all
-// (in Pass Mode the physical up passes W10Wheel and could arrive before a queued down).
+// Pass Mode is switched under this lock, and the LR trigger checks Pass Mode and queues its
+// resent down under it (see EventWaiter.fromTimeout). Held only briefly: SendInput must not
+// be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
 let passModeLock = new Object()
 
-// Incremented under passModeLock whenever Pass Mode is turned on. Windows records it when
-// queuing and does not send a down queued before it, even if Pass Mode has been turned off
-// again by then (the physical up may have passed while Pass Mode was on).
+// Incremented under passModeLock whenever Pass Mode is turned on, and when the state is
+// initialized (initState): the physical ups pass W10Wheel since. Recorded when the LR trigger
+// starts waiting and when inputs are queued: the LR trigger neither resends nor starts scroll
+// mode for a down received before, and Windows does not send the wheel events queued before,
+// even if Pass Mode has been turned off again by then. (The resent downs and ups are checked
+// by the hook: Windows.dropResent.)
 let private passModeGeneration = ref 0
 let getPassModeGeneration () = Volatile.Read(&passModeGeneration.contents)
+
+let private newPassModeGeneration () =
+    lock passModeLock (fun () ->
+        Volatile.Write(passModeGeneration, passModeGeneration.Value + 1))
 
 type private Pass() =
     [<VolatileField>] static let mutable mode = false
@@ -368,6 +375,11 @@ type private Scroll() =
     [<VolatileField>] static let mutable releasedMode = false
     [<VolatileField>] static let mutable closed = false // set at exit: no more scroll mode
     [<VolatileField>] static let mutable passMode = false // Pass Mode is on: no scroll mode
+    [<VolatileField>] static let mutable byKeyboard = false // started by the keyboard trigger
+
+    // The LR trigger start was canceled before Start ran on the EventWaiter thread: Exit was
+    // called while starting (e.g. both buttons released), so Start must not start afterwards
+    [<VolatileField>] static let mutable startCanceled = false
 
     static let monitor = new Object()
 
@@ -390,7 +402,11 @@ type private Scroll() =
             | Some g -> g = Volatile.Read(&passModeGeneration.contents)
             | None -> true
 
-        if not closed && not passMode && sameGeneration then
+        // generation is given for the LR trigger only (see below)
+        let canceled = generation.IsSome && startCanceled
+        if generation.IsSome then startCanceled <- false
+
+        if not closed && not passMode && sameGeneration && not canceled then
             stime <- info.time
             setStartPoint(info.pt.x, info.pt.y)
             initScroll()
@@ -400,10 +416,12 @@ type private Scroll() =
             if cursorChange && not (isDragTrigger()) then
                 WinCursor.changeV()
 
+            byKeyboard <- false
             mode <- true
             starting <- false
         else
-            // Refused (exiting or Pass Mode): do not leave the LR trigger in the starting state
+            // Refused (exiting, Pass Mode or canceled): do not leave the LR trigger in the
+            // starting state
             starting <- false
 
     static member Start (info: HookInfo) = lock monitor (fun () -> start info None)
@@ -415,6 +433,10 @@ type private Scroll() =
     static member Start (info: HookInfo, generation: int) = lock monitor (fun () -> start info (Some generation))
 
     static member Start (info: KHookInfo) = lock monitor (fun () ->
+        // A pending LR trigger start is superseded: cancel it, or it would start scroll mode
+        // again after this one has ended
+        if starting then startCanceled <- true
+
         if not closed && not passMode then
             stime <- info.time
             setStartPoint(Cursor.Position.X, Cursor.Position.Y)
@@ -425,6 +447,7 @@ type private Scroll() =
             if cursorChange then
                 WinCursor.changeV()
 
+            byKeyboard <- true
             mode <- true
             starting <- false
         else
@@ -432,7 +455,15 @@ type private Scroll() =
             starting <- false
     )
 
-    static member Exit () = lock monitor (fun () -> exit ())
+    static member Exit () = lock monitor (fun () ->
+        // Exiting while the LR trigger start is pending (e.g. both buttons released before
+        // Start ran): cancel it, or scroll mode would start afterwards with no button pressed
+        if starting then
+            startCanceled <- true
+            starting <- false
+
+        exit ()
+    )
 
     // At exit: waits for a Start in progress (on the EventWaiter thread for LR triggers),
     // leaves scroll mode and refuses later Starts, so that the cursor is restored and
@@ -447,6 +478,9 @@ type private Scroll() =
     // lock, so that a Start in progress on the EventWaiter thread is not missed.
     static member SetPassMode (b: bool) = lock monitor (fun () ->
         passMode <- b
+        // A pending LR trigger start is refused (Pass Mode generation): do not leave it
+        // starting, the ups after Pass Mode is turned off would be taken for it
+        if b then starting <- false
         if b && mode then exit ()
     )
 
@@ -456,6 +490,7 @@ type private Scroll() =
         dt > (uint32 locktime)
 
     static member IsMode with get() = mode
+    static member ByKeyboard with get() = byKeyboard
     static member StartTime with get() = stime
     static member StartPoint with get() = (sx, sy)
     static member LockTime
@@ -483,6 +518,7 @@ type private Scroll() =
     static member SetStarting () = lock monitor (fun () ->
         // Start refuses while closed or in Pass Mode, so do not wait for it then
         starting <- (not mode) && (not closed) && (not passMode)
+        if starting then startCanceled <- false
     )
 
     static member IsStarting with get() = starting
@@ -509,6 +545,13 @@ let isSwapScroll () = Scroll.Swap
 
 let isReleasedScrollMode () = Scroll.ReleasedMode
 let isPressedScrollMode () = Scroll.IsMode && not (Scroll.ReleasedMode)
+
+// Pressed scroll mode started by a mouse trigger: the ups of mouse triggers end only this one.
+// The keyboard trigger can start scroll mode while their downs are handled (e.g. while the LR
+// trigger start is pending); their ups are then suppressed like their downs.
+let isPressedMouseScrollMode () = isPressedScrollMode() && not Scroll.ByKeyboard
+let isKeyboardScrollMode () = Scroll.IsMode && Scroll.ByKeyboard
+let isPressedKeyboardScrollMode () = isPressedScrollMode() && Scroll.ByKeyboard
 let setReleasedScrollMode () = Scroll.ReleasedMode <- true
 
 let setStartingScrollMode () = Scroll.SetStarting()
@@ -578,19 +621,31 @@ type LastFlags() =
     // S = Suppressed
     [<VolatileField>] static let mutable ldS = false
     [<VolatileField>] static let mutable rdS = false
-    [<VolatileField>] static let mutable sdS = false
+    [<VolatileField>] static let mutable mdS = false
+    [<VolatileField>] static let mutable x1S = false
+    [<VolatileField>] static let mutable x2S = false
 
     static let kdS = Array.create 256 false
+    // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
+    static let kdP = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
         let res = flag
         flag <- false
         res
 
+    static let isKey (vk: int) =
+        vk >= 0 && vk < kdS.Length
+
+    // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Dispatcher) and reset
+    // them; reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats
+    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
+    // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
+    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
     static member Init () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
-        ldS <- false; rdS <- false; sdS <- false
+        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         Array.fill kdS 0 (kdS.Length) false
 
     static member SetResent (down: MouseEvent): unit =
@@ -621,32 +676,73 @@ type LastFlags() =
         match down with
         | LeftDown(_) -> ldS <- true 
         | RightDown(_) -> rdS <- true
-        | MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- true
+        | MiddleDown(_) -> mdS <- true
+        | X1Down(_) -> x1S <- true
+        | X2Down(_) -> x2S <- true
         | _ -> raise (ArgumentException())
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdS.[down.VKCode] <- true
+        | KeyDown(_) -> if isKey down.VKCode then kdS.[down.VKCode] <- true
         | _ -> raise (ArgumentException())
+
+    // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
+    static member IsSuppressedKey (vk: int): bool =
+        isKey vk && kdS.[vk]
+
+    // The keyboard trigger changed while the old key was pressed (its down was suppressed)
+    static member SetSuppressedKey (vk: int) =
+        if isKey vk then kdS.[vk] <- true
+
+    static member SetPassedKey (vk: int) =
+        if isKey vk then kdP.[vk] <- true
+
+    // The key's down passed: its repeats and its up pass too, even if it is the trigger now
+    static member IsPassedKey (vk: int): bool =
+        isKey vk && kdP.[vk]
+
+    static member GetAndReset_PassedKey (vk: int): bool =
+        isKey vk && getAndReset(&kdP.[vk])
+
+    // A key that does not repeat (Pause): its down is always a new press, its flags are reset
+    // (it may send only a down, the flags of the previous press would remain). The flags of the
+    // other keys are kept until their up (a repeat cannot be told from a new press for sure).
+    static member NewKeyDown (vk: int) =
+        if Keyboard.isNoRepeatKey vk then
+            kdS.[vk] <- false
+            kdP.[vk] <- false
+
+    // The keyboard hook is removed: the ups will not be seen
+    static member ResetKeys () =
+        Array.fill kdS 0 kdS.Length false
+        Array.fill kdP 0 kdP.Length false
+
+    // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
+    static member TakeSuppressedDowns (): bool[] =
+        let res = [| ldS; rdS; mdS; x1S; x2S |]
+        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        res
 
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldS)
         | RightUp(_) -> getAndReset(&rdS)
-        | MiddleUp(_) | X1Up(_) | X2Up(_) -> getAndReset(&sdS)
+        | MiddleUp(_) -> getAndReset(&mdS)
+        | X1Up(_) -> getAndReset(&x1S)
+        | X2Up(_) -> getAndReset(&x2S)
         | _ -> raise (ArgumentException())
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) -> getAndReset(&kdS.[up.VKCode])
+        | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
         | _ -> raise (ArgumentException())
 
-    static member ResetLR (down: MouseEvent) =
-        match down with
-        | LeftDown(_) -> ldR <- false; ldS <- false; ldP <- false
-        | RightDown(_) -> rdR <- false; rdS <- false; rdP <- false
-        //| MiddleDown(_) | X1Down(_) | X2Down(_) -> sdS <- false
-        | _ -> raise (ArgumentException())
+    // The flags of the press of a left or right event (nothing for the other buttons)
+    static member ResetLRFor (me: MouseEvent) =
+        match me with
+        | LeftEvent(_) -> ldR <- false; ldS <- false; ldP <- false
+        | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
+        | _ -> ()
 
     (*
     static member Reset (down: KeyboardEvent) =
@@ -778,20 +874,22 @@ let private setMenuEnabled (dict:MenuDict) key enabled =
     if dict.ContainsKey(key) then
         dict.[key].Enabled <- enabled
 
-let mutable private changeTrigger: (unit -> unit) = (fun () -> ())
+// Called with whether the trigger has changed (not on every properties load)
+let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
 
-let setChangeTrigger (f: unit -> unit) =
+let setChangeTrigger (f: bool -> unit) =
     changeTrigger <- f
 
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine("setTrigger: " + res.Name)
+    let changed = res <> getFirstTrigger()
     Volatile.Write(firstTrigger, res)
 
     setMenuEnabled boolMenuDict DataID.sendMiddleClick res.IsSingle
     setMenuEnabled boolMenuDict DataID.draggedLock res.IsDrag
 
-    changeTrigger()
+    changeTrigger changed
 
 let private addClick (item: ToolStripMenuItem) f =
     item.Click.Add (fun e -> f (e))
@@ -1041,9 +1139,36 @@ let private createVhAdjusterMenu () =
 
     menu
 
+// Called with the old trigger key when the key changes (true), or when the keyboard hook is
+// removed (false): see KEventHandler.changeTrigger
+let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
+
+let setChangeKeyboardTrigger f =
+    changeKeyboardTrigger <- f
+
+// Called when the keyboard hook is installed (again): see KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
+
+let setKeyboardHookInstalled f =
+    keyboardHookInstalled <- f
+
 let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
-    Volatile.Write(targetVKCode, Keyboard.getVKCode name)
+    let old = getTargetVKCode()
+    let code = Keyboard.getVKCode name
+    Volatile.Write(targetVKCode, code)
+
+    if code <> old then
+        changeKeyboardTrigger old true
+
+let private setKeyboardHookOf (b: bool) =
+    WinHook.setOrUnsetKeyboardHook b
+    if b then
+        // Installed again on every load (e.g. Reload after Windows removed it): ups may have
+        // been missed
+        keyboardHookInstalled ()
+    else
+        changeKeyboardTrigger (getTargetVKCode()) false
 
 
 
@@ -1056,7 +1181,7 @@ let private createKeyboardMenu () =
         createDictMenuItem data keyboardMenuDict setTargetVKCode
     let add = fun text -> items.Add(create text) |> ignore
 
-    items.Add(createOnOffMenuItem DataID.keyboardHook WinHook.setOrUnsetKeyboardHook) |> ignore
+    items.Add(createOnOffMenuItem DataID.keyboardHook setKeyboardHookOf) |> ignore
     addSeparator items
 
     add (DataID.VK_TAB + " (Tab)")
@@ -1127,14 +1252,6 @@ let private createExitMenuItem (): ToolStripMenuItem =
     let item = createMenuItem_NonID "Exit"
     item.Click.AddHandler(new EventHandler(fun _ _ -> exitAction()))
     item
-
-let private setDefaultPriority () =
-    Debug.WriteLine("setDefaultPriority")
-    //ProcessPriority.setPriority(getProcessPriority())
-    setPriority (getProcessPriority().Name)
-
-let private setDefaultTrigger () =
-    setTrigger(getFirstTrigger().Name)
 
 let private NumberNames: string[] =
     [|DataID.pollTimeout; DataID.scrollLocktime;
@@ -1228,6 +1345,12 @@ let private resetOnOffMenuItems () =
         item.Text <- convLang(getOnOffText(getBooleanOfName name))
     )
 
+// Reload or switching properties can add or remove the custom table
+let private resetCustomAccelMenuItem () =
+    match boolMenuDict.TryGetValue DataID.customAccelTable with
+    | true, item -> item.Enabled <- not Accel.CustomDisabled
+    | _ -> ()
+
 let private resetAllMenuItems () =
     Debug.WriteLine("resetAllMenuItems")
     resetTriggerMenuItems()
@@ -1237,17 +1360,45 @@ let private resetAllMenuItems () =
     resetLanguageMenuItems()
     resetNumberMenuItems()
     resetBoolNumberMenuItems()
+    resetCustomAccelMenuItem()
     resetVhAdjusterMenuItems()
     resetOnOffMenuItems()
 
 let private prop = Properties.Properties()
 
-let private setStringOfProperty name setFunc =
+// The settings before the first load (the default values), written as in a properties file
+let private defaultProp = Properties.Properties()
+
+// Write the settings to p (the custom accel table is not written: it is only read)
+let private setSettings (p: Properties.Properties) =
+    let set = fun key value -> p.[key] <- value
+
+    set DataID.firstTrigger (getFirstTrigger().Name)
+    set DataID.accelMultiplier (Accel.Multiplier.Name)
+    set DataID.processPriority (getProcessPriority().Name)
+    set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
+    set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
+    set DataID.uiLanguage (getUILanguage())
+
+    BooleanNames |> Array.iter (fun n -> p.SetBool(n, (getBooleanOfName n)))
+    NumberNames |> Array.iter (fun n -> p.SetInt(n, (getNumberOfName n)))
+
+let private isInvalidValue (e: exn) =
+    e :? KeyNotFoundException || e :? FormatException || e :? OverflowException || e :? ArgumentException
+
+// Applies the value of name in prop. If it is missing or invalid, the default value is
+// applied instead: otherwise the value of the previous file would be kept (Reload,
+// switching properties).
+let private setOrDefault (name: string) (apply: Properties.Properties -> unit) =
     try
-        setFunc(prop.GetString(name))
+        apply prop
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? ArgumentException as e -> Debug.WriteLine("Match error: " + e.Message)
+        | e when isInvalidValue e ->
+            Debug.WriteLine(sprintf "Invalid value: %s (%s): use default" name e.Message)
+            apply defaultProp
+
+let private setStringOfProperty name setFunc =
+    setOrDefault name (fun p -> setFunc(p.GetString(name)))
 
 let private setTriggerOfProperty (): unit =
     setStringOfProperty DataID.firstTrigger setTrigger
@@ -1256,6 +1407,9 @@ let private setAccelOfProperty (): unit =
     setStringOfProperty DataID.accelMultiplier setAccelMultiplier
 
 let private setCustomAccelOfProperty (): unit =
+    // Without a valid custom table in this file, do not keep the table of the previous file
+    Accel.CustomDisabled <- true
+
     try
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
         let cam = prop.GetDoubleArray(DataID.customAccelMultiplier)
@@ -1270,17 +1424,10 @@ let private setCustomAccelOfProperty (): unit =
     with
         | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
         | :? FormatException as e -> Debug.WriteLine("Parse error: " + e.Message)
+        | :? OverflowException as e -> Debug.WriteLine("Overflow: " + e.Message)
 
 let private setPriorityOfProperty (): unit =
-    try
-        setPriority (prop.GetString DataID.processPriority)
-    with
-        | :? KeyNotFoundException as e ->
-            Debug.WriteLine("Not found " + e.Message)
-            setDefaultPriority()
-        | :? ArgumentException as e ->
-            Debug.WriteLine("Match error: " + e.Message)
-            setDefaultPriority()
+    setStringOfProperty DataID.processPriority setPriority
 
 let private setVKCodeOfProperty (): unit =
     setStringOfProperty DataID.targetVKCode setTargetVKCode
@@ -1289,31 +1436,24 @@ let private setVhAdjusterMethodOfProperty (): unit =
     setStringOfProperty DataID.vhAdjusterMethod setVhAdjusterMethod
 
 let private setUILanguageOfProperty (): unit =
-    setStringOfProperty DataID.uiLanguage setUILanguage
+    setStringOfProperty DataID.uiLanguage (fun lang ->
+        // Only the languages of the Language menu
+        if lang <> DataID.English && lang <> DataID.Japanese then
+            raise (ArgumentException("Unknown language: " + lang))
+
+        setUILanguage lang)
 
 let private setBooleanOfProperty (name: string): unit =
-    try
-        setBooleanOfName name (prop.GetBool name)
-    with
-        | :? KeyNotFoundException ->
-            Debug.WriteLine("Not found: " + name)
-            if name = DataID.excludeAvast then
-                setBooleanOfName name false
-        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
-        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
+    setOrDefault name (fun p -> setBooleanOfName name (p.GetBool name))
 
 let private setNumberOfProperty (name:string) (low:int) (up:int) =
-    try
-        let n = prop.GetInt name
+    setOrDefault name (fun p ->
+        let n = p.GetInt name
         Debug.WriteLine(sprintf "setNumberOfProperty: %s: %d" name n)
         if n < low || n > up then
-            Debug.WriteLine("Number out of bounds: " + name)
-        else
-            setNumberOfName name n
-    with
-        | :? KeyNotFoundException -> Debug.WriteLine("Not fund: " + name)
-        | :? FormatException -> Debug.WriteLine("Parse error: " + name)
-        | :? ArgumentException -> Debug.WriteLine("Match error: " + name)
+            raise (ArgumentOutOfRangeException(name, "Number out of bounds"))
+
+        setNumberOfName name n)
 
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
@@ -1332,9 +1472,17 @@ let convLangWithProp (msg: string) =
     Locale.convLang lang msg
 
 let loadProperties (update:bool): unit =
+    if not loaded then
+        setSettings defaultProp
+
     loaded <- true
     try
-        prop.Load(getSelectedPropertiesPath(), update)
+        try
+            prop.Load(getSelectedPropertiesPath(), update)
+        with
+            // All the settings have their default values (see setOrDefault)
+            | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
+
         Debug.WriteLine("Start load")
 
         setTriggerOfProperty()
@@ -1346,7 +1494,7 @@ let loadProperties (update:bool): unit =
         setUILanguageOfProperty()
 
         BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
-        WinHook.setOrUnsetKeyboardHook (Volatile.Read(&keyboardHook.contents))
+        setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
 
         Debug.WriteLine("setNumberOfProperties")
         let setNum = setNumberOfProperty
@@ -1362,10 +1510,6 @@ let loadProperties (update:bool): unit =
         setNum DataID.firstMinThreshold 1 10
         setNum DataID.switchingThreshold 10 500
     with
-        | :? FileNotFoundException ->
-            Debug.WriteLine("Properties file not found")
-            setDefaultPriority()
-            setDefaultTrigger()
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
 let private isChangedProperties () =
@@ -1400,18 +1544,7 @@ let storeProperties () =
         if not loaded || not (isChangedProperties()) then
             Debug.WriteLine("Not changed properties")
         else
-            let set = fun key value -> prop.[key] <- value
-
-            set DataID.firstTrigger (getFirstTrigger().Name)
-            set DataID.accelMultiplier (Accel.Multiplier.Name)
-            set DataID.processPriority (getProcessPriority().Name)
-            set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
-            set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
-            set DataID.uiLanguage (getUILanguage())
-
-            BooleanNames |> Array.iter (fun n -> prop.SetBool(n, (getBooleanOfName n)))
-            NumberNames |> Array.iter (fun n -> prop.SetInt(n, (getNumberOfName n)))
-
+            setSettings prop
             prop.Store(getSelectedPropertiesPath())
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
@@ -1465,6 +1598,8 @@ let private setProperties name =
         Debug.WriteLine("setProperties: " + name)
 
         setSelectedProperties name
+        // Do not keep the keys of the previous file (they would be stored in this file)
+        prop.Clear()
         loadProperties true
         resetAllMenuItems()
 
@@ -1574,16 +1709,25 @@ let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
 let initState () =
+    // Cancel the LR trigger wait first: its timeout could set the flags again after Init
+    offerEW(Cancel) |> ignore
+    // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
+    // received before, and the wheel events queued are not sent. A down resent before and
+    // sent after its physical up is dropped by the hook (Windows.dropResent).
+    newPassModeGeneration ()
     initStateMEH()
     initStateKEH()
     LastFlags.Init()
     exitScrollMode()
-    offerEW(Cancel) |> ignore
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
 // passed. Cancel the wait and reset their state (scroll mode is left by Scroll.SetPassMode).
 onPassModeOn <- (fun () ->
+    // A down resent by W10Wheel (LR trigger) waits for W10Wheel to resend its up when the
+    // physical up comes. In Pass Mode the physical up passes instead and releases it; if it
+    // passes before the resent down (Windows input queue), the hook drops the down
+    // (Windows.dropResent).
     offerEW(Cancel) |> ignore
     initStateMEH()
     initStateKEH()

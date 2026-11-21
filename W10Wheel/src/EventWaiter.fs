@@ -21,12 +21,17 @@ type private SynchronousQueue() =
     member self.setWaiting () =
         waiting <- true
 
-    member self.poll (timeout: int): MouseEvent option =
+    member self.IsWaiting = waiting
+
+    // handle is called with the result (None: timeout) before waiting is reset, so before an
+    // offer made meanwhile returns: what it queues (resends) comes before what the hook queues
+    // for the events after (e.g. the resent up for the physical up of a resent down)
+    member self.poll (timeout: int) (handle: MouseEvent option -> unit): unit =
         let ts = new TimeSpan(0, 0, 0, 0, timeout)
         let mutable res = NonEvent
 
         try
-            if sync.TryTake(&res, ts) then Some(res) else None
+            handle (if sync.TryTake(&res, ts) then Some(res) else None)
         finally
             waiting <- false
 
@@ -63,8 +68,11 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetResent waitingEvent
         //Thread.Sleep(0)
     | LeftUp(_) | RightUp(_) ->
-        Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
-        Ctx.LastFlags.SetResent waitingEvent
+        // Only for the up of the other button: the waiting down is resent and its physical up
+        // comes later. The up of the same button is resent with the down (the click is done).
+        if not (waitingEvent.SameButton me) then
+            Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
+            Ctx.LastFlags.SetResent waitingEvent
     | LeftDown(_) | RightDown(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
@@ -80,17 +88,28 @@ let offer me: bool =
     else
         false
 
+// Cancels the wait (on the hook thread, e.g. when the trigger changes): the down that was
+// waiting, if the wait was canceled (the down is not resent)
+let cancel (): MouseEvent option =
+    let down = waitingEvent
+    if offer Cancel then Some(down) else None
+
+// Whether a wait is in progress for a down of another button than up's (on the hook thread)
+let isWaitingOtherThan (up: MouseEvent): bool =
+    sync.IsWaiting && not (waitingEvent.SameButton up)
+
 let setOfferEW () =
     Ctx.setOfferEW offer
 
 // generation: the Pass Mode generation when the physical down was received (see start)
+// pressId: the press of the physical down (Windows.pressIdOf), for the hook (Windows.dropResent)
 
-let private fromMove (generation: int) (down: MouseEvent) =
+let private fromMove (generation: int) (pressId: int) (down: MouseEvent) =
     //Ctx.LastFlags.SetResent down
     Debug.WriteLine(sprintf "wait Trigger (%s -->> Move): resend %s" down.Name down.Name)
-    Windows.resendDown generation down
+    Windows.resendDown generation pressId down
 
-let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
+let private fromUp (generation: int) (pressId: int) (down:MouseEvent) (up:MouseEvent) =
     //Ctx.LastFlags.SetResent down
 
     let resendC (mc: MouseClick) =
@@ -101,7 +120,7 @@ let private fromUp (generation: int) (down:MouseEvent) (up:MouseEvent) =
         let wn = down.Name
         let rn = up.Name
         Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): resend %s, %s" wn rn wn rn)
-        Windows.resendDownUp generation down up
+        Windows.resendDownUp generation pressId down up
 
     match down, up with
     | LeftDown(_), LeftUp(_)  ->
@@ -125,15 +144,15 @@ let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
     Debug.WriteLine(sprintf "wait Trigger (%s -->> %s): start scroll mode" d1.Name d2.Name)
     Ctx.startScrollModeFor generation d2.Info
 
-let private dispatchEvent generation down res =
+let private dispatchEvent generation pressId down res =
     match res with
-    | Move(_) -> fromMove generation down
-    | LeftUp(_) | RightUp(_) -> fromUp generation down res
+    | Move(_) -> fromMove generation pressId down
+    | LeftUp(_) | RightUp(_) -> fromUp generation pressId down res
     | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
 
-let private fromTimeout (generation: int) (down: MouseEvent) =
+let private fromTimeout (generation: int) (pressId: int) (down: MouseEvent) =
     // The resent flag is also seen by the up of a later press: if Pass Mode has been turned
     // on since the physical down (and maybe off again, with a new press received), neither
     // set it nor resend. Checked under Ctx.passModeLock, under which Pass Mode is switched.
@@ -141,20 +160,29 @@ let private fromTimeout (generation: int) (down: MouseEvent) =
         if Ctx.isPassMode() || Ctx.getPassModeGeneration() <> generation then
             Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): dropped (Pass Mode)" down.Name)
         else
-            Ctx.LastFlags.SetResent down
             Debug.WriteLine(sprintf "wait Trigger (%s -->> Timeout): resend %s" down.Name down.Name)
-            Windows.resendDown generation down)
+            // Queue the down first: the up of a hook seeing the flag is queued after it
+            Windows.resendDown generation pressId down
+            Ctx.LastFlags.SetResent down)
 
-// (physical down, Pass Mode generation when it was received)
-let private waiterQueue = new BlockingCollection<MouseEvent * int>(1)
+// (physical down, Pass Mode generation when it was received, its press ID)
+let private waiterQueue = new BlockingCollection<MouseEvent * int * int>(1)
 
 let private waiterThread = new Thread(fun () ->
     while true do
-        let down, generation = waiterQueue.Take()
+        let down, generation, pressId = waiterQueue.Take()
 
-        match sync.poll(Ctx.getPollTimeout()) with
-        | Some(res) -> dispatchEvent generation down res
-        | None -> fromTimeout generation down
+        // The scroll start (second down) takes longer: it is done after the offer returns,
+        // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+        let second = ref NonEvent
+        sync.poll (Ctx.getPollTimeout()) (fun res ->
+            match res with
+            | Some(LeftDown(_) | RightDown(_) as d2) -> second.Value <- d2
+            | Some(res) -> dispatchEvent generation pressId down res
+            | None -> fromTimeout generation pressId down)
+
+        if second.Value.IsDown then
+            dispatchEvent generation pressId down second.Value
 )
         
 //let private waiterThread = new Thread(waiter)
@@ -167,9 +195,11 @@ let start (down: MouseEvent) =
         raise (ArgumentException())
 
     waitingEvent <- down
-    // Called by the mouse hook when the physical down is received: record the Pass Mode
-    // generation now, the resend happens later on the waiter thread
-    waiterQueue.Add((down, Ctx.getPassModeGeneration()))
+    // Before queuing the wait: set after it, the wait could already have timed out (and reset
+    // waiting), leaving waiting set without a wait, so that the next offer would never return
     sync.setWaiting()
+    // Called by the mouse hook when the physical down is received: record the Pass Mode
+    // generation and the press now, the resend happens later on the waiter thread
+    waiterQueue.Add((down, Ctx.getPassModeGeneration(), Windows.pressIdOf down))
 
 

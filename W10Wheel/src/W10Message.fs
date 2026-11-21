@@ -12,10 +12,12 @@ let W10_MESSAGE_PASSMODE = W10_MESSAGE_BASE + 2
 let W10_MESSAGE_RELOAD_PROP = W10_MESSAGE_BASE + 3
 let W10_MESSAGE_INIT_STATE = W10_MESSAGE_BASE + 4
 
-let private sendMessage (msg: int) =
+// false if SendInput failed
+let private sendMessage (msg: int): bool =
     let pt = WinAPI.POINT(Cursor.Position.X, Cursor.Position.Y)
     let res = Windows.sendInputDirect pt 1 MOUSEEVENTF_HWHEEL 0u (uint32 msg)
     Debug.WriteLine(sprintf "SendInput: %d" res)
+    res = 1u
 
 let sendExit () =
     Debug.WriteLine("send W10_MESSAGE_EXIT")

@@ -85,18 +85,23 @@ let private unknownCommand name =
 let private procArgv (argv: string[]) =
     Debug.WriteLine("procArgv")
 
-    match argv |> Array.toList with
-    | "--sendExit" :: _ -> W10Message.sendExit ()
-    | "--sendPassMode" :: rest -> W10Message.sendPassMode (getBool(rest))
-    | "--sendReloadProp" :: _ -> W10Message.sendReloadProp ()
-    | "--sendInitState" :: _ -> W10Message.sendInitState ()
-    | name :: _ when name.StartsWith("--") -> unknownCommand name
-    | name :: _ -> setSelectedProperties name
-    | _ -> ()
+    // Some(false) if the command could not be sent (SendInput failed)
+    let sent =
+        match argv |> Array.toList with
+        | "--sendExit" :: _ -> Some(W10Message.sendExit ())
+        | "--sendPassMode" :: rest -> Some(W10Message.sendPassMode (getBool(rest)))
+        | "--sendReloadProp" :: _ -> Some(W10Message.sendReloadProp ())
+        | "--sendInitState" :: _ -> Some(W10Message.sendInitState ())
+        | name :: _ when name.StartsWith("--") -> unknownCommand name; None
+        | name :: _ -> setSelectedProperties name; None
+        | _ -> None
 
-    if argv.Length > 0 && argv.[0].StartsWith("--send") then
-        Thread.Sleep(1000)
-        Environment.Exit(0)
+    sent |> Option.iter (fun ok ->
+        if ok then
+            Thread.Sleep(1000)
+            Environment.Exit(0)
+        else
+            Environment.Exit(1))
 
 
 let private initSetFunctions () =
@@ -108,6 +113,7 @@ let private initSetFunctions () =
     EventWaiter.setOfferEW ()
     EventHandler.setInitStateMEH ()
     KEventHandler.setInitStateKEH ()
+    KEventHandler.setChangeTrigger ()
 
 [<STAThread>]
 [<EntryPoint>]
@@ -118,7 +124,8 @@ let main argv =
     checkDoubleLaunch ()
     checkAdmin ()
 
-    SystemEvents.SessionEnding.Add (fun _ -> procExit())
+    // Not at SessionEnding: the shutdown can still be canceled there (and W10Wheel kept running)
+    SystemEvents.SessionEnded.Add (fun _ -> procExit())
     initSetFunctions ()
 
     Ctx.loadProperties false
