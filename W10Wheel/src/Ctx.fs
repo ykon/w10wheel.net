@@ -1027,18 +1027,19 @@ let private setKeyboardHookOf (b: bool) =
 
 let private createPassModeMenuItem () =
     let id = DataID.passMode
-    let item = createMenuItem {engText = "Pass Mode"; id = Some(id)}
+    // Pass Mode (its name in the code and the command --sendPassMode)
+    let item = createMenuItem {engText = "Pause"; id = Some(id)}
     item.Click.AddHandler(new EventHandler(makeSetBooleanEvent id))
     item.CheckOnClick <- true
     passModeMenuItem <- item
     item
 
 let private createInfoMenuItem () =
-    let item = createMenuItem_NonID "Info"
+    let item = createMenuItem_NonID "About"
 
     addClick item (fun _ ->
         let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
-        MessageBox.Show(msg, convLang("Info"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
+        MessageBox.Show(msg, convLang("About"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
     )
 
 // Before exiting without the message loop (Environment.Exit): the icon would remain in the tray

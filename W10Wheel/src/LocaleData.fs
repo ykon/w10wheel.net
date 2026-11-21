@@ -103,13 +103,14 @@ let private JapaneseMessage =
         "Horizontal Scroll", "水平スクロール";
         "Reverse Scroll (Flip)", "スクロール反転";
         "Swap Scroll (V.H)", "垂直/水平スクロール入れ替え";
-        "Pass Mode", "制御停止";
+        "Pause", "一時停止";
         
         "Language", "言語";
         "English", "英語";
         "Japanese", "日本語";
         
         "Info", "情報";
+        "About", "バージョン情報";
         "Name", "名前";
         "Version", "バージョン";
         
