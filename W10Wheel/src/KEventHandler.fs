@@ -160,7 +160,7 @@ let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
     let kd = KeyDown(info)
-    Ctx.LastFlags.NewKeyDown(kd.VKCode, info.time)
+    Ctx.LastFlags.NewKeyDown kd.VKCode
 
     // The trigger key that does not repeat (Pause) may send no up: a down after its down was
     // released, quickly. As its up would, lock the scroll it started (this down then ends it),
@@ -220,7 +220,15 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
         Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
         Ctx.exitScrollMode()
 
+// The ups may have been missed (see Ctx.LastFlags.ResetReleasedKeys): the last trigger key event
+// is forgotten if the key is not pressed any more, or its next down would be taken for a repeat
+let private keysReleased (isPressed: int -> bool) =
+    match lastEvent with
+    | KeyDown(_) when not (isPressed lastEvent.VKCode) -> lastEvent <- NonEvent
+    | _ -> ()
+
 let setChangeTrigger () =
     Ctx.setChangeKeyboardTrigger changeTrigger
+    Ctx.setKeysReleased keysReleased
 
 
