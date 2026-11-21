@@ -340,6 +340,9 @@ type SettingsDialog(conv: string -> string) =
         if not form.Visible then
             // The settings may have been changed (e.g. Reload) or the language since it was shown
             retext ()
+            // The focus on the list of the pages, not on the properties (the first control): its
+            // text would be shown selected, as if it were to be changed
+            navButtons |> Seq.tryFind (fun b -> b.Checked) |> Option.iter (fun b -> form.ActiveControl <- b)
             form.Show()
 
         form.Activate()
