@@ -146,6 +146,10 @@ let main argv =
     // Before any window or message box (procArgv can show one): without it, they are drawn in the
     // classic style
     Application.EnableVisualStyles()
+    // The controls drawn as in .NET 11 (rounded, larger check boxes), not Classic (the default).
+    // Net11, not Latest: the look does not change with a newer .NET. SettingsForm adjusts the
+    // widths for it (isModernStyles).
+    Application.SetDefaultVisualStylesMode(VisualStylesMode.Net11)
     // Also before any window: the windows of the modules (Ctx.notifyIcon, RawInput.messageWindow)
     // are created when the modules are first used, after this. Without it (no manifest either),
     // the menu and the dialogs are stretched and blurred on a scaled display. Scrolling does not

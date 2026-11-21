@@ -17,6 +17,12 @@ open System.Windows.Forms
 // in the current language)
 type internal Binding = { refresh: unit -> unit; retext: unit -> unit }
 
+// The controls of the visual styles of .NET 11 (Program.main: Net11) have more padding than the
+// classic ones (Classic: Application.EnableVisualStyles only)
+let private isModernStyles () =
+    Application.DefaultVisualStylesMode <> VisualStylesMode.Classic &&
+    Application.DefaultVisualStylesMode <> VisualStylesMode.Disabled
+
 // A ComboBox (DropDownList) does not size itself: wide enough for its longest item
 let private fitComboBox (cb: ComboBox) =
     let textWidth =
@@ -24,7 +30,8 @@ let private fitComboBox (cb: ComboBox) =
         |> Seq.map (fun item -> TextRenderer.MeasureText(string item, cb.Font).Width)
         |> Seq.fold max 0
     let button = SystemInformation.GetVerticalScrollBarWidthForDpi(cb.DeviceDpi)
-    cb.Width <- textWidth + button + cb.LogicalToDeviceUnits(10)
+    let padding = if isModernStyles() then 40 else 10
+    cb.Width <- textWidth + button + cb.LogicalToDeviceUnits(padding)
 
 // The highlight color of the theme mixed with the window color (amount: 0.0 - 1.0 of the
 // highlight), as the selected item in the list of the settings of the browsers
@@ -107,7 +114,9 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
 
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range)
     member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit) =
-        let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up, Width = 70,
+        // Wider in the modern styles: their up and down buttons are side by side
+        let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up,
+                                  Width = (if isModernStyles() then 130 else 70),
                                   Anchor = AnchorStyles.Left, TextAlign = HorizontalAlignment.Right)
         n.ValueChanged.Add(fun _ -> onChange (fun () -> set (int n.Value)))
         register { refresh = (fun () -> n.Value <- decimal (Math.Clamp(get(), low, up))); retext = ignore }
