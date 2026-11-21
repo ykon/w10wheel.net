@@ -42,9 +42,11 @@ let private checkAdmin () =
         if (showAdminMesssage ()) = DialogResult.OK then
             Process.Start(ProcessStartInfo(WikiUrl, UseShellExecute = true)) |> ignore
 
-let private procExit () =
+let private closeAll () =
     Debug.WriteLine("procExit")
 
+    // No more downs are resent: the hooks are removed next (see Windows.beginClose)
+    Windows.beginClose()
     WinHook.unhook()
 
     // Cancel an LR trigger wait: after its timeout it would resend a down whose up does not
@@ -55,11 +57,24 @@ let private procExit () =
     // This also waits for a scroll start in progress and refuses later ones.
     Ctx.closeScrollMode()
 
-    // Wait for a resent click being sent (so that its up is sent) and stop sending
+    // Wait for a resent click being sent (so that its up is sent), send the ups still queued
+    // and stop sending
     Windows.closeInput()
 
     Ctx.storeProperties()
     PreventMultiInstance.unlock()
+
+let private exitLock = new Object()
+let mutable private exited = false
+
+// Called when the message loop ends and when the session ends (SessionEnded, maybe on another
+// thread): done once. The other call waits for it to be done, or the process could end while
+// the properties are stored.
+let private procExit () = lock exitLock (fun () ->
+    if not exited then
+        exited <- true
+        closeAll ()
+)
 
 let private getBool (sl: string list): bool =
     try

@@ -32,7 +32,8 @@ let private BATCH_INPUT_INTERVAL_MS = 10
 // Held while a batch is being sent, so that closeInput can wait for it at exit
 let private sendLock = new Object()
 
-// Set by closeInput at exit: no more inputs are sent
+// Set at exit (beginClose): no more inputs are sent but the ups (single), so that no button is
+// left pressed by a down resent before
 let private closing = ref false
 
 // The rest of a batch (the up) whose down was sent but which could not be sent even with
@@ -109,8 +110,17 @@ let private sendUps (ups: WinAPI.MINPUT[]) =
     addUnsent ups
     retryUnsent true
 
+let private isSingleUp (msgs: WinAPI.MINPUT[]) =
+    msgs.Length = 1 && isUp msgs.[0]
+
 let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
-    if not (Volatile.Read(&closing.contents)) then
+    if Volatile.Read(&closing.contents) then
+        // At exit: an up for a down resent earlier is still sent (see closeInput)
+        if isSingleUp msgs then
+            sendUps msgs
+        else
+            Debug.WriteLine("sendBatch: dropped (closing)")
+    else
         // Without retries here: while SendInput keeps failing, retrying before every
         // batch (wheel events while scrolling) would make the queue fall behind
         retryUnsent false
@@ -143,12 +153,24 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
                 addUnsent (sendInOrder true msgs.[1..])
 )
 
-// Called at exit: stops sending, waits for a batch being sent (its up included) and
-// tries again an up that could not be sent.
+// Called at exit before the hooks are removed: stops sending but the ups (see closing). A down
+// resent after the hooks are removed would not be released by W10Wheel if its physical up has
+// come already (and suppressed).
+let beginClose () =
+    Volatile.Write(closing, true)
+
+// Called at exit after the hooks are removed: waits for a batch being sent (its up included),
+// sends the ups still queued (for downs resent earlier) and tries again an up that could not be
+// sent. The other inputs queued are dropped.
 let closeInput () =
     Volatile.Write(closing, true)
     if Monitor.TryEnter(sendLock, 1000) then
         try
+            let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
+            while inputQueue.TryTake(&item, 0) do
+                let _, msgs = item
+                if isSingleUp msgs then addUnsent msgs
+
             retryUnsent true
         finally
             Monitor.Exit(sendLock)

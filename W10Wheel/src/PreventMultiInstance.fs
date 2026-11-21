@@ -32,5 +32,7 @@ let tryLock (): bool =
         | :? IOException -> false
 
 let unlock () =
-    if isLocked() then
-        Volatile.Read(&lock.contents).Close()
+    // Once (isLocked is false after)
+    let stream = Interlocked.Exchange(&lock.contents, null)
+    if not (isNull stream) then
+        stream.Close()
