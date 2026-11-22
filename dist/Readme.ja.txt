@@ -214,26 +214,27 @@ URL:
 
 設定ダイアログ:
         設定を変更するとすぐに反映され、設定ファイルに保存されます。
+        左の一覧でページを選びます。
         Reset to defaults: 選んでいる設定ファイルの設定を既定値に戻す (言語は除く)
         Properties: 設定ファイルの切り替え、Add (追加)、Delete (削除)、
                 Open Dir (フォルダを開く)、Reload (再読み込み)
-        General タブ:
+        General ページ:
                 Language: 言語設定
                 Priority: プロセスの優先度を変更
-        Trigger タブ:
+        Trigger ページ:
                 Mouse: マウスのトリガーを変更 (設定項目を参照)
                         チェックを外すとマウスのトリガーなし (NoneTrigger)
                 Keyboard: キーボードトリガー
                 pollTimeout, scrollLocktime: 数値をセット (設定項目を参照)
-        Scroll タブ:
+        Scroll ページ:
                 Cursor Change: スクロールモードのカーソル変更
                 Horizontal Scroll: 水平スクロール
                 Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
                 Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
                 verticalThreshold, horizontalThreshold: 数値をセット (設定項目を参照)
-        Accel Table タブ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
-        Real Wheel Mode タブ: 実際のホイールに近いスクロール (設定項目を参照)
-        VH Adjuster タブ: 垂直、水平の方向固定、切り替え機能
+        Accel Table ページ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
+        Real Wheel Mode ページ: 実際のホイールに近いスクロール (設定項目を参照)
+        VH Adjuster ページ: 垂直、水平の方向固定、切り替え機能
         
 設定項目:
         firstTrigger: string (default: LRTrigger)
