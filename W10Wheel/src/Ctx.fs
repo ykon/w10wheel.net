@@ -911,8 +911,9 @@ let private makeSetBooleanEvent id =
         let b = item.Checked
         setBooleanOfName id b
 
-// Set when the settings dialog is made (see createSettingsDialog): it shows the settings again
-// when they have been loaded, and its texts when the language has changed
+// Set when the settings dialog is made (see createSettingsDialog): it shows the settings and the
+// list of the properties again when they have been loaded (or a file added or deleted), and its
+// texts when the language has changed
 let mutable private refreshSettingsDialog: unit -> unit = (fun () -> ())
 let mutable private retextSettingsDialog: unit -> unit = (fun () -> ())
 
@@ -1525,7 +1526,7 @@ let private createSettingsDialog () =
     addNumber vhAdjuster DataID.firstMinThreshold 1 10
     addNumber vhAdjuster DataID.switchingThreshold 10 500
 
-    refreshSettingsDialog <- dialog.RefreshValues
+    refreshSettingsDialog <- dialog.RefreshAll
     retextSettingsDialog <- dialog.RetextLater
     dialog
 

@@ -173,6 +173,9 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
 type SettingsDialog(conv: string -> string) =
     let bindings = ResizeArray<Binding>()
     let mutable refreshing = false
+    // Set by RefreshAll: the list of the properties is read again (the files may have been added
+    // or deleted), not at every change of a setting
+    let mutable readLists = false
     let mutable changed: unit -> unit = (fun () -> ())
 
     let form = new Form()
@@ -352,8 +355,11 @@ type SettingsDialog(conv: string -> string) =
         cb.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && cb.SelectedIndex >= 0 then switchTo ids.[cb.SelectedIndex])
         register {
-            // Read again only for a name not in the list (e.g. added): see getItems
-            refresh = (fun () -> if Array.exists isCurrent ids then selectCurrent () else reload ())
+            // Read again after a load, Add, Delete or Reload (RefreshAll): a deleted name left in
+            // the list could be chosen with the keys or the wheel, and its file written again.
+            // After a change of a setting, only for a name not in the list.
+            refresh = (fun () ->
+                if readLists || not (Array.exists isCurrent ids) then reload () else selectCurrent ())
             retext = reload }
         top.Controls.Add(cb)
 
@@ -372,9 +378,14 @@ type SettingsDialog(conv: string -> string) =
         register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
         bottomLeft.Controls.Add(b)
 
-    // Shows the settings again (e.g. after a properties load, or a change in the menu)
+    // Shows the settings again after a change in the dialog
     member _.RefreshValues () =
         refresh ()
+
+    // Shows the settings and the list of the properties again (after a load, Add, Delete...)
+    member _.RefreshAll () =
+        readLists <- true
+        try refresh () finally readLists <- false
 
     // The language has changed. Later: maybe called from the handler of a control that retext
     // changes (the language ComboBox)
