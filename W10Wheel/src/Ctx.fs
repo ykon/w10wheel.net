@@ -1554,7 +1554,9 @@ let setSystemTray (): unit =
     ni.Text <- getTrayText false
     ni.Visible <- true
     ni.ContextMenuStrip <- createContextMenuStrip()
-    ni.DoubleClick.Add (fun _ -> Pass.toggleMode())
+    // A double click of the left button only: DoubleClick is also raised for the other buttons
+    // (e.g. two right clicks to open the menu)
+    ni.MouseDoubleClick.Add (fun e -> if e.Button = MouseButtons.Left then Pass.toggleMode())
     
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())
