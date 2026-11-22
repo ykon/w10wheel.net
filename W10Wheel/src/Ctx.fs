@@ -1771,11 +1771,12 @@ let private createSettingsDialog () =
     dialog.Status <- (fun () ->
         if not loaded then
             Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
+        // Before a Reload that failed: the changes made after it are not stored
+        elif storeError.IsSome then
+            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
         elif loadError.IsSome then
             // Reload: the settings are those before, still stored
             Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
-        elif storeError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
         else
             None)
 
