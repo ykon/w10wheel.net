@@ -26,9 +26,15 @@ let private isModernStyles () =
 // A ComboBox (DropDownList) does not size itself: wide enough for its longest item
 let private fitComboBox (cb: ComboBox) =
     let textWidth =
-        cb.Items |> Seq.cast<obj>
-        |> Seq.map (fun item -> TextRenderer.MeasureText(string item, cb.Font).Width)
-        |> Seq.fold max 0
+        let widths (measure: string -> Size) =
+            cb.Items |> Seq.cast<obj> |> Seq.map (fun item -> (measure (string item)).Width) |> Seq.fold max 0
+        // With the device context of the box once it exists: on a display of another DPI than
+        // the main one, the screen's would measure at the DPI of the main display
+        if cb.IsHandleCreated then
+            use g = cb.CreateGraphics()
+            widths (fun text -> TextRenderer.MeasureText(g, text, cb.Font))
+        else
+            widths (fun text -> TextRenderer.MeasureText(text, cb.Font))
     let button = SystemInformation.GetVerticalScrollBarWidthForDpi(cb.DeviceDpi)
     let padding = if isModernStyles() then 40 else 10
     cb.Width <- textWidth + button + cb.LogicalToDeviceUnits(padding)
