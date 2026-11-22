@@ -114,9 +114,10 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
 
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range)
     member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit) =
-        // Wider in the modern styles: their up and down buttons are side by side
+        // Wider in the modern styles: their up and down buttons are side by side (at 96 DPI, scaled
+        // with the dialog)
         let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up,
-                                  Width = (if isModernStyles() then 130 else 70),
+                                  Width = (if isModernStyles() then 90 else 70),
                                   Anchor = AnchorStyles.Left, TextAlign = HorizontalAlignment.Right)
         n.ValueChanged.Add(fun _ -> onChange (fun () -> set (int n.Value)))
         register { refresh = (fun () -> n.Value <- decimal (Math.Clamp(get(), low, up))); retext = ignore }
@@ -152,6 +153,8 @@ type SettingsDialog(conv: string -> string) =
     let mutable changed: unit -> unit = (fun () -> ())
 
     let form = new Form()
+    // The layout is suspended until the first Show: see Show
+    let mutable laidOut = false
     let root = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                     ColumnCount = 1, Padding = Padding(8))
     let top = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -217,8 +220,8 @@ type SettingsDialog(conv: string -> string) =
 
     do
         form.SuspendLayout()
-        // Built at 96 DPI: scaled to the DPI of the display when it is loaded (and when it moves to
-        // another display, see Program.main: PerMonitorV2)
+        // Built at 96 DPI: scaled to the DPI of the display when the layout resumes (Show), and when
+        // it moves to another display (Program.main: PerMonitorV2)
         form.AutoScaleDimensions <- SizeF(96.0f, 96.0f)
         form.AutoScaleMode <- AutoScaleMode.Dpi
         form.FormBorderStyle <- FormBorderStyle.FixedDialog
@@ -265,8 +268,6 @@ type SettingsDialog(conv: string -> string) =
                 form.Validate() |> ignore
                 e.Cancel <- true
                 form.Hide())
-
-        form.ResumeLayout(false)
 
     // Called after a setting has been changed in the dialog (not after a properties switch)
     member _.Changed with set (f: unit -> unit) = changed <- f
@@ -358,6 +359,13 @@ type SettingsDialog(conv: string -> string) =
         if form.IsHandleCreated then form.BeginInvoke(Action(retext)) |> ignore
 
     member _.Show () =
+        // The controls are scaled from 96 DPI when the layout resumes: after all the pages have
+        // been added (resumed in the constructor, those added after would not be scaled), and
+        // before retext measures the texts in the units of the display
+        if not laidOut then
+            form.ResumeLayout(false)
+            laidOut <- true
+
         if not form.Visible then
             // The settings may have been changed (e.g. Reload) or the language since it was shown
             retext ()
