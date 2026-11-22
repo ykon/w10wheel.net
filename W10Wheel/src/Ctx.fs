@@ -1576,8 +1576,9 @@ let private createSettingsDialog () =
     // The ranges of loadProperties
     let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled tip =
         page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled, tip = tip)
-    let addTime (page: SettingsForm.SettingsPage) id low up tip =
-        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, unit = "ms", tip = tip)
+    let addTime (page: SettingsForm.SettingsPage) id low up enabled tip =
+        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled,
+                       unit = "ms", tip = tip)
 
     dialog.AddPropertiesLabel "Properties"
     dialog.AddPropertiesComboBox(
@@ -1633,9 +1634,13 @@ let private createSettingsDialog () =
                              keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
                              tip = "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.")
     trigger.AddGap()
-    addTime trigger DataID.pollTimeout 50 500
+    // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
+    addTime trigger DataID.pollTimeout 50 500 isDoubleTrigger
         "How long the LR, Left and Right triggers wait for the other button."
+    // The lock by a quick release: not for the drag triggers (EventHandler.dragUp), but for the
+    // keyboard trigger (KEventHandler.checkExitScrollUp)
     addTime trigger DataID.scrollLocktime 150 500
+        (fun () -> isSingleTrigger() || isDoubleTrigger() || getBooleanOfName DataID.keyboardHook)
         "A trigger released within this time locks scroll mode."
 
     let scroll = dialog.AddPage "Scroll"
@@ -1675,7 +1680,8 @@ let private createSettingsDialog () =
         "The wheel value of a notch (a usual mouse sends 120)."
     addNumberIf realWheel DataID.vWheelMove 10 500 isRealWheelMode
         "The vertical move made into a notch."
-    addNumberIf realWheel DataID.hWheelMove 10 500 isRealWheelMode
+    // With Horizontal Scroll only (Windows.sendRealHWheel)
+    addNumberIf realWheel DataID.hWheelMove 10 500 (fun () -> isRealWheelMode() && isHorizontalScroll())
         "The horizontal move made into a notch."
     realWheel.AddGap()
     addBoolIf realWheel DataID.quickFirst DataID.quickFirst isRealWheelMode
