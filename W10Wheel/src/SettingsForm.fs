@@ -321,6 +321,31 @@ type SettingsDialog(conv: string -> string) =
     let setTip (c: Control) (engText: string) =
         register { refresh = ignore; retext = (fun () -> tips.SetToolTip(c, conv engText)) }
 
+    // The tooltips of the grayed controls (e.g. Custom Table, Dragged Lock): a disabled control gets
+    // no mouse messages (Windows sends them to its parent, the page), so the ToolTip never shows its
+    // text. The page shows it while the mouse is on such a control (also a radio button in a
+    // disabled panel).
+    let showTipsOfDisabled (page: Control) =
+        let mutable shownFor: Control = null
+        let hide () =
+            tips.Hide(page)
+            shownFor <- null
+        page.MouseMove.Add(fun e ->
+            let rec under (c: Control) (pt: Point) =
+                match c.GetChildAtPoint(pt) with
+                | null -> c
+                | child -> under child (Point(pt.X - child.Left, pt.Y - child.Top))
+            let c = under page e.Location
+            let target = if not (obj.ReferenceEquals(c, page)) && not c.Enabled then c else null
+            if not (obj.ReferenceEquals(target, shownFor)) then
+                hide ()
+                if not (isNull target) then
+                    let text = tips.GetToolTip(target)
+                    if text <> "" then
+                        shownFor <- target
+                        tips.Show(text, page, Point(e.X, e.Y + page.LogicalToDeviceUnits(20)), tips.AutoPopDelay))
+        page.MouseLeave.Add(fun _ -> hide ())
+
     // The controls set from the settings do not change them (see SettingsPage.onChange)
     let withRefreshing f =
         refreshing <- true
@@ -431,6 +456,7 @@ type SettingsDialog(conv: string -> string) =
                                          ColumnCount = 3, Dock = DockStyle.Top, Visible = false)
         content.Controls.Add(table)
         pages.Add(table)
+        showTipsOfDisabled table
 
         // A radio button drawn as a flat button: one is checked, and the arrow keys move in the list
         let item = new RadioButton(Appearance = Appearance.Button, AutoSize = true,
