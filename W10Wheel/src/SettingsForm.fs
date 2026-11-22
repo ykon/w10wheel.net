@@ -696,8 +696,11 @@ type SettingsDialog(conv: string -> string) =
         cb.DropDown.Add(fun _ -> withRefreshing (fun () -> reload true))
         cb.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && cb.SelectedIndex >= 0 then
+                // Taken first: storing a number waiting (flushChanged) refreshes the dialog, which
+                // selects the current properties again
+                let id = ids.[cb.SelectedIndex]
                 flushChanged ()
-                switchTo ids.[cb.SelectedIndex])
+                switchTo id)
         register {
             // Read again after a load, Add, Delete or Reload (RefreshAll): a deleted name left in
             // the list could be chosen with the keys or the wheel, and its file written again.
