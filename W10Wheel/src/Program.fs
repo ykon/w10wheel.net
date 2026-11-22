@@ -183,6 +183,9 @@ let main argv =
     // Before any window or message box (procArgv can show one): without it, they are drawn in the
     // classic style
     Application.EnableVisualStyles()
+    // The texts of the controls drawn with GDI (TextRenderer), not GDI+ (true is still the default):
+    // better on high DPI and with Japanese fonts, and measured as SettingsForm measures them
+    Application.SetCompatibleTextRenderingDefault(false)
     // The controls drawn as in .NET 11 (rounded, larger check boxes), not Classic (the default).
     // Net11, not Latest: the look does not change with a newer .NET. SettingsForm adjusts the
     // widths for it (isModernStyles).
