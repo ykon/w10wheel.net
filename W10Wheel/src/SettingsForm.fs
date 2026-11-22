@@ -50,9 +50,10 @@ let private highlightTint (amount: float) =
     Color.FromArgb(mix h.R w.R, mix h.G w.G, mix h.B w.B)
 
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
-// change by the user sets the setting and calls changed; a change by refresh (isRefreshing) does not.
+// change by the user sets the setting and calls changed (changedLater for a number); a change by
+// refresh (isRefreshing) does not.
 type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, register: Binding -> unit,
-                            isRefreshing: unit -> bool, changed: unit -> unit) =
+                            isRefreshing: unit -> bool, changed: unit -> unit, changedLater: unit -> unit) =
     let mutable gap = false
 
     let addRow (controls: (Control * int) list) =
@@ -132,7 +133,11 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         let mutable shown = Int32.MinValue
         n.ValueChanged.Add(fun _ ->
             shown <- int n.Value
-            onChange (fun () -> set shown))
+            // Applied at once, stored a little later: holding a button or turning the wheel on the
+            // box changes it many times
+            if not (isRefreshing()) then
+                set shown
+                changedLater ())
         register {
             refresh = (fun () ->
                 let v = Math.Clamp(get(), low, up)
@@ -177,6 +182,24 @@ type SettingsDialog(conv: string -> string) =
     // or deleted), not at every change of a setting
     let mutable readLists = false
     let mutable changed: unit -> unit = (fun () -> ())
+
+    // A change of a number calls changed 300 ms after the last one (changedLater): changed stores
+    // the properties, which a button held on a number box would do many times. Called at once
+    // (flushChanged) before the dialog is closed and before the buttons and the switch of the
+    // properties act on them.
+    let changedTimer = new System.Windows.Forms.Timer(Interval = 300)
+    do changedTimer.Tick.Add(fun _ ->
+        changedTimer.Stop()
+        changed ())
+
+    let changedLater () =
+        changedTimer.Stop()
+        changedTimer.Start()
+
+    let flushChanged () =
+        if changedTimer.Enabled then
+            changedTimer.Stop()
+            changed ()
 
     let form = new Form()
     // The layout is suspended until the first Show: see Show
@@ -301,6 +324,7 @@ type SettingsDialog(conv: string -> string) =
             // A number being typed is set (as leaving its box would), however the dialog is closed
             // (Esc, the close box, the exit of W10Wheel): the changes are not canceled
             commitNumbers form
+            flushChanged ()
             if e.CloseReason = CloseReason.UserClosing then
                 e.Cancel <- true
                 form.Hide())
@@ -335,7 +359,7 @@ type SettingsDialog(conv: string -> string) =
         nav.Controls.Add(item)
         if index = 0 then item.Checked <- true
 
-        SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()))
+        SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()), changedLater)
 
     member _.AddPropertiesLabel (engText: string) =
         let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left)
@@ -369,7 +393,9 @@ type SettingsDialog(conv: string -> string) =
 
         cb.DropDown.Add(fun _ -> withRefreshing reload)
         cb.SelectedIndexChanged.Add(fun _ ->
-            if not refreshing && cb.SelectedIndex >= 0 then switchTo ids.[cb.SelectedIndex])
+            if not refreshing && cb.SelectedIndex >= 0 then
+                flushChanged ()
+                switchTo ids.[cb.SelectedIndex])
         register {
             // Read again after a load, Add, Delete or Reload (RefreshAll): a deleted name left in
             // the list could be chosen with the keys or the wheel, and its file written again.
@@ -381,7 +407,9 @@ type SettingsDialog(conv: string -> string) =
 
     member _.AddPropertiesButton (engText: string, onClick: unit -> unit, ?enabled: unit -> bool) =
         let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
-        b.Click.Add(fun _ -> onClick ())
+        b.Click.Add(fun _ ->
+            flushChanged ()
+            onClick ())
         register {
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
             retext = (fun () -> b.Text <- conv engText) }
@@ -390,7 +418,9 @@ type SettingsDialog(conv: string -> string) =
     // A button at the bottom left, for the whole dialog (e.g. Reset to defaults)
     member _.AddBottomButton (engText: string, onClick: unit -> unit) =
         let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
-        b.Click.Add(fun _ -> onClick ())
+        b.Click.Add(fun _ ->
+            flushChanged ()
+            onClick ())
         register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
         bottomLeft.Controls.Add(b)
 
