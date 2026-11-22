@@ -38,8 +38,13 @@ let private askRestartAsAdmin (): bool =
     page.Buttons.Add(TaskDialogCommandLinkButton(convLangP "Continue without administrator rights"))
     page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" AppDef.WIKI_URL (convLangP "More info (Wiki)"))
     page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
+    // For those who run it without administrator rights on purpose: asked again by checking the
+    // setting in the settings dialog (General)
+    page.Verification <- TaskDialogVerificationCheckBox(convLangP "Do not ask again")
 
-    TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) = restart
+    let res = TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen)
+    if page.Verification.Checked then Ctx.storeNoAdminCheck ()
+    res = restart
 
 // ERROR_CANCELLED: the user answered No to UAC
 [<Literal>]
@@ -69,7 +74,7 @@ let private restartAsAdmin (): bool =
             false
 
 let private checkAdmin () =
-    if not (Ctx.isAdmin ()) && askRestartAsAdmin () && restartAsAdmin () then
+    if not (Ctx.isAdmin ()) && Ctx.isAdminCheckWithProp () && askRestartAsAdmin () && restartAsAdmin () then
         Environment.Exit(0)
 
 let private closeAll () =

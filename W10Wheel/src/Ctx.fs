@@ -33,6 +33,8 @@ let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
 
 let private keyboardHook = ref false
+// Whether to ask at startup to restart as administrator (when W10Wheel does not run as one)
+let private adminCheck = ref true
 let private targetVKCode = ref (Keyboard.getVKCode(DataID.VK_NONCONVERT))
 let private uiLanguage = ref (Locale.getLanguage())
 
@@ -867,6 +869,7 @@ let private getBooleanOfName (name: string): bool =
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
     | DataID.passMode -> Pass.Mode
     | DataID.excludeAvast -> Exclusion.Avast
+    | DataID.adminCheck -> Volatile.Read(&adminCheck.contents)
     | e -> raise (ArgumentException(e))
 
 let private setBooleanOfName (name:string) (b:bool) =
@@ -888,6 +891,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical <- b
     | DataID.passMode -> Pass.Mode <- b
     | DataID.excludeAvast -> Exclusion.Avast <- b
+    | DataID.adminCheck -> Volatile.Write(adminCheck, b)
     | e -> raise (ArgumentException(e))
 
 (*
@@ -1088,7 +1092,7 @@ let private BooleanNames: string[] =
      DataID.draggedLock; DataID.swapScroll;
      DataID.sendMiddleClick; DataID.keyboardHook;
      DataID.vhAdjusterMode; DataID.firstPreferVertical;
-     DataID.excludeAvast|]
+     DataID.excludeAvast; DataID.adminCheck|]
 
 let private isCreatedMenuItems (): bool =
     notifyIcon.ContextMenuStrip <> null
@@ -1219,6 +1223,34 @@ let convLangWithProp (msg: string) =
     let lang = prop.GetPropertyOption(DataID.uiLanguage) |> Option.defaultValue (getUILanguage())
     Debug.WriteLine((sprintf "convLangWithProp: lang:[%s], msg:[%s]" lang msg))
     Locale.convLang lang msg
+
+// Before loadProperties (from loadPropertiesFileOnly): whether to ask at startup to restart as
+// administrator. True if missing or invalid (the default).
+let isAdminCheckWithProp () =
+    match prop.GetPropertyOption(DataID.adminCheck) with
+    | Some s ->
+        match Boolean.TryParse(s) with
+        | true, b -> b
+        | _ -> true
+    | None -> true
+
+// Do not ask again (at startup, before loadProperties): adminCheck false written in the file of the
+// selected properties at once, its other keys kept (storeProperties would write the default values
+// of the other settings, not loaded yet), and in prop: the first load does not read the file again
+// if loadPropertiesFileOnly has read it, and it would be stored as true at exit.
+let storeNoAdminCheck () =
+    prop.SetBool(DataID.adminCheck, false)
+    try
+        let path = getSelectedPropertiesPath()
+        let file = Properties.Properties()
+        try
+            file.Load(path, true)
+        with
+            | :? FileNotFoundException -> ()
+        file.SetBool(DataID.adminCheck, false)
+        file.Store(path)
+    with
+        | e -> Debug.WriteLine("storeNoAdminCheck: " + e.Message)
 
 // Applies the settings in prop (a load, or a reset to the default values)
 let private applyProperties () =
@@ -1505,6 +1537,9 @@ let private createSettingsDialog () =
     general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
                         (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
                         tip = "The priority of the process of W10Wheel.")
+    general.AddGap()
+    addBool general "Ask to restart as administrator at startup" DataID.adminCheck
+        "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do)."
 
     let trigger = dialog.AddPage "Trigger"
     // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off

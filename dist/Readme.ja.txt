@@ -135,6 +135,8 @@ URL:
         管理者として実行していない場合は、起動時に確認が表示されます。
         「管理者として再起動」(Restart as administrator) を選ぶと、
         UAC の確認のあと、管理者として起動し直します。
+        「次回から表示しない」(Do not ask again) にチェックすると、以後は確認しません。
+        (設定ダイアログの General ページで元に戻せます)
         タスクトレイにアイコンが表示されます。
         右クリックメニューの Settings... で設定ダイアログを開き、設定を変更できます。
         詳しい方は、設定ファイル (.W10Wheel.properties) を直接編集してください。
@@ -221,6 +223,7 @@ URL:
         General ページ:
                 Language: 言語設定
                 Priority: プロセスの優先度を変更
+                Ask to restart as administrator at startup: 起動時の管理者の確認 (設定項目を参照)
         Trigger ページ:
                 Mouse: マウスのトリガーを変更 (設定項目を参照)
                         チェックを外すとマウスのトリガーなし (NoneTrigger)
@@ -361,6 +364,9 @@ URL:
                 
         excludeAvast: bool (default: false) # LRTrigger, LeftTrigger, RightTrigger
                 \\AvastUI.exeがフォアグラウンドの場合は処理を行わない
+
+        adminCheck: bool (default: true) # General
+                管理者として実行されていないとき、起動時に管理者として再起動するか確認する
         
 ライセンス:
         The MIT License

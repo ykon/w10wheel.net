@@ -13,6 +13,10 @@ let private JapaneseMessage =
         "Windows asks for permission (User Account Control).", "UAC の確認が表示されます。";
         "Continue without administrator rights", "このまま実行";
         "More info (Wiki)", "詳細 (Wiki)";
+        "Do not ask again", "次回から表示しない";
+        "Ask to restart as administrator at startup", "起動時に管理者として再起動するか確認する";
+        "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do).",
+            "W10Wheel が管理者として実行されていないとき (管理者として実行されているプログラムのウィンドウでは機能しません)。";
 
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
         "Failed keyboard hook install", "キーボードフックのインストールに失敗しました";
