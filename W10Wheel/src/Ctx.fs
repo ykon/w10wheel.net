@@ -1741,14 +1741,15 @@ let private createSettingsDialog () =
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
                    tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid)", key = "customAccelTable")
-    // The custom table as read from the properties: why it cannot be checked
+    // The custom table as read from the properties: why it cannot be checked (a warning if it is
+    // not valid, else a plain text: the info icon is for the note of the page)
     accel.AddStatus((fun () ->
         match customTableState with
-        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not in the properties file")
+        | CustomNotWritten -> Some(SettingsForm.NoteKind.Plain, convLang "Not in the properties file")
         | CustomInvalid why -> Some(SettingsForm.NoteKind.Warning, convLang why)
         | CustomLoaded(t, m) ->
             let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
-            Some(SettingsForm.NoteKind.Info,
+            Some(SettingsForm.NoteKind.Plain,
                  String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
                                t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1]))), indent = true)
     accel.AddNote "Not used while Real Wheel Mode is enabled"

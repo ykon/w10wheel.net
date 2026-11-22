@@ -114,9 +114,11 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
 
 // The kind of a note of a page (SettingsPage.AddNote, AddStatus): its icon (the stock icons of
 // Windows) and its color. Warning: a setting does not work as it is set (e.g. no trigger), in the
-// color of the texts; Info: an explanation (e.g. what a setting depends on), in gray.
+// color of the texts; Info: an explanation (e.g. what a setting depends on), in gray; Plain: in
+// gray without an icon, as the explanation of the setting above it (e.g. the state of the custom
+// table): the text where the text of its check box starts, and the icons only on the notes.
 [<RequireQualifiedAccess>]
-type NoteKind = Info | Warning
+type NoteKind = Info | Warning | Plain
 
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
@@ -191,26 +193,27 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         panel.Controls.Add(icon)
         panel.Controls.Add(l)
         let mutable shownIcon = None
-        let setIcon (kind: NoteKind) =
+        let setIcon (id: StockIconId) =
             let size = l.Font.Height
-            if shownIcon <> Some(kind, size) then
-                let id = match kind with NoteKind.Warning -> StockIconId.Warning | NoteKind.Info -> StockIconId.Info
+            if shownIcon <> Some(id, size) then
                 use ico = SystemIcons.GetStockIcon(id, size)
                 let old = icon.Image
                 icon.Image <- ico.ToBitmap()
                 if not (isNull old) then old.Dispose()
-                shownIcon <- Some(kind, size)
+                shownIcon <- Some(id, size)
         icon.Disposed.Add(fun _ -> if not (isNull icon.Image) then icon.Image.Dispose())
         let show () =
-            match getNote() with
-            | Some(kind, text) ->
-                l.Text <- text
-                l.ForeColor <- if kind = NoteKind.Warning then SystemColors.ControlText else SystemColors.GrayText
-                setIcon kind
-                icon.Visible <- true
-            | None ->
-                l.Text <- ""
-                icon.Visible <- false
+            let note = getNote()
+            l.Text <- note |> Option.map snd |> Option.defaultValue ""
+            l.ForeColor <-
+                match note with
+                | Some(NoteKind.Warning, _) -> SystemColors.ControlText
+                | _ -> SystemColors.GrayText
+            // Hidden: the text moves to its place
+            match note with
+            | Some(NoteKind.Warning, _) -> setIcon StockIconId.Warning; icon.Visible <- true
+            | Some(NoteKind.Info, _) -> setIcon StockIconId.Info; icon.Visible <- true
+            | Some(NoteKind.Plain, _) | None -> icon.Visible <- false
         register {
             refresh = show
             retext = (fun () ->
