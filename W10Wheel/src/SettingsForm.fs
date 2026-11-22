@@ -33,6 +33,14 @@ let private fitComboBox (cb: ComboBox) =
     let padding = if isModernStyles() then 40 else 10
     cb.Width <- textWidth + button + cb.LogicalToDeviceUnits(padding)
 
+// Sets the numbers being typed in the NumericUpDowns under c: reading Value takes the text typed
+// (ValueChanged then sets it, see SettingsPage.AddNumber)
+let rec private commitNumbers (c: Control) =
+    for child in c.Controls do
+        match child with
+        | :? NumericUpDown as n -> n.Value |> ignore
+        | _ -> commitNumbers child
+
 // The highlight color of the theme mixed with the window color (amount: 0.0 - 1.0 of the
 // highlight), as the selected item in the list of the settings of the browsers
 let private highlightTint (amount: float) =
@@ -119,8 +127,23 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up,
                                   Width = (if isModernStyles() then 90 else 70),
                                   Anchor = AnchorStyles.Left, TextAlign = HorizontalAlignment.Right)
-        n.ValueChanged.Add(fun _ -> onChange (fun () -> set (int n.Value)))
-        register { refresh = (fun () -> n.Value <- decimal (Math.Clamp(get(), low, up))); retext = ignore }
+        // The value last shown (set by refresh or by the user): reading n.Value would also take a
+        // number being typed
+        let mutable shown = Int32.MinValue
+        n.ValueChanged.Add(fun _ ->
+            shown <- int n.Value
+            onChange (fun () -> set shown))
+        register {
+            refresh = (fun () ->
+                let v = Math.Clamp(get(), low, up)
+                // Only if the setting has changed (e.g. Reload): a number being typed is dropped
+                // first (reading Value takes it, while refreshing: not set), or setting Value would
+                // parse and keep it. Otherwise it is left as typed, to be set when it is entered.
+                if v <> shown then
+                    n.Value |> ignore
+                    n.Value <- decimal v
+                    shown <- v)
+            retext = ignore }
 
         let range = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Text = sprintf "(%d - %d)" low up)
         addRow [label name :> Control, 1; n :> Control, 1; range :> Control, 1]
@@ -262,10 +285,10 @@ type SettingsDialog(conv: string -> string) =
         form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(retext)) |> ignore)
 
         form.FormClosing.Add(fun e ->
+            // A number being typed is set (as leaving its box would), however the dialog is closed
+            // (Esc, the close box, the exit of W10Wheel): the changes are not canceled
+            commitNumbers form
             if e.CloseReason = CloseReason.UserClosing then
-                // A number being entered is set (as leaving its box would), even by Esc: the
-                // changes are not canceled
-                form.Validate() |> ignore
                 e.Cancel <- true
                 form.Hide())
 
