@@ -330,8 +330,15 @@ type SettingsDialog(conv: string -> string) =
 
     // The short explanations of the settings, shown longer than the default (5 s) to be read
     let tips = new ToolTip(AutoPopDelay = 20000, InitialDelay = 500)
+    // Also on the controls inside c: a NumericUpDown is covered by its text box and its buttons,
+    // which have their own tooltips (and are found under the mouse when it is disabled)
     let setTip (c: Control) (engText: string) =
-        register { refresh = ignore; retext = (fun () -> tips.SetToolTip(c, conv engText)) }
+        register {
+            refresh = ignore
+            retext = (fun () ->
+                let text = conv engText
+                tips.SetToolTip(c, text)
+                for child in c.Controls do tips.SetToolTip(child, text)) }
 
     // The tooltips of the grayed controls (e.g. Custom Table, Dragged Lock): a disabled control gets
     // no mouse messages (Windows sends them to its parent, the page), so the ToolTip never shows its
