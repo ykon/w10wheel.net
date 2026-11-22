@@ -76,6 +76,7 @@ URL:
         .NET 11 が対応する Windows のバージョンに準じます。
          https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md
         .NET のランタイムを同梱しているため、.NET のインストールは不要です。
+        (ランタイム無し版もあります。インストールを参照)
         
         Windows 10 / Windows 11:
                 マウスの設定で、非アクティブ ウィンドウをホバーしたときに
@@ -87,6 +88,15 @@ URL:
         Releases から W10Wheel.NET-<バージョン>.zip をダウンロードし、
         任意のフォルダに展開して W10Wheel.exe を実行してください。
          https://github.com/ykon/w10wheel.net/releases
+        
+        ランタイム無し版:
+                2.9.1 から、.NET のランタイムを含まない
+                W10Wheel.NET-<バージョン>-no-runtime.zip も公開しています。(52 MB ではなく 1.7 MB)
+                .NET 11 デスクトップ ランタイム (x64) のインストールが必要です。
+                 https://dotnet.microsoft.com/download/dotnet/11.0
+                ランタイムは Microsoft Update などで自分で更新できるため、
+                .NET に脆弱性の修正があったときに W10Wheel の更新を待つ必要がありません。
+                ランタイムがインストールされていない場合は、ダウンロードを促すメッセージが表示されます。
         
         SmartScreen の警告:
                 W10Wheel.exe にはコード署名がないため、初めて実行したときに
