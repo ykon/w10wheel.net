@@ -1039,6 +1039,34 @@ let private createPassModeMenuItem () =
     passModeMenuItem <- item
     item
 
+// The argument of the instance started as administrator by startAsAdmin: it waits for this one
+// to exit (the instance lock, see Program.checkDoubleLaunch)
+[<Literal>]
+let RESTART_ADMIN_ARG = "--restartAdmin"
+
+type AdminStart =
+    | AdminStarted
+    | AdminCanceled  // UAC answered No
+    | AdminFailed of exn
+
+// ERROR_CANCELLED: the user answered No to UAC
+[<Literal>]
+let private ERROR_CANCELLED = 1223
+
+// Starts W10Wheel as administrator (UAC) with the selected properties (a name has no quotes: see
+// isValidPropertiesName and Properties.exists). Waits for the answer to UAC.
+let startAsAdmin (): AdminStart =
+    try
+        let name = getSelectedProperties()
+        let args = RESTART_ADMIN_ARG + (if name = Properties.DEFAULT_DEF then "" else " \"" + name + "\"")
+        let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
+                                   WorkingDirectory = Environment.CurrentDirectory)
+        use p = Process.Start(psi)
+        AdminStarted
+    with
+        | :? System.ComponentModel.Win32Exception as e when e.NativeErrorCode = ERROR_CANCELLED -> AdminCanceled
+        | e -> AdminFailed e
+
 // Without changing the principal policy of the process (Thread.CurrentPrincipal)
 let isAdmin () =
     use identity = System.Security.Principal.WindowsIdentity.GetCurrent()
@@ -1420,6 +1448,23 @@ let private setProperties name =
         loadProperties true
         refreshSettingsDialog()
 
+// From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
+// (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
+// is waited for on another thread: the hooks run on this one, and would time out (Windows removes
+// them) while the user answers, if the input is not on the secure desktop.
+let private restartAsAdmin () =
+    // Stored first (a number waits to be stored, see SettingsForm.changedLater): the new instance
+    // may read them before this one stores them again at its exit
+    storeProperties()
+    let ui = SynchronizationContext.Current
+    Tasks.Task.Run(fun () ->
+        let res = startAsAdmin ()
+        ui.Post((fun _ ->
+            match res with
+            | AdminStarted -> exitAction ()
+            | AdminCanceled -> ()
+            | AdminFailed e -> Dialog.errorMessageE e), null)) |> ignore
+
 // The selected properties (not Default), then Default is selected
 let private deleteProperties (owner: IWin32Window) =
     let name = getSelectedProperties()
@@ -1538,6 +1583,12 @@ let private createSettingsDialog () =
                         (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
                         tip = "The priority of the process of W10Wheel.")
     general.AddGap()
+    // Not as administrator: said, and the restart offered (as at startup)
+    if not (isAdmin()) then
+        general.AddNote "W10Wheel is not running as administrator"
+        use shield = Drawing.SystemIcons.GetStockIcon(Drawing.StockIconId.Shield, Drawing.StockIconOptions.SmallIcon)
+        general.AddButton("Restart as administrator", restartAsAdmin, image = shield.ToBitmap(),
+                          tip = "Windows asks for permission (User Account Control).")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
         "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do)."
 

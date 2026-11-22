@@ -19,10 +19,20 @@ let private convLangP msg =
 let private messageDoubleLaunch () =
     MessageBox.Show(convLangP "Double Launch?", convLangP "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
+// Started by a restart as administrator (Ctx.RESTART_ADMIN_ARG): the old instance is exiting
+let mutable private waitForLock = false
+
+// The lock of the old instance is waited for after a restart (30 s at most): it is released when
+// the old one has exited (after storing the properties, which this one then loads)
 let private checkDoubleLaunch () =
-    if not (PreventMultiInstance.tryLock()) then
+    let rec tryLock (left: int) =
+        PreventMultiInstance.tryLock() || (left > 0 && (Thread.Sleep(100); tryLock (left - 1)))
+    if not (tryLock (if waitForLock then 300 else 0)) then
         messageDoubleLaunch()
         Environment.Exit(1)
+    elif waitForLock then
+        // Read before the old instance had stored them at its exit
+        Ctx.loadPropertiesFileOnly ()
 
 // Whether to restart as administrator. A task dialog, not a message box: its buttons say what they
 // do, and the restart has the shield of UAC. The link opens the wiki (startup as administrator,
@@ -46,32 +56,17 @@ let private askRestartAsAdmin (): bool =
     if page.Verification.Checked then Ctx.storeNoAdminCheck ()
     res = restart
 
-// ERROR_CANCELLED: the user answered No to UAC
-[<Literal>]
-let private ERROR_CANCELLED = 1223
-
 // Starts this program as administrator (UAC) with the selected properties (procArgv has checked
 // the argument: Default if it does not exist, and the commands have exited). Before the hooks and
-// the tray icon: only the lock is released first, or the new instance would take this one for a
-// double launch. Returns whether it has been started (this one exits then); if not, the lock is
-// taken again.
+// the tray icon: this instance exits at once if it has been started, and the new one waits for its
+// lock (see checkDoubleLaunch). Nothing to undo if not.
 let private restartAsAdmin (): bool =
-    PreventMultiInstance.unlock()
-    try
-        // A properties name has no quotes (Ctx.isValidPropertiesName, Properties.exists)
-        let name = Ctx.getSelectedProperties()
-        let args = if name = Properties.DEFAULT_DEF then "" else "\"" + name + "\""
-        let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
-                                   WorkingDirectory = Environment.CurrentDirectory)
-        use p = Process.Start(psi)
-        true
-    with
-        | e ->
-            match e with
-            | :? System.ComponentModel.Win32Exception as we when we.NativeErrorCode = ERROR_CANCELLED -> ()
-            | _ -> Dialog.errorMessageE e
-            checkDoubleLaunch ()
-            false
+    match Ctx.startAsAdmin () with
+    | Ctx.AdminStarted -> true
+    | Ctx.AdminCanceled -> false
+    | Ctx.AdminFailed e ->
+        Dialog.errorMessageE e
+        false
 
 let private checkAdmin () =
     if not (Ctx.isAdmin ()) && Ctx.isAdminCheckWithProp () && askRestartAsAdmin () && restartAsAdmin () then
@@ -153,6 +148,11 @@ let private procArgv (argv: string[]) =
         | "--sendPassMode" :: rest -> Some(W10Message.sendPassMode (getBool(rest)))
         | "--sendReloadProp" :: _ -> Some(W10Message.sendReloadProp ())
         | "--sendInitState" :: _ -> Some(W10Message.sendInitState ())
+        // Not a command for the users: the old instance is exiting (see checkDoubleLaunch)
+        | Ctx.RESTART_ADMIN_ARG :: rest ->
+            waitForLock <- true
+            rest |> List.tryHead |> Option.iter setSelectedProperties
+            None
         | name :: _ when name.StartsWith("--") -> unknownCommand name; None
         | name :: _ -> setSelectedProperties name; None
         | _ -> None

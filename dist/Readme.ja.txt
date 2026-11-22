@@ -223,6 +223,7 @@ URL:
         General ページ:
                 Language: 言語設定
                 Priority: プロセスの優先度を変更
+                Restart as administrator: 管理者として起動し直す (管理者として実行されていないとき)
                 Ask to restart as administrator at startup: 起動時の管理者の確認 (設定項目を参照)
         Trigger ページ:
                 Mouse: マウスのトリガーを変更 (設定項目を参照)

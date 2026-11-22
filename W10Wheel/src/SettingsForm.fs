@@ -169,6 +169,18 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         tipOn [check; cb] tip
         addRow [check :> Control, 1; cb :> Control, 2]
 
+    // A button of an action (e.g. Restart as administrator), with an image before its text
+    member _.AddButton (engText: string, onClick: unit -> unit, ?image: Image, ?tip: string) =
+        // GrowAndShrink: with its image before the layout is scaled, GrowOnly kept the scaled size
+        // (twice as high at 175%)
+        let b = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left,
+                           TextImageRelation = TextImageRelation.ImageBeforeText, Padding = Padding(8, 2, 8, 2))
+        image |> Option.iter (fun i -> b.Image <- i)
+        b.Click.Add(fun _ -> onClick ())
+        register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
+        tipOn [b] tip
+        addRow [b :> Control, 3]
+
     // A short note in gray (e.g. what a setting of the page depends on)
     member _.AddNote (engText: string) =
         let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = SystemColors.GrayText)
