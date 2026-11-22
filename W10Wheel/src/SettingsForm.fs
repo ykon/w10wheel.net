@@ -137,12 +137,14 @@ type NoteKind = Info | Warning | Plain
 
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
-// refresh (isRefreshing) does not. tip (of the Add methods): an English text shown on the controls
-// (setTip), converted as the other texts; key: the name of the setting in the properties file,
-// shown after it (to find it in the file and the Readme).
+// refresh (isRefreshing) does not. isReloading: the settings have been loaded (Reload, a switch of
+// the properties): a number being typed is dropped. tip (of the Add methods): an English text
+// shown on the controls (setTip), converted as the other texts; key: the name of the setting in
+// the properties file, shown after it (to find it in the file and the Readme).
 type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, register: Binding -> unit,
                             isRefreshing: unit -> bool, changed: unit -> unit, changedLater: unit -> unit,
-                            flushChanged: unit -> unit, setTip: Control -> string -> string option -> unit) =
+                            flushChanged: unit -> unit, setTip: Control -> string -> string option -> unit,
+                            isReloading: unit -> bool) =
     let mutable gap = false
 
     let tipOn (controls: Control list) (tip: string option) (key: string option) =
@@ -305,10 +307,12 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register {
             refresh = (fun () ->
                 let v = Math.Clamp(get(), low, up)
-                // Only if the setting has changed (e.g. Reload): a number being typed is dropped
-                // first (reading Value takes it, while refreshing: not set), or setting Value would
-                // parse and keep it. Otherwise it is left as typed, to be set when it is entered.
-                if v <> shown then
+                // Only if the setting has changed, or the settings have been loaded (Reload,
+                // --sendReloadProp: the file is taken, even if its number is the same): a number
+                // being typed is dropped first (reading Value takes it, while refreshing: not set),
+                // or setting Value would parse and keep it. Otherwise it is left as typed, to be set
+                // when it is entered.
+                if v <> shown || isReloading() then
                     n.Value |> ignore
                     n.Value <- decimal v
                     shown <- v)
@@ -660,7 +664,7 @@ type SettingsDialog(conv: string -> string) =
         if index = 0 then item.Checked <- true
 
         SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()), changedLater,
-                     flushChanged, setTip)
+                     flushChanged, setTip, (fun () -> readLists))
 
     member _.AddPropertiesLabel (engText: string) =
         let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left)
