@@ -444,7 +444,9 @@ type SettingsDialog(conv: string -> string) =
             shownFor <- null
         delay.Tick.Add(fun _ ->
             delay.Stop()
-            if not (isNull shownFor) then tips.Show(tips.GetToolTip(shownFor), page, at, tips.AutoPopDelay))
+            // Still disabled: it may have been enabled while waiting (e.g. --sendReloadProp)
+            if not (isNull shownFor) && not shownFor.Enabled then
+                tips.Show(tips.GetToolTip(shownFor), page, at, tips.AutoPopDelay))
         page.MouseMove.Add(fun e ->
             let rec under (c: Control) (pt: Point) =
                 match c.GetChildAtPoint(pt) with
@@ -466,8 +468,11 @@ type SettingsDialog(conv: string -> string) =
         page.MouseLeave.Add(fun _ -> hide ())
         // Also when the mouse does not leave the page: another page shown (the arrow keys in the
         // list), the dialog closed (Esc) or another window activated (Alt+Tab). Else the tip stayed
-        // on the screen until its AutoPopDelay, and was not shown again on the same control.
+        // on the screen until its AutoPopDelay, and was not shown again on the same control. The
+        // dialog hidden does not raise VisibleChanged of its pages (nor Deactivate if it was not
+        // active).
         page.VisibleChanged.Add(fun _ -> if not page.Visible then hide ())
+        form.VisibleChanged.Add(fun _ -> if not form.Visible then hide ())
         form.Deactivate.Add(fun _ -> hide ())
         page.Disposed.Add(fun _ -> delay.Dispose())
 
