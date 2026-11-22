@@ -98,8 +98,8 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
     label.Text <- prompt
     ok.Text <- conv "OK"
     cancel.Text <- conv "Cancel"
-    // The reason wraps at the width of the box, and keeps a line when there is none (the dialog
-    // does not change its size as it is typed)
+    // The reason keeps a line when there is none (the dialog does not change its size as it is
+    // typed): the reasons are short enough for a line (else they wrap at the width of the box)
     error.MaximumSize <- Size(box.Width, 0)
     error.MinimumSize <- Size(0, error.Font.Height)
 

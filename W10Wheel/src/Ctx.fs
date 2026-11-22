@@ -1440,23 +1440,31 @@ let private openPropertiesDir () =
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
-// A part of a file name (see Properties.getPath), not Default whatever its case (a name only
-// differing in case would be confused with it), nor a command (--)
+// Why a name cannot be a part of a file name (see Properties.getPath), None if it can: one reason,
+// on one line under the box of askText. Not Default whatever its case (a name only differing in
+// case would be confused with it), nor a command (--). An empty name too (askText does not show it).
+let private whyNotFileName (name: string): string option =
+    if String.IsNullOrWhiteSpace(name) || name.Trim() <> name then
+        Some "Spaces at either end cannot be used"
+    elif name.StartsWith("--") then
+        Some "Cannot start with --"
+    elif String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase) then
+        Some "Default cannot be used"
+    elif name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 then
+        Some "Contains characters not allowed in file names"
+    else
+        None
+
 let private isValidPropertiesName (name: string) =
-    not (String.IsNullOrWhiteSpace(name)) && name.Trim() = name &&
-    not (String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase)) &&
-    not (name.StartsWith("--")) &&
-    name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+    (whyNotFileName name).IsNone
 
 // The new properties are a copy of the selected ones, and selected (the settings do not change)
 // Why a name cannot be used for new properties, checked as it is typed (and again after OK)
 let private whyInvalidPropertiesName (name: string) =
-    if not (isValidPropertiesName name) then
-        Some "This name cannot be used (characters not allowed in file names, spaces at either end, -- at the start, or Default)"
-    elif Properties.exists name then
-        Some "Properties of this name already exist"
-    else
-        None
+    match whyNotFileName name with
+    | Some why -> Some why
+    | None when Properties.exists name -> Some "Properties of this name already exist"
+    | None -> None
 
 let private addProperties (owner: IWin32Window) =
     let res = SettingsForm.askText owner convLang (convLang "Add Properties") (convLang "Properties Name")
