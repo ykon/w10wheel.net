@@ -1084,7 +1084,9 @@ let private showAbout () =
                               AllowCancel = true, EnableLinks = true)
     // The icon of the program (released after the dialog)
     use appIcon = try Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> null
-    page.Icon <- if isNull appIcon then TaskDialogIcon.Information else new TaskDialogIcon(appIcon)
+    // Released too: it holds a copy of the icon handle, which TaskDialog does not release
+    use taskIcon = if isNull appIcon then null else new TaskDialogIcon(appIcon)
+    page.Icon <- if isNull taskIcon then TaskDialogIcon.Information else taskIcon
     page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">GitHub</a>    <a href=\"%s\">Wiki</a>"
                                                 AppDef.PROJECT_URL AppDef.WIKI_URL)
     page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
