@@ -1452,18 +1452,30 @@ let private setProperties name =
 // (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
 // is waited for on another thread: the hooks run on this one, and would time out (Windows removes
 // them) while the user answers, if the input is not on the secure desktop.
+// Set while UAC is answered (on the UI thread): pressed again meanwhile, the button would start a
+// second instance as administrator, which would wait for the lock and then fail (double launch)
+let mutable private restarting = false
+
 let private restartAsAdmin () =
-    // Stored first (a number waits to be stored, see SettingsForm.changedLater): the new instance
-    // may read them before this one stores them again at its exit
-    storeProperties()
-    let ui = SynchronizationContext.Current
-    Tasks.Task.Run(fun () ->
-        let res = startAsAdmin ()
-        ui.Post((fun _ ->
-            match res with
-            | AdminStarted -> exitAction ()
-            | AdminCanceled -> ()
-            | AdminFailed e -> Dialog.errorMessageE e), null)) |> ignore
+    if not restarting then
+        restarting <- true
+        // The button grayed until the answer
+        refreshSettingsDialog()
+        // Stored first: the new instance may read them before this one stores them again at its exit
+        storeProperties()
+        let ui = SynchronizationContext.Current
+        Tasks.Task.Run(fun () ->
+            let res = startAsAdmin ()
+            ui.Post((fun _ ->
+                match res with
+                | AdminStarted -> exitAction ()
+                | AdminCanceled
+                | AdminFailed _ ->
+                    restarting <- false
+                    refreshSettingsDialog()
+                    match res with
+                    | AdminFailed e -> Dialog.errorMessageE e
+                    | _ -> ()), null)) |> ignore
 
 // The selected properties (not Default), then Default is selected
 let private deleteProperties (owner: IWin32Window) =
@@ -1588,6 +1600,7 @@ let private createSettingsDialog () =
         general.AddNote "W10Wheel is not running as administrator"
         use shield = Drawing.SystemIcons.GetStockIcon(Drawing.StockIconId.Shield, Drawing.StockIconOptions.SmallIcon)
         general.AddButton("Restart as administrator", restartAsAdmin, image = shield.ToBitmap(),
+                          enabled = (fun () -> not restarting),
                           tip = "Windows asks for permission (User Account Control).")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
         "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do)."

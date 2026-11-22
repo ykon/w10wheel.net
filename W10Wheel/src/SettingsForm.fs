@@ -94,7 +94,7 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
 // (setTip), converted as the other texts.
 type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, register: Binding -> unit,
                             isRefreshing: unit -> bool, changed: unit -> unit, changedLater: unit -> unit,
-                            setTip: Control -> string -> unit) =
+                            flushChanged: unit -> unit, setTip: Control -> string -> unit) =
     let mutable gap = false
 
     let tipOn (controls: Control list) (tip: string option) =
@@ -169,15 +169,21 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         tipOn [check; cb] tip
         addRow [check :> Control, 1; cb :> Control, 2]
 
-    // A button of an action (e.g. Restart as administrator), with an image before its text
-    member _.AddButton (engText: string, onClick: unit -> unit, ?image: Image, ?tip: string) =
+    // A button of an action (e.g. Restart as administrator), with an image before its text. enabled:
+    // as AddCheck (e.g. not while the action is in progress).
+    member _.AddButton (engText: string, onClick: unit -> unit, ?image: Image, ?enabled: unit -> bool, ?tip: string) =
         // GrowAndShrink: with its image before the layout is scaled, GrowOnly kept the scaled size
         // (twice as high at 175%)
         let b = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left,
                            TextImageRelation = TextImageRelation.ImageBeforeText, Padding = Padding(8, 2, 8, 2))
         image |> Option.iter (fun i -> b.Image <- i)
-        b.Click.Add(fun _ -> onClick ())
-        register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
+        // A number waiting to be stored first, as the buttons of the dialog do
+        b.Click.Add(fun _ ->
+            flushChanged ()
+            onClick ())
+        register {
+            refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
+            retext = (fun () -> b.Text <- conv engText) }
         tipOn [b] tip
         addRow [b :> Control, 3]
 
@@ -477,7 +483,8 @@ type SettingsDialog(conv: string -> string) =
         nav.Controls.Add(item)
         if index = 0 then item.Checked <- true
 
-        SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()), changedLater, setTip)
+        SettingsPage(conv, table, register, (fun () -> refreshing), (fun () -> changed ()), changedLater,
+                     flushChanged, setTip)
 
     member _.AddPropertiesLabel (engText: string) =
         let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left)
