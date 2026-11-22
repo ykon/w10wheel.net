@@ -105,8 +105,13 @@ let private resetMenuText (): unit =
 
 let mutable private passModeMenuItem: ToolStripMenuItem = null
 
+// With the name of the selected properties if not Default (e.g. "W10Wheel.NET - 実行中 (Left)"), at
+// most 127 characters (NotifyIcon.Text throws above)
 let private getTrayText b =
-    sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
+    let text = sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
+    let name = getSelectedProperties()
+    let text = if name = Properties.DEFAULT_DEF then text else sprintf "%s (%s)" text name
+    if text.Length > 127 then text.Substring(0, 124) + "..." else text
 
 // At the size of the icons of the tray (16 at 100% ... 48 at 300%: the icon files have each), not
 // the default size (32 at 96 DPI) that Windows would scale
@@ -1464,6 +1469,7 @@ let private addProperties (owner: IWin32Window) =
                 Properties.copy (getSelectedProperties()) name
                 setSelectedProperties name
                 refreshSettingsDialog()
+                notifyIcon.Text <- getTrayText Pass.Mode
             else
                 Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
         )
@@ -1495,6 +1501,8 @@ let private setProperties name =
         prop.Clear()
         loadProperties true
         refreshSettingsDialog()
+        // The tip of the tray icon has the name of the properties
+        notifyIcon.Text <- getTrayText Pass.Mode
 
 // From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
 // (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
