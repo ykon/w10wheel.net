@@ -403,6 +403,10 @@ type SettingsDialog(conv: string -> string) =
             changedTimer.Stop()
             changed ()
 
+    // A change waiting to be stored, dropped by the button being clicked (dropPending): it waits
+    // again if RestorePending is called (e.g. Reload could not read the file)
+    let mutable dropped = false
+
     let form = new Form()
     // The layout is suspended until the first Show: see Show
     let mutable laidOut = false
@@ -758,13 +762,17 @@ type SettingsDialog(conv: string -> string) =
         top.Controls.Add(cb)
 
     // dropPending: the change waiting to be stored is not stored (Reload: storing would write the
-    // settings over the file edited outside W10Wheel, which is about to be read; onClick stores it
-    // if nothing could be read)
+    // settings over the file edited outside W10Wheel, which is about to be read); onClick makes it
+    // wait again if nothing could be read (RestorePending)
     member _.AddPropertiesButton (engText: string, onClick: unit -> unit, ?enabled: unit -> bool, ?dropPending: bool) =
         let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
         b.Click.Add(fun _ ->
-            if defaultArg dropPending false then changedTimer.Stop() else flushChanged ()
-            onClick ())
+            if defaultArg dropPending false then
+                dropped <- changedTimer.Enabled
+                changedTimer.Stop()
+            else
+                flushChanged ()
+            try onClick () finally dropped <- false)
         register {
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
             retext = (fun () -> b.Text <- conv engText) }
@@ -796,6 +804,13 @@ type SettingsDialog(conv: string -> string) =
             form.BeginInvoke(Action(fun () ->
                 readLists <- true
                 try refresh () finally readLists <- false)) |> ignore
+
+    // From the onClick of a button that drops the change waiting to be stored (dropPending): it
+    // waits again, stored as it would have been (nothing if there was none)
+    member _.RestorePending () =
+        if dropped then
+            dropped <- false
+            changedLater ()
 
     // Shows the settings again later (as RefreshAllLater), without reading the list of the
     // properties again, nor dropping a number being typed: e.g. after a Reload that could not read

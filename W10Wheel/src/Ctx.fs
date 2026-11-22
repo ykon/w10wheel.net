@@ -1506,11 +1506,6 @@ let private tryReloadProperties () =
 let reloadProperties () =
     tryReloadProperties () |> ignore
 
-// Reload in the settings dialog: the change waiting to be stored has been dropped (see
-// SettingsDialog.AddPropertiesButton), it is stored if nothing could be loaded
-let private reloadFromDialog () =
-    if not (tryReloadProperties ()) then storeProperties ()
-
 let private openPropertiesDir () =
     Dialog.shellOpen Properties.USER_DIR
 
@@ -1770,7 +1765,11 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
     dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
-    dialog.AddPropertiesButton("Reload", reloadFromDialog, dropPending = true)
+    // The change waiting to be stored is dropped, and waits again if nothing could be loaded: not
+    // stored at once (the file may still be locked), and nothing stored if no change was waiting
+    // (e.g. the file deleted outside W10Wheel is not written again)
+    dialog.AddPropertiesButton("Reload", (fun () -> if not (tryReloadProperties ()) then dialog.RestorePending ()),
+                               dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
     // Instead of the hint that the changes are stored: the properties could not be read (Reload
     // again), or written (e.g. a read-only file: tried again at the next change)
