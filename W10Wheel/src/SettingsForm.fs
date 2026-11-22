@@ -398,10 +398,15 @@ type SettingsDialog(conv: string -> string) =
     member _.RefreshValues () =
         refresh ()
 
-    // Shows the settings and the list of the properties again (after a load, Add, Delete...)
-    member _.RefreshAll () =
-        readLists <- true
-        try refresh () finally readLists <- false
+    // Shows the settings and the list of the properties again (after a load, Add, Delete...).
+    // Later, from the message loop: a load can be made by the mouse hook (--sendReloadProp), which
+    // must return quickly, and a switch by the ComboBox of the properties in its handler. Not made
+    // yet (no handle): Show refreshes it.
+    member _.RefreshAllLater () =
+        if form.IsHandleCreated then
+            form.BeginInvoke(Action(fun () ->
+                readLists <- true
+                try refresh () finally readLists <- false)) |> ignore
 
     // The language has changed. Later: maybe called from the handler of a control that retext
     // changes (the language ComboBox)

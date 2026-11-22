@@ -1526,7 +1526,7 @@ let private createSettingsDialog () =
     addNumber vhAdjuster DataID.firstMinThreshold 1 10
     addNumber vhAdjuster DataID.switchingThreshold 10 500
 
-    refreshSettingsDialog <- dialog.RefreshAll
+    refreshSettingsDialog <- dialog.RefreshAllLater
     retextSettingsDialog <- dialog.RetextLater
     dialog
 
