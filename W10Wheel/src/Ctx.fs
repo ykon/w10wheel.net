@@ -1420,15 +1420,15 @@ let loadProperties (update:bool): unit =
                 storedSettings <- currentSettings ()
             Debug.WriteLine("load: " + (e.ToString()))
 
-// The properties of path read: empty if not found (the default values), Error if they cannot be
-// (e.g. locked by another program)
-let private readProperties (path: string): Result<Properties.Properties, exn> =
+// The properties of path read: Error if they cannot be (e.g. locked by another program), or are
+// not found and missingIsDefault is false (else empty: the default values, for Default)
+let private readProperties (path: string) (missingIsDefault: bool): Result<Properties.Properties, exn> =
     let p = Properties.Properties()
     try
         p.Load(path, true)
         Ok p
     with
-        | :? FileNotFoundException -> Ok p
+        | :? FileNotFoundException when missingIsDefault -> Ok p
         | e -> Error e
 
 // The properties of name selected and loaded from what has been read of them (p): in prop (the
@@ -1451,13 +1451,13 @@ let private loadRead (name: string) (p: Properties.Properties) =
 let private tryLoadProperties (name: string): exn option =
     let path = Properties.getPath name
     // Other properties than Default must exist (e.g. deleted outside W10Wheel, still in the list of
-    // the settings dialog): they would be written again with the default values
-    if name <> Properties.DEFAULT_DEF && not (File.Exists(path)) then
+    // the settings dialog, also while they are read): they would be loaded with the default values,
+    // and written again with them
+    match readProperties path (name = Properties.DEFAULT_DEF) with
+    | Ok p -> loadRead name p; None
+    | Error (:? FileNotFoundException) ->
         Some(FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
-    else
-        match readProperties path with
-        | Ok p -> loadRead name p; None
-        | Error e -> Some e
+    | Error e -> Some e
 
 // The settings changed since they were loaded or stored (current: as running)
 let private changedSettings (current: Properties.Properties) =
@@ -1562,7 +1562,7 @@ let private addProperties (owner: IWin32Window) =
                     Properties.copy (getSelectedProperties()) name
                 let current = currentSettings ()
                 if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
-                match readProperties path with
+                match readProperties path false with
                 | Ok p -> loadRead name p
                 | Error e -> showError owner (convLang "The properties file could not be read") e
             else
@@ -1624,7 +1624,7 @@ let private deleteProperties (owner: IWin32Window) =
                    (sprintf "%s: %s" (convLang "Properties") name) (convLang "Delete") then
             // Default read first: if it cannot be (e.g. locked), these properties are not deleted
             // (their settings would run as Default, and be written again as these properties)
-            match readProperties (Properties.getPath DEFAULT_DEF) with
+            match readProperties (Properties.getPath DEFAULT_DEF) true with
             | Error e -> showError owner (convLang "The properties file could not be read") e
             | Ok p ->
                 Properties.delete name
