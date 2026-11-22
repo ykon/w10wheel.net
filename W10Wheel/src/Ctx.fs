@@ -1587,6 +1587,9 @@ let private resetSettings (owner: IWin32Window) =
             applyProperties ()
         with
             | e -> Debug.WriteLine("reset: " + (e.ToString()))
+        // All the settings written (not only those changed in W10Wheel: one edited in the file and
+        // not reloaded would stay), the other lines of the file kept
+        storedSettings <- Properties.Properties()
         storeProperties()
         refreshSettingsDialog()
 
