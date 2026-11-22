@@ -449,9 +449,6 @@ type SettingsDialog(conv: string -> string) =
         refreshing <- true
         try f () finally refreshing <- false
 
-    let refresh () =
-        withRefreshing (fun () -> for b in bindings do b.refresh())
-
     let fitPages () =
         // The items of the list are as wide as the widest
         for b in navButtons do b.MinimumSize <- Size.Empty
@@ -474,6 +471,14 @@ type SettingsDialog(conv: string -> string) =
             - (navSize.Width + nav.Margin.Horizontal) - content.Margin.Horizontal
         content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
                              max (h + content.Padding.Vertical) navSize.Height)
+
+    // The pages fitted again after all the controls have been refreshed: a text that follows the
+    // settings may have become wider or narrower (e.g. the state of the custom table after Reload).
+    // The list of the properties fits them when it is read again, but before the controls after it
+    // have been refreshed.
+    let refresh () =
+        withRefreshing (fun () -> for b in bindings do b.refresh())
+        if form.IsHandleCreated then fitPages()
 
     let centerOn (screen: Screen) =
         let wa = screen.WorkingArea
