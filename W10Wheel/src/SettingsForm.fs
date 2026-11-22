@@ -458,6 +458,11 @@ type SettingsDialog(conv: string -> string) =
                 e.Cancel <- true
                 form.Hide())
 
+        // The components that are not controls of the form are not disposed with it
+        form.Disposed.Add(fun _ ->
+            changedTimer.Dispose()
+            tips.Dispose())
+
     // Called after a setting has been changed in the dialog (not after a properties switch)
     member _.Changed with set (f: unit -> unit) = changed <- f
 
