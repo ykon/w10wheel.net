@@ -517,13 +517,27 @@ type SettingsDialog(conv: string -> string) =
             nav.ResumeLayout(true)
             middle.ResumeLayout(true)
 
+    // Runs f, which may resize the dialog (fitPages), and moves it into the working area of its
+    // display if it has grown out of it (e.g. a longer state of the custom table after Reload, with
+    // the dialog at the right of the screen: Close went out of it). Not moved if its size has not
+    // changed: it can be left partly out of the screen.
+    let keepingOnScreen f =
+        let size = form.Size
+        f ()
+        if form.Visible && form.Size <> size then
+            let wa = Screen.FromControl(form).WorkingArea
+            let x = max wa.Left (min form.Left (wa.Right - form.Width))
+            let y = max wa.Top (min form.Top (wa.Bottom - form.Height))
+            if x <> form.Left || y <> form.Top then form.Location <- Point(x, y)
+
     // The pages fitted again after all the controls have been refreshed: a text that follows the
     // settings may have become wider or narrower (e.g. the state of the custom table after Reload).
     // The list of the properties fits them when it is read again, but before the controls after it
     // have been refreshed.
     let refresh () =
-        withRefreshing (fun () -> for b in bindings do b.refresh())
-        if form.IsHandleCreated then fitPages()
+        keepingOnScreen (fun () ->
+            withRefreshing (fun () -> for b in bindings do b.refresh())
+            if form.IsHandleCreated then fitPages())
 
     let centerOn (screen: Screen) =
         let wa = screen.WorkingArea
@@ -540,29 +554,31 @@ type SettingsDialog(conv: string -> string) =
             for child in c.Controls do yield! containersIn child }
 
     let retext () =
-        // The containers of the dialog and of the area of the pages, resumed last; the others
-        // (the rows, the list, the pages) first
-        let outer: Control[] = [| form; root; middle; content |]
-        let inner =
-            containersIn form |> Seq.filter (fun c -> not (Array.exists (fun o -> obj.ReferenceEquals(o, c)) outer))
-            |> Array.ofSeq
-        for c in outer do c.SuspendLayout()
-        try
-            for c in inner do c.SuspendLayout()
+        // Kept on the screen: the dialog may have grown (e.g. another language)
+        keepingOnScreen (fun () ->
+            // The containers of the dialog and of the area of the pages, resumed last; the others
+            // (the rows, the list, the pages) first
+            let outer: Control[] = [| form; root; middle; content |]
+            let inner =
+                containersIn form |> Seq.filter (fun c -> not (Array.exists (fun o -> obj.ReferenceEquals(o, c)) outer))
+                |> Array.ofSeq
+            for c in outer do c.SuspendLayout()
             try
-                withRefreshing (fun () ->
-                    form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
-                    for b in bindings do b.retext()
-                    for b in bindings do b.refresh())
+                for c in inner do c.SuspendLayout()
+                try
+                    withRefreshing (fun () ->
+                        form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
+                        for b in bindings do b.retext()
+                        for b in bindings do b.refresh())
+                finally
+                    for c in Array.rev inner do c.ResumeLayout(true)
+                // The sizes of the texts: after the first show (Load), when the handles have been
+                // created. The rows and the pages laid out (measured before, a page kept the size it
+                // had if only a row inside a row of it had changed), not yet the dialog: it is laid
+                // out and resized once, at its new size.
+                if form.IsHandleCreated then fitPages()
             finally
-                for c in Array.rev inner do c.ResumeLayout(true)
-            // The sizes of the texts: after the first show (Load), when the handles have been
-            // created. The rows and the pages laid out (measured before, a page kept the size it
-            // had if only a row inside a row of it had changed), not yet the dialog: it is laid
-            // out and resized once, at its new size.
-            if form.IsHandleCreated then fitPages()
-        finally
-            for c in Array.rev outer do c.ResumeLayout(true)
+                for c in Array.rev outer do c.ResumeLayout(true))
 
     do
         form.SuspendLayout()
