@@ -44,6 +44,47 @@ let private JapaneseMessage =
         "Reset to defaults", "既定値に戻す";
         "Not used while Real Wheel Mode is enabled.", "リアルホイールモードが有効な間は使われません。";
         "Used when Horizontal Scroll (Scroll) is enabled.", "水平スクロール (スクロール) が有効なときに使われます。";
+
+        // The tips of the settings dialog (from the Readme)
+        "The language of the menu and the dialogs.", "メニューとダイアログの言語です。";
+        "The priority of the process of W10Wheel.", "W10Wheel のプロセスの優先度です。";
+        "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).",
+            "スクロールモードを始めるマウスのボタンです。\nチェックを外すとマウスのトリガーなし (キーボードトリガーだけで使う場合)。";
+        "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).",
+            "Shift、Ctrl、Alt キーを押しながらトリガーを押すと、ミドル (中) クリックを送ります (Middle、X1、X2)。";
+        "After a drag with a Drag trigger, scroll mode stays locked.", "Drag のトリガーでドラッグした後、スクロールモードに固定します。";
+        "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.",
+            "スクロールモードを始めるキーです。\n他のソフトが送ったキー (パスワードマネージャーの自動入力、マクロ、キーの割り当てツールなど) はトリガーになりません。";
+        "How long the LR, Left and Right triggers wait for the other button.",
+            "LR、Left、Right のトリガーで、同時押しのもう一方のボタンを待つ時間です。";
+        "A trigger released within this time locks scroll mode.", "この時間内にトリガーを離すと、スクロールモードに固定します。";
+        "Changes the cursor in scroll mode.", "スクロールモードのカーソルを変更します。";
+        "Scrolls horizontally too.\nDisable it if you do not use it.", "水平にもスクロールします。\n使わない場合は無効にしてください。";
+        "Reverses the direction of the scroll.", "スクロールの方向を逆にします (反転)。";
+        "Swaps the vertical and the horizontal scroll.", "垂直スクロールと水平スクロールを入れ替えます。";
+        "A vertical move up to this does not scroll.", "この値以下の垂直の移動ではスクロールしません。";
+        "A horizontal move up to this does not scroll.\nToo small, the vertical scroll becomes hard to use.",
+            "この値以下の水平の移動ではスクロールしません。\n小さすぎると垂直スクロールが使いづらくなります。";
+        "Accelerates the scroll by the speed of the move, with the multipliers of the table.",
+            "移動の速さに応じて、テーブルの倍率でスクロールを加速します。";
+        "The multipliers of the table, from the slowest move to the fastest.", "テーブルの倍率 (遅い移動 ... 速い移動) です。";
+        "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).",
+            "設定ファイルの customAccelThreshold と customAccelMultiplier を使います (書かれている場合だけ選べます)。";
+        "Scrolls as a real wheel does, a notch at a time.\nThe accel table is not used.",
+            "実際のホイールに近く、一回分ずつスクロールします。\n加速テーブルは使われません。";
+        "The wheel value of a notch (a usual mouse sends 120).", "一回分のホイール値です (通常のマウスは 120)。";
+        "The vertical move made into a notch.", "一回分の垂直スクロールに変換する移動量です。";
+        "The horizontal move made into a notch.", "一回分の水平スクロールに変換する移動量です。";
+        "Sends the first notch whatever the move (else after half of the move).",
+            "移動量に関係なく最初の一回分を送ります (無効のときは半分の移動量で送ります)。";
+        "Sends a notch at once when the move turns back, whatever the move.", "折り返したとき、移動量に関係なく一回分を送ります。";
+        "Scrolls in one direction at a time, vertical or horizontal.", "垂直か水平の一方向だけにスクロールします。";
+        "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above switchingThreshold.",
+            "固定: 初回の移動量が多い方向に固定します。\n切り替え: さらに切り替え閾値を超える移動で方向を切り替えます。";
+        "The first direction prefers vertical.", "初回の方向の判定で垂直を優先します。";
+        "The first direction is decided by a move above this (smaller moves are ignored).",
+            "この値を超える移動で初回の方向を判定します (それ以下は無視します)。";
+        "A move above this switches the direction (Switching).", "この値を超える移動で方向を切り替えます (切り替え)。";
         "Reset all the settings to their defaults? The language is kept.", "すべての設定を既定値に戻しますか？ 言語は変わりません。";
 
         "Trigger", "トリガー";

@@ -1442,16 +1442,17 @@ let private createSettingsDialog () =
         // hook is off again if it could not be installed)
         dialog.RefreshValues())
 
-    let addBool (page: SettingsForm.SettingsPage) engText id =
-        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id)
+    // tip: the explanation of the setting (from the Readme), converted as the other texts
+    let addBool (page: SettingsForm.SettingsPage) engText id tip =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, tip = tip)
     // enabled: whether the setting is used (see Windows.initScroll), else grayed
-    let addBoolIf (page: SettingsForm.SettingsPage) engText id enabled =
-        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled)
+    let addBoolIf (page: SettingsForm.SettingsPage) engText id enabled tip =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled, tip = tip)
     // The ranges of loadProperties
-    let addNumber (page: SettingsForm.SettingsPage) id low up =
-        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id)
-    let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled =
-        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled)
+    let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled tip =
+        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled, tip = tip)
+    let addTime (page: SettingsForm.SettingsPage) id low up tip =
+        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, unit = "ms", tip = tip)
 
     dialog.AddPropertiesLabel "Properties"
     dialog.AddPropertiesComboBox(
@@ -1470,77 +1471,101 @@ let private createSettingsDialog () =
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
-                        (fun id -> id = getUILanguage()), setUILanguage)
+                        (fun id -> id = getUILanguage()), setUILanguage,
+                        tip = "The language of the menu and the dialogs.")
     general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
-                        (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority)
+                        (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
+                        tip = "The priority of the process of W10Wheel.")
 
     let trigger = dialog.AddPage "Trigger"
     // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
     trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
                              (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
-                             triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger)
+                             triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger,
+                             tip = "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).")
     trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
-                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true)
+                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true,
+                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).")
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
-                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true)
+                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
+                     tip = "After a drag with a Drag trigger, scroll mode stays locked.")
     trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
                                  // Without a key (None, from the properties of 2.8.x and before:
                                  // not in the list), the default key: Keyboard checked would do nothing
                                  if b && isNoneTriggerKey() then setTargetVKCode DataID.VK_NONCONVERT
                                  setBooleanOfName DataID.keyboardHook b
                                  setKeyboardHookOf b),
-                             keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode)
+                             keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
+                             tip = "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.")
     trigger.AddGap()
-    addNumber trigger DataID.pollTimeout 50 500
-    addNumber trigger DataID.scrollLocktime 150 500
+    addTime trigger DataID.pollTimeout 50 500
+        "How long the LR, Left and Right triggers wait for the other button."
+    addTime trigger DataID.scrollLocktime 150 500
+        "A trigger released within this time locks scroll mode."
 
     let scroll = dialog.AddPage "Scroll"
-    addBool scroll "Cursor Change" DataID.cursorChange
-    addBool scroll "Horizontal Scroll" DataID.horizontalScroll
-    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll
-    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll
+    addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode."
+    addBool scroll "Horizontal Scroll" DataID.horizontalScroll "Scrolls horizontally too.\nDisable it if you do not use it."
+    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll "Reverses the direction of the scroll."
+    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll "Swaps the vertical and the horizontal scroll."
     scroll.AddGap()
     // The thresholds of the standard scroll: not with VH Adjuster (Windows.initStdMode)
     addNumberIf scroll DataID.verticalThreshold 0 500 (fun () -> not (isVhAdjusterMode()))
+        "A vertical move up to this does not scroll."
     addNumberIf scroll DataID.horizontalThreshold 0 500
         (fun () -> isHorizontalScroll() && not (isVhAdjusterMode()))
+        "A horizontal move up to this does not scroll.\nToo small, the vertical scroll becomes hard to use."
 
     // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
     let accel = dialog.AddPage "Accel Table"
     let accelUsed () = not (isRealWheelMode())
     let customUsed () = not Accel.CustomDisabled && Accel.CustomTable
     addBoolIf accel "Enabled" DataID.accelTable accelUsed
+        "Accelerates the scroll by the speed of the move, with the multipliers of the table."
     // The multipliers are not used with the custom table (getAccelMultiplier)
     accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
-                          enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())))
+                          enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())),
+                          tip = "The multipliers of the table, from the slowest move to the fastest.")
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
                    setBooleanOfName DataID.customAccelTable,
-                   enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled))
+                   enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).")
     accel.AddNote "Not used while Real Wheel Mode is enabled."
 
     let realWheel = dialog.AddPage "Real Wheel Mode"
     addBool realWheel "Enabled" DataID.realWheelMode
+        "Scrolls as a real wheel does, a notch at a time.\nThe accel table is not used."
     realWheel.AddGap()
     addNumberIf realWheel DataID.wheelDelta 10 500 isRealWheelMode
+        "The wheel value of a notch (a usual mouse sends 120)."
     addNumberIf realWheel DataID.vWheelMove 10 500 isRealWheelMode
+        "The vertical move made into a notch."
     addNumberIf realWheel DataID.hWheelMove 10 500 isRealWheelMode
+        "The horizontal move made into a notch."
     realWheel.AddGap()
     addBoolIf realWheel DataID.quickFirst DataID.quickFirst isRealWheelMode
+        "Sends the first notch whatever the move (else after half of the move)."
     addBoolIf realWheel DataID.quickTurn DataID.quickTurn isRealWheelMode
+        "Sends a notch at once when the move turns back, whatever the move."
 
     // Used with Horizontal Scroll only (isVhAdjusterMode)
     let vhAdjuster = dialog.AddPage "VH Adjuster"
     vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
-                        setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal))
+                        setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal),
+                        tip = "Scrolls in one direction at a time, vertical or horizontal.")
     vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
                                (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod,
-                               enabled = isVhAdjusterMode)
+                               enabled = isVhAdjusterMode,
+                               tip = "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above switchingThreshold.")
     vhAdjuster.AddGap()
     addBoolIf vhAdjuster DataID.firstPreferVertical DataID.firstPreferVertical isVhAdjusterMode
+        "The first direction prefers vertical."
     addNumberIf vhAdjuster DataID.firstMinThreshold 1 10 isVhAdjusterMode
+        "The first direction is decided by a move above this (smaller moves are ignored)."
     // For Switching only (Windows.switchVHD)
     addNumberIf vhAdjuster DataID.switchingThreshold 10 500
         (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
+        "A move above this switches the direction (Switching)."
     vhAdjuster.AddNote "Used when Horizontal Scroll (Scroll) is enabled."
 
     refreshSettingsDialog <- dialog.RefreshAllLater
