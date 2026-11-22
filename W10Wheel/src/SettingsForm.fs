@@ -67,12 +67,12 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
     let label = new Label(AutoSize = true)
     let ok = new Button(AutoSize = true, DialogResult = DialogResult.OK)
     let cancel = new Button(AutoSize = true, DialogResult = DialogResult.Cancel)
-    // OK on the left of Cancel, both on the right
+    // OK on the left of Cancel, both on the right: added in this order, so that Tab goes from the
+    // box to OK, then Cancel (RightToLeft with Cancel added first went to Cancel first)
     let buttons = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                      FlowDirection = FlowDirection.RightToLeft, WrapContents = false,
-                                      Anchor = AnchorStyles.Right, Margin = Padding(0, 8, 0, 0))
-    buttons.Controls.Add(cancel)
+                                      WrapContents = false, Anchor = AnchorStyles.Right, Margin = Padding(0, 8, 0, 0))
     buttons.Controls.Add(ok)
+    buttons.Controls.Add(cancel)
     table.Controls.Add(label)
     table.Controls.Add(box)
     table.Controls.Add(buttons)
