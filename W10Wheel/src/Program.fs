@@ -17,7 +17,7 @@ let private convLangP msg =
     Ctx.convLangWithProp msg
 
 let private messageDoubleLaunch () =
-    MessageBox.Show(convLangP "Double Launch?", convLangP "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
+    MessageBox.Show(convLangP "W10Wheel is already running. This instance will exit.", convLangP "Error", MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
 
 // Started by a restart as administrator (Ctx.RESTART_ADMIN_ARG): the old instance is exiting
 let mutable private waitForLock = false

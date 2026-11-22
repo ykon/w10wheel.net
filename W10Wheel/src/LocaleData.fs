@@ -6,7 +6,7 @@ let AdminMessage =
 
 let private JapaneseMessage =
     [
-        "Double Launch?", "二重起動していませんか？";
+        "W10Wheel is already running. This instance will exit.", "二重起動を検知したので終了します。";
         "W10Wheel is not running as administrator", "W10Wheel は管理者として実行されていません";
         AdminMessage, "そのため、一部のプログラム (管理者として実行されているもの) のウィンドウでは機能しません。管理者として実行することを推奨します。";
         "Restart as administrator", "管理者として再起動";
@@ -32,7 +32,7 @@ let private JapaneseMessage =
         "Add Properties", "設定ファイル追加";
         "This name cannot be used: characters not allowed in file names, spaces at either end, -- at the start, or Default.",
             "この名前は使えません: ファイル名に使えない文字、前後の空白、先頭の --、Default は使えません";
-        "Properties of this name already exist.", "この名前の設定ファイルは既にあります";
+        "Properties of this name already exist.", "この名前の設定ファイルは既に存在します";
         "OK", "OK";
         "Cancel", "キャンセル";
         "Invalid Name", "無効な名前";
@@ -48,10 +48,10 @@ let private JapaneseMessage =
         "Close", "閉じる";
         "Reset to defaults", "既定値に戻す";
         "Not used while Real Wheel Mode is enabled.", "リアルホイールモードが有効な間は使われません";
-        "Used when Horizontal Scroll (Scroll) is enabled.", "水平スクロール (スクロール) が有効なときに使われます";
+        "Used when Horizontal Scroll is enabled.", "水平スクロールが有効なときに使われます";
         "The thresholds are not used while VH Adjuster is enabled.", "垂直/水平スクロール調整が有効な間、閾値は使われません";
         "Scrolling is disabled.", "スクロール機能が無効になっています";
-        "Not written in the properties file.", "設定ファイルに書かれていません";
+        "Not in the properties file.", "設定ファイルに存在しません";
         "Not used: the numbers of thresholds and multipliers differ.", "使われていません: 閾値と倍率の個数が違います";
         "Not used: the thresholds are not ascending numbers of 0 or more.", "使われていません: 閾値が 0 以上の昇順になっていません";
         "Not used: a multiplier is not a number of 0 or more.", "使われていません: 0 以上の数でない倍率があります";
@@ -83,22 +83,22 @@ let private JapaneseMessage =
         "Accelerates the scroll by the speed of the move, with the multipliers of the table.",
             "移動の速さに応じて、テーブルの倍率でスクロールを加速します";
         "The multipliers of the table, from the slowest move to the fastest.", "テーブルの倍率 (遅い移動 ... 速い移動) です";
-        "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).",
-            "設定ファイルの customAccelThreshold と customAccelMultiplier を使います (書かれている場合だけ選べます)";
+        "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are in it).",
+            "設定ファイルの customAccelThreshold と customAccelMultiplier を使います (存在する場合だけ選択可能)";
         "Scrolls as a real wheel does, a notch at a time.\nThe accel table is not used.",
             "実際のホイールに近く、一回分ずつスクロールします\n加速テーブルは使われません";
         "The wheel value of a notch (a usual mouse sends 120).", "一回分のホイール値です (通常のマウスは 120)";
         "The vertical move made into a notch.", "一回分の垂直スクロールに変換する移動量です";
         "The horizontal move made into a notch.", "一回分の水平スクロールに変換する移動量です";
         "Sends the first notch whatever the move (else after half of the move).",
-            "移動量に関係なく最初の一回分を送ります (無効のときは半分の移動量で送ります)";
+            "移動量に関係なく最初の一回分を送ります (無効の場合は半分の移動量)";
         "Sends a notch at once when the move turns back, whatever the move.", "折り返したとき、移動量に関係なく一回分を送ります";
         "Scrolls in one direction at a time, vertical or horizontal.", "垂直か水平の一方向だけにスクロールします";
         "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above the switching threshold.",
             "固定: 初回の移動量が多い方向に固定します\n切り替え: さらに切り替え閾値を超える移動で方向を切り替えます";
         "The first direction prefers vertical.", "初回の方向の判定で垂直を優先します";
         "The first direction is decided by a move above this (smaller moves are ignored).",
-            "この値を超える移動で初回の方向を判定します (それ以下は無視します)";
+            "この値を超える移動で初回の方向を判定します (それ以下は無視)";
         "A move above this switches the direction (Switching).", "この値を超える移動で方向を切り替えます (切り替え)";
 
         "Trigger", "トリガー";

@@ -1740,11 +1740,11 @@ let private createSettingsDialog () =
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
-                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).", key = "customAccelTable")
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are in it).", key = "customAccelTable")
     // The custom table as read from the properties: why it cannot be checked
     accel.AddStatus((fun () ->
         match customTableState with
-        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not written in the properties file.")
+        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not in the properties file.")
         | CustomInvalid why -> Some(SettingsForm.NoteKind.Warning, convLang why)
         | CustomLoaded(t, m) ->
             let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
@@ -1788,7 +1788,7 @@ let private createSettingsDialog () =
     addNumberIf vhAdjuster DataID.switchingThreshold 10 500
         (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
         "A move above this switches the direction (Switching)."
-    vhAdjuster.AddNote "Used when Horizontal Scroll (Scroll) is enabled."
+    vhAdjuster.AddNote "Used when Horizontal Scroll is enabled."
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     retextSettingsDialog <- dialog.RetextLater
