@@ -482,27 +482,36 @@ type SettingsDialog(conv: string -> string) =
         try f () finally refreshing <- false
 
     let fitPages () =
-        // The items of the list are as wide as the widest
-        for b in navButtons do b.MinimumSize <- Size.Empty
-        let navW = navButtons |> Seq.map (fun b -> b.GetPreferredSize(Size.Empty).Width) |> Seq.fold max 0
-        for b in navButtons do b.MinimumSize <- Size(navW, 0)
+        // Laid out once at the end: each minimum size set laid out the list, and the dialog with
+        // it, again (twice for each item)
+        middle.SuspendLayout()
+        nav.SuspendLayout()
+        try
+            // The items of the list are as wide as the widest
+            for b in navButtons do b.MinimumSize <- Size.Empty
+            let navW = navButtons |> Seq.map (fun b -> b.GetPreferredSize(Size.Empty).Width) |> Seq.fold max 0
+            for b in navButtons do b.MinimumSize <- Size(navW, 0)
 
-        // The area of the pages does not size itself: as large as the largest page (it does not
-        // change with the page), as high as the list, and as wide as the rows above and below
-        let mutable w = 0
-        let mutable h = 0
-        for page in pages do
-            let size = page.GetPreferredSize(Size.Empty)
-            w <- max w size.Width
-            h <- max h size.Height
+            // The area of the pages does not size itself: as large as the largest page (it does
+            // not change with the page), as high as the list, and as wide as the rows above and
+            // below
+            let mutable w = 0
+            let mutable h = 0
+            for page in pages do
+                let size = page.GetPreferredSize(Size.Empty)
+                w <- max w size.Width
+                h <- max h size.Height
 
-        let navSize = nav.GetPreferredSize(Size.Empty)
-        let rowWidth (row: Control) = row.GetPreferredSize(Size.Empty).Width + row.Margin.Horizontal
-        let besideNav =
-            max (rowWidth top) (rowWidth bottom)
-            - (navSize.Width + nav.Margin.Horizontal) - content.Margin.Horizontal
-        content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
-                             max (h + content.Padding.Vertical) navSize.Height)
+            let navSize = nav.GetPreferredSize(Size.Empty)
+            let rowWidth (row: Control) = row.GetPreferredSize(Size.Empty).Width + row.Margin.Horizontal
+            let besideNav =
+                max (rowWidth top) (rowWidth bottom)
+                - (navSize.Width + nav.Margin.Horizontal) - content.Margin.Horizontal
+            content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
+                                 max (h + content.Padding.Vertical) navSize.Height)
+        finally
+            nav.ResumeLayout(true)
+            middle.ResumeLayout(true)
 
     // The pages fitted again after all the controls have been refreshed: a text that follows the
     // settings may have become wider or narrower (e.g. the state of the custom table after Reload).
@@ -517,11 +526,24 @@ type SettingsDialog(conv: string -> string) =
         form.Location <- Point(max wa.Left (wa.Left + (wa.Width - form.Width) / 2),
                                max wa.Top (wa.Top + (wa.Height - form.Height) / 2))
 
+    // The layouts of the dialog suspended while f sets the texts: each text laid out its row, its
+    // page and the containers up to the dialog again (all auto sized), hundreds of times for a
+    // switch of the language (slow, more on the screen). Resumed from the innermost, once each.
+    let withLayoutSuspended f =
+        let rec containers (c: Control) =
+            seq {
+                if c.Controls.Count > 0 then yield c
+                for child in c.Controls do yield! containers child }
+        let all = containers form |> Array.ofSeq
+        for c in all do c.SuspendLayout()
+        try f () finally for c in Array.rev all do c.ResumeLayout(true)
+
     let retext () =
-        withRefreshing (fun () ->
-            form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
-            for b in bindings do b.retext()
-            for b in bindings do b.refresh())
+        withLayoutSuspended (fun () ->
+            withRefreshing (fun () ->
+                form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
+                for b in bindings do b.retext()
+                for b in bindings do b.refresh()))
         // The sizes of the texts: after the first show (Load), when the handles have been created
         if form.IsHandleCreated then fitPages()
 
@@ -643,7 +665,9 @@ type SettingsDialog(conv: string -> string) =
         let selectCurrent () =
             cb.SelectedIndex <- Array.tryFindIndex isCurrent ids |> Option.defaultValue -1
 
-        let reload () =
+        // fit: the area of the pages fitted to the row of the properties again (not when the dialog
+        // is refreshed or retexted: fitted after all the controls)
+        let reload (fit: bool) =
             let items = getItems()
             ids <- items |> List.map fst |> Array.ofList
             cb.Items.Clear()
@@ -654,10 +678,9 @@ type SettingsDialog(conv: string -> string) =
             cb.DropDownWidth <- cb.Width
             cb.Width <- min cb.Width (cb.LogicalToDeviceUnits(240))
             selectCurrent ()
-            // The area of the pages as wide as the row of the properties again
-            if form.IsHandleCreated then fitPages()
+            if fit && form.IsHandleCreated then fitPages()
 
-        cb.DropDown.Add(fun _ -> withRefreshing reload)
+        cb.DropDown.Add(fun _ -> withRefreshing (fun () -> reload true))
         cb.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && cb.SelectedIndex >= 0 then
                 flushChanged ()
@@ -667,8 +690,8 @@ type SettingsDialog(conv: string -> string) =
             // the list could be chosen with the keys or the wheel, and its file written again.
             // After a change of a setting, only for a name not in the list.
             refresh = (fun () ->
-                if readLists || not (Array.exists isCurrent ids) then reload () else selectCurrent ())
-            retext = reload }
+                if readLists || not (Array.exists isCurrent ids) then reload false else selectCurrent ())
+            retext = (fun () -> reload false) }
         top.Controls.Add(cb)
 
     // dropPending: the change waiting to be stored is not stored (Reload: storing would write the
