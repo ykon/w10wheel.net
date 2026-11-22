@@ -1799,9 +1799,11 @@ let private settingsDialog = lazy (createSettingsDialog())
 let showSettingsDialog () =
     settingsDialog.Value.Show()
 
+// In bold: the main item of the menu (the double click on the icon switches Pause)
 let private createSettingsMenuItem () =
     let item = createMenuItem_NonID "Settings..."
-    addClick item (fun _ -> settingsDialog.Value.Show())
+    item.Font <- new Drawing.Font(item.Font, Drawing.FontStyle.Bold)
+    addClick item (fun _ -> showSettingsDialog ())
 
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
