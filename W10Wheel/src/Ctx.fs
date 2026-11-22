@@ -1241,7 +1241,10 @@ let mutable private loaded = false
 // failed (loaded is false again), the settings are not the default values then
 let mutable private defaultSaved = false
 
+// Read again after a restart as administrator (Program.checkDoubleLaunch): cleared first, or the
+// keys removed from the file since the first read would stay
 let loadPropertiesFileOnly (): unit =
+    prop.Clear()
     try
         prop.Load(getSelectedPropertiesPath(), true)
     with
