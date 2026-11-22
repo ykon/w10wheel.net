@@ -237,6 +237,11 @@ type SettingsDialog(conv: string -> string) =
         content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
                              max (h + content.Padding.Vertical) navSize.Height)
 
+    let centerOn (screen: Screen) =
+        let wa = screen.WorkingArea
+        form.Location <- Point(max wa.Left (wa.Left + (wa.Width - form.Width) / 2),
+                               max wa.Top (wa.Top + (wa.Height - form.Height) / 2))
+
     let retext () =
         withRefreshing (fun () ->
             form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
@@ -284,7 +289,11 @@ type SettingsDialog(conv: string -> string) =
         root.Controls.Add(bottom, 0, 2)
         form.Controls.Add(root)
 
-        form.Load.Add(fun _ -> fitPages())
+        form.Load.Add(fun _ ->
+            fitPages()
+            // Centered again at its fitted size: CenterScreen placed it at its size before
+            form.PerformLayout()
+            centerOn (Screen.FromControl(form)))
         // After the controls have been scaled to the new DPI: the texts are measured again
         form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(retext)) |> ignore)
 
@@ -413,6 +422,11 @@ type SettingsDialog(conv: string -> string) =
             // The focus on the list of the pages, not on the properties (the first control): its
             // text would be shown selected, as if it were to be changed
             navButtons |> Seq.tryFind (fun b -> b.Checked) |> Option.iter (fun b -> form.ActiveControl <- b)
+            // Shown again where it was closed: not if that display is gone (e.g. disconnected),
+            // then on the display of the cursor
+            if form.IsHandleCreated &&
+               not (Screen.AllScreens |> Array.exists (fun s -> s.WorkingArea.IntersectsWith(form.Bounds))) then
+                centerOn (Screen.FromPoint(Cursor.Position))
             form.Show()
 
         form.Activate()
