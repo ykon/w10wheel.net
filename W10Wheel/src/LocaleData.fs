@@ -30,7 +30,6 @@ let private JapaneseMessage =
         "Invalid Name", "無効な名前";
         "Name Error", "名前のエラー";
         "Delete properties", "設定ファイル削除";
-        "Set Text", "テキストを設定";
 
         "Settings...", "設定...";
         "Settings", "設定";

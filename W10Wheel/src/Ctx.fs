@@ -63,7 +63,7 @@ let convLang (msg: string) =
     Debug.WriteLine("convLang: " + msg)
     Locale.convLang (getUILanguage()) msg
 
-type MenuData = { engText: string; id: string option }
+type MenuData = { engText: string }
 
 (*
 let private tagToEngText (item: ToolStripMenuItem): string =
@@ -71,11 +71,6 @@ let private tagToEngText (item: ToolStripMenuItem): string =
     | :? MenuData as tag -> tag.engText
     | _ -> raise (ArgumentException("Tag is not MenuTag."))
 *)
-
-let private tagToEngText (item: ToolStripMenuItem): string =
-    match item.Tag with
-    | :? string as engText -> engText
-    | _ -> raise (ArgumentException("Tag is not string."))
 
 let private resetMenuText (): unit =        
     let toList = fun (mc: ToolStripItemCollection) ->
@@ -826,7 +821,7 @@ let private createMenuItem (data: MenuData): ToolStripMenuItem =
     item
 
 let private createMenuItem_NonID text: ToolStripMenuItem =
-    createMenuItem {engText = text; id = None}
+    createMenuItem {engText = text}
 
 (*
 let private createMenuItem (text: string): ToolStripMenuItem =
@@ -1034,7 +1029,7 @@ let private setKeyboardHookOf (b: bool) =
 let private createPassModeMenuItem () =
     let id = DataID.passMode
     // Pass Mode (its name in the code and the command --sendPassMode)
-    let item = createMenuItem {engText = "Pause"; id = Some(id)}
+    let item = createMenuItem_NonID "Pause"
     item.Click.AddHandler(new EventHandler(makeSetBooleanEvent id))
     item.CheckOnClick <- true
     passModeMenuItem <- item
@@ -1549,8 +1544,6 @@ let private createContextMenuStrip (): ContextMenuStrip =
     add (createExitMenuItem())
 
     menu
-
-let mutable private contextMenu: ContextMenuStrip = null
 
 let setSystemTray (): unit =
     let ni = notifyIcon
