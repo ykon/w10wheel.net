@@ -1581,28 +1581,35 @@ let private showError (owner: IWin32Window) (heading: string) (e: exn) =
     page.Buttons.Add(TaskDialogButton.OK)
     TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
 
-// From the settings dialog (owner). The settings of the selected properties are stored first: if
-// they cannot be (e.g. a read-only file), switching loses their changes, which is asked. The
-// properties switched to that cannot be read (e.g. locked by another program): the previous ones
-// again (their settings were still running), and why.
+// Why the properties of name cannot be read (e.g. locked by another program), None if they can,
+// or do not exist (the default values)
+let private whyNotReadable name =
+    try
+        Properties.Properties().Load(Properties.getPath name, true)
+        None
+    with
+        | :? FileNotFoundException -> None
+        | e -> Some e
+
+// From the settings dialog (owner). The settings of the selected properties are stored first.
+// The properties switched to are read first: if they cannot be, nothing changes (the selected
+// ones, their settings, their changes not stored), and why is shown. If the changes could not be
+// stored (e.g. a read-only file), switching loses them, which is asked.
 let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    let previous = getSelectedProperties()
     let lose (e: exn) =
         confirm owner (convLang "The changes could not be saved")
                 (sprintf "%s\n%s" e.Message (convLang "Switching loses the settings changed in these properties."))
                 (convLang "Switch")
-    match storeError with
-    | Some e when loaded && not (lose e) ->
+    match whyNotReadable name, storeError with
+    | Some e, _ ->
         // The current properties selected again in the list
+        refreshSettingsDialog()
+        showError owner (convLang "The properties file could not be read") e
+    | None, Some e when loaded && not (lose e) ->
         refreshSettingsDialog()
     | _ ->
         setProperties name
-        match loadError with
-        | Some e when not loaded ->
-            setProperties previous
-            showError owner (convLang "The properties file could not be read") e
-        | _ -> ()
 
 // Not None: it is Mouse unchecked in the settings dialog
 let private triggerItems =
