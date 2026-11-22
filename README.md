@@ -13,7 +13,7 @@ Enable the Windows option to scroll inactive windows when hovering over them.
 1. Download `W10Wheel.NET-<version>.zip` from [Releases](https://github.com/ykon/w10wheel.net/releases).
 2. Extract it to any folder and run `W10Wheel.exe`.
 
-Since 2.9.1, the release also has `W10Wheel.NET-<version>-no-runtime.zip`, a build without the .NET runtime (1.7 MB instead of 52 MB). It requires the [.NET 11 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/11.0) (x64) to be installed, which you can then keep up to date yourself (e.g. with Microsoft Update), without waiting for a new W10Wheel when .NET has a security fix. If the runtime is not installed, `W10Wheel.exe` shows a message to download it.
+Since 2.9.1, the release also has `W10Wheel.NET-<version>-no-runtime.zip`, a build without the .NET runtime. It requires the [.NET 11 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/11.0) (x64) to be installed, which you can then keep up to date yourself (e.g. with Microsoft Update), without waiting for a new W10Wheel when .NET has a security fix. If the runtime is not installed, `W10Wheel.exe` shows a message to download it.
 
 `W10Wheel.exe` is not code-signed, so Windows SmartScreen may show "Windows protected your PC" when you run it for the first time.
 If you downloaded it from the Releases page above, click "More info" and then "Run anyway".

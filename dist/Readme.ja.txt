@@ -92,7 +92,7 @@ URL:
         
         ランタイム無し版:
                 2.9.1 から、.NET のランタイムを含まない
-                W10Wheel.NET-<バージョン>-no-runtime.zip も公開しています。(52 MB ではなく 1.7 MB)
+                W10Wheel.NET-<バージョン>-no-runtime.zip も公開しています。
                 .NET 11 デスクトップ ランタイム (x64) のインストールが必要です。
                  https://dotnet.microsoft.com/download/dotnet/11.0
                 ランタイムは Microsoft Update などで自分で更新できるため、
