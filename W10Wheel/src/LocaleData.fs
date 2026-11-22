@@ -46,6 +46,16 @@ let private JapaneseMessage =
         "Reset to defaults", "既定値に戻す";
         "Not used while Real Wheel Mode is enabled.", "リアルホイールモードが有効な間は使われません。";
         "Used when Horizontal Scroll (Scroll) is enabled.", "水平スクロール (スクロール) が有効なときに使われます。";
+        "The thresholds are not used while VH Adjuster is enabled.", "垂直/水平スクロール調整が有効な間、閾値は使われません。";
+        "Scrolling is disabled.", "スクロール機能が無効になっています";
+        "Not written in the properties file.", "設定ファイルに書かれていません。";
+        "Not used: the numbers of thresholds and multipliers differ.", "使われていません: 閾値と倍率の個数が違います。";
+        "Not used: the thresholds are not ascending numbers of 0 or more.", "使われていません: 閾値が 0 以上の昇順になっていません。";
+        "Not used: a multiplier is not a number of 0 or more.", "使われていません: 0 以上の数でない倍率があります。";
+        "Not used: customAccelThreshold and customAccelMultiplier are both needed.",
+            "使われていません: customAccelThreshold と customAccelMultiplier の両方が必要です。";
+        "Not used: a value is not a number.", "使われていません: 数値でない値があります。";
+        "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})", "読み込み済み: {0} 段階 (閾値 {1} ... {2}、倍率 {3} ... {4})";
 
         // The tips of the settings dialog (from the Readme)
         "The language of the menu and the dialogs.", "メニューとダイアログの言語です。";

@@ -1181,9 +1181,18 @@ let private setTriggerOfProperty (): unit =
 let private setAccelOfProperty (): unit =
     setStringOfProperty DataID.accelMultiplier setAccelMultiplier
 
+// The custom table of the properties as read (shown in the settings dialog): why it is not used
+type private CustomTableState =
+    | CustomNotWritten
+    | CustomInvalid of string  // why (an English text)
+    | CustomLoaded of int[] * double[]
+
+let mutable private customTableState = CustomNotWritten
+
 let private setCustomAccelOfProperty (): unit =
     // Without a valid custom table in this file, do not keep the table of the previous file
     Accel.CustomDisabled <- true
+    customTableState <- CustomNotWritten
 
     try
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
@@ -1196,17 +1205,33 @@ let private setCustomAccelOfProperty (): unit =
         let isValidThreshold = cat |> Array.forall (fun n -> n >= 0) && isAscending
         let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
 
-        if cat.Length <> 0 && cat.Length = cam.Length && isValidThreshold && isValidMultiplier then
+        if cat.Length = 0 || cat.Length <> cam.Length then
+            customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ."
+        elif not isValidThreshold then
+            customTableState <- CustomInvalid "Not used: the thresholds are not ascending numbers of 0 or more."
+        elif not isValidMultiplier then
+            customTableState <- CustomInvalid "Not used: a multiplier is not a number of 0 or more."
+        else
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
 
             Accel.CustomThreshold <- cat
             Accel.CustomMultiplier <- cam
             Accel.CustomDisabled <- false
+            customTableState <- CustomLoaded(cat, cam)
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? FormatException as e -> Debug.WriteLine("Parse error: " + e.Message)
-        | :? OverflowException as e -> Debug.WriteLine("Overflow: " + e.Message)
+        | :? KeyNotFoundException as e ->
+            Debug.WriteLine("Not found: " + e.Message)
+            // One of the two only
+            if prop.GetPropertyOption(DataID.customAccelThreshold).IsSome ||
+               prop.GetPropertyOption(DataID.customAccelMultiplier).IsSome then
+                customTableState <- CustomInvalid "Not used: customAccelThreshold and customAccelMultiplier are both needed."
+        | :? FormatException as e ->
+            Debug.WriteLine("Parse error: " + e.Message)
+            customTableState <- CustomInvalid "Not used: a value is not a number."
+        | :? OverflowException as e ->
+            Debug.WriteLine("Overflow: " + e.Message)
+            customTableState <- CustomInvalid "Not used: a value is not a number."
 
 let private setPriorityOfProperty (): unit =
     setStringOfProperty DataID.processPriority setPriority
@@ -1658,6 +1683,10 @@ let private createSettingsDialog () =
     addTime trigger DataID.scrollLocktime 150 500
         (fun () -> isSingleTrigger() || isDoubleTrigger() || getBooleanOfName DataID.keyboardHook)
         "A trigger released within this time locks scroll mode."
+    // Neither trigger: nothing starts scroll mode
+    trigger.AddStatus((fun () ->
+        if isNoneTrigger() && not (getBooleanOfName DataID.keyboardHook) then convLang "Scrolling is disabled."
+        else ""), warning = true)
 
     let scroll = dialog.AddPage "Scroll"
     addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode."
@@ -1671,6 +1700,7 @@ let private createSettingsDialog () =
     addNumberIf scroll DataID.horizontalThreshold 0 500
         (fun () -> isHorizontalScroll() && not (isVhAdjusterMode()))
         "A horizontal move up to this does not scroll.\nToo small, the vertical scroll becomes hard to use."
+    scroll.AddNote "The thresholds are not used while VH Adjuster is enabled."
 
     // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
     let accel = dialog.AddPage "Accel Table"
@@ -1686,6 +1716,15 @@ let private createSettingsDialog () =
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
                    tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).", key = "customAccelTable")
+    // The custom table as read from the properties: why it cannot be checked
+    accel.AddStatus((fun () ->
+        match customTableState with
+        | CustomNotWritten -> convLang "Not written in the properties file."
+        | CustomInvalid why -> convLang why
+        | CustomLoaded(t, m) ->
+            let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
+            String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
+                          t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1])), indent = true)
     accel.AddNote "Not used while Real Wheel Mode is enabled."
 
     let realWheel = dialog.AddPage "Real Wheel Mode"

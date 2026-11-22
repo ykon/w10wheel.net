@@ -202,6 +202,23 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register { refresh = ignore; retext = (fun () -> l.Text <- conv engText) }
         addRow [l :> Control, 3]
 
+    // A text that follows the settings (getText: already converted, empty if none): e.g. the state
+    // of the custom table. Its row keeps the height of a line when empty, so that the page does
+    // not grow beyond its area when it shows (the area is fitted at Show). warning: in the color of
+    // the texts, not gray; indent: as AddCheck.
+    member _.AddStatus (getText: unit -> string, ?warning: bool, ?indent: bool) =
+        let color = if defaultArg warning false then SystemColors.ControlText else SystemColors.GrayText
+        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = color)
+        if defaultArg indent false then
+            l.Margin <- Padding(l.Margin.Left + 16, l.Margin.Top, l.Margin.Right, l.Margin.Bottom)
+        let show () = l.Text <- getText()
+        register {
+            refresh = show
+            retext = (fun () ->
+                l.MinimumSize <- Size(0, l.Font.Height)
+                show ()) }
+        addRow [l :> Control, 3]
+
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range). enabled:
     // as AddCheck; unit: shown after the range (e.g. ms).
     member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit, ?enabled: unit -> bool,
