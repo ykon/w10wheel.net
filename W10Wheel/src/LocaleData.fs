@@ -6,7 +6,7 @@ let AdminMessage =
 
 let private JapaneseMessage =
     [
-        "W10Wheel is already running. This instance will exit.", "二重起動を検知したので終了します。";
+        "W10Wheel is already running. This instance will exit.", "二重起動を検出したため終了します。";
         "W10Wheel is not running as administrator", "W10Wheel は管理者として実行されていません";
         AdminMessage, "そのため、一部のプログラム (管理者として実行されているもの) のウィンドウでは機能しません。管理者として実行することを推奨します。";
         "Restart as administrator", "管理者として再起動";
@@ -15,8 +15,8 @@ let private JapaneseMessage =
         "More info (Wiki)", "詳細 (Wiki)";
         "Do not ask again", "次回から表示しない";
         "Ask to restart as administrator at startup", "起動時に管理者として再起動するか確認する";
-        "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do).",
-            "W10Wheel が管理者として実行されていないとき (管理者として実行されているプログラムのウィンドウでは機能しません)";
+        "Asked when W10Wheel is not running as administrator.",
+            "W10Wheel が管理者として実行されていない場合に確認します";
 
         "Failed mouse hook install", "マウスフックのインストールに失敗しました";
         "Failed keyboard hook install", "キーボードフックのインストールに失敗しました";
@@ -30,8 +30,8 @@ let private JapaneseMessage =
 
         "Properties Name", "設定ファイル名";
         "Add Properties", "設定ファイル追加";
-        "This name cannot be used: characters not allowed in file names, spaces at either end, -- at the start, or Default.",
-            "この名前は使えません: ファイル名に使えない文字、前後の空白、先頭の --、Default は使えません";
+        "This name cannot be used (characters not allowed in file names, spaces at either end, -- at the start, or Default).",
+            "この名前は使えません (ファイル名に使えない文字、前後の空白、先頭の --、Default)";
         "Properties of this name already exist.", "この名前の設定ファイルは既に存在します";
         "OK", "OK";
         "Cancel", "キャンセル";
@@ -48,13 +48,13 @@ let private JapaneseMessage =
         "Close", "閉じる";
         "Reset to defaults", "既定値に戻す";
         "Not used while Real Wheel Mode is enabled.", "リアルホイールモードが有効な間は使われません";
-        "Used when Horizontal Scroll is enabled.", "水平スクロールが有効なときに使われます";
+        "Used when Horizontal Scroll is enabled.", "水平スクロールが有効な場合に使われます";
         "The thresholds are not used while VH Adjuster is enabled.", "垂直/水平スクロール調整が有効な間、閾値は使われません";
         "Scrolling is disabled.", "スクロール機能が無効になっています";
         "Not in the properties file.", "設定ファイルに存在しません";
         "Not used: the numbers of thresholds and multipliers differ.", "使われていません: 閾値と倍率の個数が違います";
-        "Not used: the thresholds are not ascending numbers of 0 or more.", "使われていません: 閾値が 0 以上の昇順になっていません";
-        "Not used: a multiplier is not a number of 0 or more.", "使われていません: 0 以上の数でない倍率があります";
+        "Not used: the thresholds must be ascending numbers of 0 or more.", "使われていません: 閾値は 0 以上の昇順にしてください";
+        "Not used: the multipliers must be numbers of 0 or more.", "使われていません: 倍率は 0 以上の数にしてください";
         "Not used: customAccelThreshold and customAccelMultiplier are both needed.",
             "使われていません: customAccelThreshold と customAccelMultiplier の両方が必要です";
         "Not used: a value is not a number.", "使われていません: 数値でない値があります";
@@ -64,35 +64,35 @@ let private JapaneseMessage =
         "The language of the menu and the dialogs.", "メニューとダイアログの言語です";
         "The priority of the process of W10Wheel.", "W10Wheel のプロセスの優先度です";
         "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).",
-            "スクロールモードを始めるマウスのボタンです\nチェックを外すとマウスのトリガーなし (キーボードトリガーだけで使う場合)";
-        "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).",
-            "Shift、Ctrl、Alt キーを押しながらトリガーを押すと、ミドル (中) クリックを送ります (Middle、X1、X2)";
+            "スクロールモードを始めるマウスのボタンです\nチェックを外すとマウスのトリガーを使いません (キーボードトリガーのみの場合)";
+        "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only).",
+            "Shift、Ctrl、Alt キーを押しながらトリガーを押すと中クリックを送ります (Middle、X1、X2 のみ)";
         "After a drag with a Drag trigger, scroll mode stays locked.", "Drag のトリガーでドラッグした後、スクロールモードに固定します";
-        "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.",
-            "スクロールモードを始めるキーです\n他のソフトが送ったキー (パスワードマネージャーの自動入力、マクロ、キーの割り当てツールなど) はトリガーになりません";
+        "The key that starts scroll mode.\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers.",
+            "スクロールモードを始めるキーです\n他のソフトが送ったキー (自動入力、マクロ、キー割り当てツールなど) はトリガーになりません";
         "How long the LR, Left and Right triggers wait for the other button.",
             "LR、Left、Right のトリガーで、同時押しのもう一方のボタンを待つ時間です";
         "A trigger released within this time locks scroll mode.", "この時間内にトリガーを離すと、スクロールモードに固定します";
         "Changes the cursor in scroll mode.", "スクロールモードのカーソルを変更します";
         "Scrolls horizontally too.\nDisable it if you do not use it.", "水平にもスクロールします\n使わない場合は無効にしてください";
-        "Reverses the direction of the scroll.", "スクロールの方向を逆にします (反転)";
+        "Reverses the direction of the scroll.", "スクロールの方向を逆にします";
         "Swaps the vertical and the horizontal scroll.", "垂直スクロールと水平スクロールを入れ替えます";
         "A vertical move up to this does not scroll.", "この値以下の垂直の移動ではスクロールしません";
         "A horizontal move up to this does not scroll.\nToo small, the vertical scroll becomes hard to use.",
             "この値以下の水平の移動ではスクロールしません\n小さすぎると垂直スクロールが使いづらくなります";
         "Accelerates the scroll by the speed of the move, with the multipliers of the table.",
             "移動の速さに応じて、テーブルの倍率でスクロールを加速します";
-        "The multipliers of the table, from the slowest move to the fastest.", "テーブルの倍率 (遅い移動 ... 速い移動) です";
-        "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are in it).",
-            "設定ファイルの customAccelThreshold と customAccelMultiplier を使います (存在する場合だけ選択可能)";
+        "The multipliers of the table.", "テーブルの倍率です";
+        "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid).",
+            "設定ファイルの customAccelThreshold と customAccelMultiplier を使います (正しい値が存在する場合だけ選択可能)";
         "Scrolls as a real wheel does, a notch at a time.\nThe accel table is not used.",
-            "実際のホイールに近く、一回分ずつスクロールします\n加速テーブルは使われません";
+            "実際のホイールのように一回分ずつスクロールします\n加速テーブルは使われません";
         "The wheel value of a notch (a usual mouse sends 120).", "一回分のホイール値です (通常のマウスは 120)";
         "The vertical move made into a notch.", "一回分の垂直スクロールに変換する移動量です";
         "The horizontal move made into a notch.", "一回分の水平スクロールに変換する移動量です";
         "Sends the first notch whatever the move (else after half of the move).",
             "移動量に関係なく最初の一回分を送ります (無効の場合は半分の移動量)";
-        "Sends a notch at once when the move turns back, whatever the move.", "折り返したとき、移動量に関係なく一回分を送ります";
+        "Sends a notch at once when the move turns back, whatever the move.", "折り返した場合、移動量に関係なく一回分を送ります";
         "Scrolls in one direction at a time, vertical or horizontal.", "垂直か水平の一方向だけにスクロールします";
         "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above the switching threshold.",
             "固定: 初回の移動量が多い方向に固定します\n切り替え: さらに切り替え閾値を超える移動で方向を切り替えます";
@@ -109,7 +109,7 @@ let private JapaneseMessage =
         "Right (Right -->> Left)", "Right (右 -->> 左)";
         "X1", "X1 (拡張1)";
         "X2", "X2 (拡張2)";
-        "Send MiddleClick", "中央クリック送信";
+        "Send MiddleClick", "中クリック送信";
         "Dragged Lock", "ドラッグ後固定";
         
         "Keyboard", "キーボード";

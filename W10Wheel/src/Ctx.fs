@@ -1219,9 +1219,9 @@ let private setCustomAccelOfProperty (): unit =
         if cat.Length = 0 || cat.Length <> cam.Length then
             customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ."
         elif not isValidThreshold then
-            customTableState <- CustomInvalid "Not used: the thresholds are not ascending numbers of 0 or more."
+            customTableState <- CustomInvalid "Not used: the thresholds must be ascending numbers of 0 or more."
         elif not isValidMultiplier then
-            customTableState <- CustomInvalid "Not used: a multiplier is not a number of 0 or more."
+            customTableState <- CustomInvalid "Not used: the multipliers must be numbers of 0 or more."
         else
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
@@ -1452,7 +1452,7 @@ let private isValidPropertiesName (name: string) =
 // Why a name cannot be used for new properties, checked as it is typed (and again after OK)
 let private whyInvalidPropertiesName (name: string) =
     if not (isValidPropertiesName name) then
-        Some "This name cannot be used: characters not allowed in file names, spaces at either end, -- at the start, or Default."
+        Some "This name cannot be used (characters not allowed in file names, spaces at either end, -- at the start, or Default)."
     elif Properties.exists name then
         Some "Properties of this name already exist."
     else
@@ -1676,7 +1676,7 @@ let private createSettingsDialog () =
                           enabled = (fun () -> not restarting),
                           tip = "Windows asks for permission (User Account Control).")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
-        "When W10Wheel does not run as administrator (it does not work in the windows of the programs that do)."
+        "Asked when W10Wheel is not running as administrator."
 
     let trigger = dialog.AddPage "Trigger"
     // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
@@ -1686,7 +1686,7 @@ let private createSettingsDialog () =
                              tip = "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).", key = "firstTrigger")
     trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
                      setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true,
-                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).", key = "sendMiddleClick")
+                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only).", key = "sendMiddleClick")
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
                      setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
                      tip = "After a drag with a Drag trigger, scroll mode stays locked.", key = "draggedLock")
@@ -1697,7 +1697,7 @@ let private createSettingsDialog () =
                                  setBooleanOfName DataID.keyboardHook b
                                  setKeyboardHookOf b),
                              keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
-                             tip = "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.", key = "keyboardHook, targetVKCode")
+                             tip = "The key that starts scroll mode.\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers.", key = "keyboardHook, targetVKCode")
     trigger.AddGap()
     // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
     addTime trigger DataID.pollTimeout 50 500 isDoubleTrigger
@@ -1736,11 +1736,11 @@ let private createSettingsDialog () =
     // The multipliers are not used with the custom table (getAccelMultiplier)
     accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
                           enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())),
-                          tip = "The multipliers of the table, from the slowest move to the fastest.", key = "accelMultiplier")
+                          tip = "The multipliers of the table.", key = "accelMultiplier")
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
-                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are in it).", key = "customAccelTable")
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid).", key = "customAccelTable")
     // The custom table as read from the properties: why it cannot be checked
     accel.AddStatus((fun () ->
         match customTableState with
