@@ -7,7 +7,6 @@
 
 open System
 open System.Windows.Forms
-open Microsoft.VisualBasic
 
 let errorMessage msg title =
     MessageBox.Show(msg, title, MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
@@ -23,8 +22,3 @@ let shellOpen (target: string) =
         ()
     with
         | e -> errorMessageE e
-
-let openTextInputBox msg title: string option =
-    let input = Interaction.InputBox(msg, title)
-    if input <> "" then Some(input) else None
-

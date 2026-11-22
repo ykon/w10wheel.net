@@ -27,6 +27,8 @@ let private JapaneseMessage =
 
         "Properties Name", "設定ファイル名";
         "Add Properties", "設定ファイル追加";
+        "OK", "OK";
+        "Cancel", "キャンセル";
         "Invalid Name", "無効な名前";
         "Name Error", "名前のエラー";
         "Delete properties", "設定ファイル削除";

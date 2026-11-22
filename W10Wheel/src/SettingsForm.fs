@@ -49,6 +49,45 @@ let private highlightTint (amount: float) =
     let mix (a: byte) (b: byte) = int (float b + (float a - float b) * amount)
     Color.FromArgb(mix h.R w.R, mix h.G w.G, mix h.B w.B)
 
+// A text asked in a small dialog centered on owner (e.g. the name of new properties), in the
+// language of W10Wheel (the input box of Visual Basic used the language of Windows and could not
+// be centered on the settings dialog). None if canceled or empty.
+let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prompt: string): string option =
+    use f = new Form(Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false,
+                     MinimizeBox = false, ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent,
+                     AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink)
+    f.SuspendLayout()
+    // Built at 96 DPI and scaled when the layout resumes (all the controls added before)
+    f.AutoScaleDimensions <- SizeF(96.0f, 96.0f)
+    f.AutoScaleMode <- AutoScaleMode.Dpi
+
+    let table = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                     ColumnCount = 1, Padding = Padding(12))
+    let box = new TextBox(Width = 300, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
+    let label = new Label(AutoSize = true)
+    let ok = new Button(AutoSize = true, DialogResult = DialogResult.OK)
+    let cancel = new Button(AutoSize = true, DialogResult = DialogResult.Cancel)
+    // OK on the left of Cancel, both on the right
+    let buttons = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                      FlowDirection = FlowDirection.RightToLeft, WrapContents = false,
+                                      Anchor = AnchorStyles.Right, Margin = Padding(0, 8, 0, 0))
+    buttons.Controls.Add(cancel)
+    buttons.Controls.Add(ok)
+    table.Controls.Add(label)
+    table.Controls.Add(box)
+    table.Controls.Add(buttons)
+    f.Controls.Add(table)
+    f.AcceptButton <- ok
+    f.CancelButton <- cancel
+    f.ResumeLayout(false)
+    // The texts after the scaling (as SettingsDialog.retext): set before, the auto sized buttons
+    // were scaled again (twice as high at 175%)
+    label.Text <- prompt
+    ok.Text <- conv "OK"
+    cancel.Text <- conv "Cancel"
+
+    if f.ShowDialog(owner) = DialogResult.OK && box.Text <> "" then Some(box.Text) else None
+
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
 // refresh (isRefreshing) does not.
@@ -440,6 +479,10 @@ type SettingsDialog(conv: string -> string) =
             onClick ())
         register { refresh = ignore; retext = (fun () -> b.Text <- conv engText) }
         bottomLeft.Controls.Add(b)
+
+    // The owner of the dialogs opened from it (askText, the confirmations): they are modal to it
+    // and centered on it
+    member _.Owner = form :> IWin32Window
 
     // Shows the settings again after a change in the dialog
     member _.RefreshValues () =

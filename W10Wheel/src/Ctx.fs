@@ -1328,8 +1328,8 @@ let private isValidPropertiesName (name: string) =
     name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
 
 // The new properties are a copy of the selected ones, and selected (the settings do not change)
-let private addProperties () =
-    let res = Dialog.openTextInputBox (convLang "Properties Name") (convLang "Add Properties")
+let private addProperties (owner: IWin32Window) =
+    let res = SettingsForm.askText owner convLang (convLang "Add Properties") (convLang "Properties Name")
 
     try
         res |> Option.iter (fun name ->
@@ -1462,7 +1462,7 @@ let private createSettingsDialog () =
              |> Array.map (fun name -> name, name) |> List.ofArray)),
         (fun name -> name = getSelectedProperties()),
         switchProperties)
-    dialog.AddPropertiesButton("Add", addProperties)
+    dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
     dialog.AddPropertiesButton("Delete", deleteProperties, enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
     dialog.AddPropertiesButton("Reload", reloadProperties)
