@@ -758,7 +758,8 @@ type SettingsDialog(conv: string -> string) =
         top.Controls.Add(cb)
 
     // dropPending: the change waiting to be stored is not stored (Reload: storing would write the
-    // settings over the file edited outside W10Wheel, which is about to be read)
+    // settings over the file edited outside W10Wheel, which is about to be read; onClick stores it
+    // if nothing could be read)
     member _.AddPropertiesButton (engText: string, onClick: unit -> unit, ?enabled: unit -> bool, ?dropPending: bool) =
         let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
         b.Click.Add(fun _ ->
@@ -795,6 +796,12 @@ type SettingsDialog(conv: string -> string) =
             form.BeginInvoke(Action(fun () ->
                 readLists <- true
                 try refresh () finally readLists <- false)) |> ignore
+
+    // Shows the settings again later (as RefreshAllLater), without reading the list of the
+    // properties again, nor dropping a number being typed: e.g. after a Reload that could not read
+    // the file (nothing has been loaded)
+    member _.RefreshLater () =
+        if form.IsHandleCreated then form.BeginInvoke(Action(refresh)) |> ignore
 
     // The language has changed. Later: maybe called from the handler of a control that retext
     // changes (the language ComboBox)

@@ -922,6 +922,8 @@ let private makeSetBooleanEvent id =
 // texts when the language has changed
 let mutable private refreshSettingsDialog: unit -> unit = (fun () -> ())
 let mutable private retextSettingsDialog: unit -> unit = (fun () -> ())
+// The settings shown again, nothing having been loaded (a number being typed kept)
+let mutable private refreshSettingsLater: unit -> unit = (fun () -> ())
 
 // Called with whether the trigger has changed (not on every properties load)
 let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
@@ -1483,15 +1485,25 @@ let storeProperties () =
             storeError <- Some e
             Debug.WriteLine("store: " + (e.ToString()))
 
-// Reload, --sendReloadProp: the file of the selected properties read again. If it cannot be (e.g.
-// locked), the settings stay as they are (still stored, if they were loaded), and why is shown in
-// the settings dialog.
-let reloadProperties () =
+// Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
+// If it cannot be (e.g. locked), nothing changes: the settings stay as they are (still stored, if
+// they were loaded), with a number being typed and a change waiting to be stored, and why is shown
+// in the settings dialog.
+let private tryReloadProperties () =
     match tryLoadProperties (getSelectedProperties()) with
     | Some e ->
         loadError <- Some e
-        refreshSettingsDialog()
-    | None -> ()
+        refreshSettingsLater ()
+        false
+    | None -> true
+
+let reloadProperties () =
+    tryReloadProperties () |> ignore
+
+// Reload in the settings dialog: the change waiting to be stored has been dropped (see
+// SettingsDialog.AddPropertiesButton), it is stored if nothing could be loaded
+let private reloadFromDialog () =
+    if not (tryReloadProperties ()) then storeProperties ()
 
 let private openPropertiesDir () =
     Dialog.shellOpen Properties.USER_DIR
@@ -1752,7 +1764,7 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
     dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
-    dialog.AddPropertiesButton("Reload", reloadProperties, dropPending = true)
+    dialog.AddPropertiesButton("Reload", reloadFromDialog, dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
     // Instead of the hint that the changes are stored: the properties could not be read (Reload
     // again), or written (e.g. a read-only file: tried again at the next change)
@@ -1901,6 +1913,7 @@ let private createSettingsDialog () =
     vhAdjuster.AddNote "Used when Horizontal Scroll is enabled"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
+    refreshSettingsLater <- dialog.RefreshLater
     retextSettingsDialog <- dialog.RetextLater
     dialog
 
