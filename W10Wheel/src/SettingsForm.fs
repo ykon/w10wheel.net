@@ -526,26 +526,39 @@ type SettingsDialog(conv: string -> string) =
         form.Location <- Point(max wa.Left (wa.Left + (wa.Width - form.Width) / 2),
                                max wa.Top (wa.Top + (wa.Height - form.Height) / 2))
 
-    // The layouts of the dialog suspended while f sets the texts: each text laid out its row, its
-    // page and the containers up to the dialog again (all auto sized), hundreds of times for a
-    // switch of the language (slow, more on the screen). Resumed from the innermost, once each.
-    let withLayoutSuspended f =
-        let rec containers (c: Control) =
-            seq {
-                if c.Controls.Count > 0 then yield c
-                for child in c.Controls do yield! containers child }
-        let all = containers form |> Array.ofSeq
-        for c in all do c.SuspendLayout()
-        try f () finally for c in Array.rev all do c.ResumeLayout(true)
+    // The containers under c (c too), from the outermost: their layouts suspended while the texts
+    // are set (each text laid out its row, its page and the containers up to the dialog again, all
+    // auto sized: hundreds of times for a switch of the language, slow, more on the screen), and
+    // resumed from the innermost, each laid out once
+    let rec containersIn (c: Control) =
+        seq {
+            if c.Controls.Count > 0 then yield c
+            for child in c.Controls do yield! containersIn child }
 
     let retext () =
-        withLayoutSuspended (fun () ->
-            withRefreshing (fun () ->
-                form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
-                for b in bindings do b.retext()
-                for b in bindings do b.refresh()))
-        // The sizes of the texts: after the first show (Load), when the handles have been created
-        if form.IsHandleCreated then fitPages()
+        // The containers of the dialog and of the area of the pages, resumed last; the others
+        // (the rows, the list, the pages) first
+        let outer: Control[] = [| form; root; middle; content |]
+        let inner =
+            containersIn form |> Seq.filter (fun c -> not (Array.exists (fun o -> obj.ReferenceEquals(o, c)) outer))
+            |> Array.ofSeq
+        for c in outer do c.SuspendLayout()
+        try
+            for c in inner do c.SuspendLayout()
+            try
+                withRefreshing (fun () ->
+                    form.Text <- sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (conv "Settings")
+                    for b in bindings do b.retext()
+                    for b in bindings do b.refresh())
+            finally
+                for c in Array.rev inner do c.ResumeLayout(true)
+            // The sizes of the texts: after the first show (Load), when the handles have been
+            // created. The rows and the pages laid out (measured before, a page kept the size it
+            // had if only a row inside a row of it had changed), not yet the dialog: it is laid
+            // out and resized once, at its new size.
+            if form.IsHandleCreated then fitPages()
+        finally
+            for c in Array.rev outer do c.ResumeLayout(true)
 
     do
         form.SuspendLayout()
