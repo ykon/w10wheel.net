@@ -49,6 +49,21 @@ let rec private commitNumbers (c: Control) =
         | :? NumericUpDown as n -> n.Value |> ignore
         | _ -> commitNumbers child
 
+// Sets a stock icon of Windows (e.g. the shield of UAC) as the image of owner (get, set), as high
+// as a line of the text of lineOf: made again only when the icon or that height changes (another
+// DPI), the image it replaces disposed (and the last one with owner)
+let private stockIconSetter (owner: Control) (lineOf: Control) (get: unit -> Image) (set: Image -> unit) =
+    let mutable shown = None
+    owner.Disposed.Add(fun _ -> let i = get() in if not (isNull i) then i.Dispose())
+    fun (id: StockIconId) ->
+        let size = lineOf.Font.Height
+        if shown <> Some(id, size) then
+            use ico = SystemIcons.GetStockIcon(id, size)
+            let old = get()
+            set (ico.ToBitmap())
+            if not (isNull old) then old.Dispose()
+            shown <- Some(id, size)
+
 // The highlight color of the theme mixed with the window color (amount: 0.0 - 1.0 of the
 // highlight), as the selected item in the list of the settings of the browsers
 let private highlightTint (amount: float) =
@@ -192,16 +207,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(4, 0, 0, 0))
         panel.Controls.Add(icon)
         panel.Controls.Add(l)
-        let mutable shownIcon = None
-        let setIcon (id: StockIconId) =
-            let size = l.Font.Height
-            if shownIcon <> Some(id, size) then
-                use ico = SystemIcons.GetStockIcon(id, size)
-                let old = icon.Image
-                icon.Image <- ico.ToBitmap()
-                if not (isNull old) then old.Dispose()
-                shownIcon <- Some(id, size)
-        icon.Disposed.Add(fun _ -> if not (isNull icon.Image) then icon.Image.Dispose())
+        let setIcon = stockIconSetter icon l (fun () -> icon.Image) (fun i -> icon.Image <- i)
         let show () =
             let note = getNote()
             l.Text <- note |> Option.map snd |> Option.defaultValue ""
@@ -246,21 +252,24 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         tipOn [check; cb] tip key
         addRow [check :> Control, 1; cb :> Control, 2]
 
-    // A button of an action (e.g. Restart as administrator), with an image before its text. enabled:
+    // A button of an action (e.g. Restart as administrator), with an icon before its text (a stock
+    // icon of Windows, sized as the icons of the notes: also on a display of another DPI). enabled:
     // as AddCheck (e.g. not while the action is in progress).
-    member _.AddButton (engText: string, onClick: unit -> unit, ?image: Image, ?enabled: unit -> bool, ?tip: string) =
-        // GrowAndShrink: with its image before the layout is scaled, GrowOnly kept the scaled size
-        // (twice as high at 175%)
+    member _.AddButton (engText: string, onClick: unit -> unit, ?icon: StockIconId, ?enabled: unit -> bool,
+                        ?tip: string) =
+        // GrowAndShrink: GrowOnly kept a size scaled twice with an image (twice as high at 175%)
         let b = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left,
                            TextImageRelation = TextImageRelation.ImageBeforeText, Padding = Padding(8, 2, 8, 2))
-        image |> Option.iter (fun i -> b.Image <- i)
+        let setIcon = stockIconSetter b b (fun () -> b.Image) (fun i -> b.Image <- i)
         // A number waiting to be stored first, as the buttons of the dialog do
         b.Click.Add(fun _ ->
             flushChanged ()
             onClick ())
         register {
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
-            retext = (fun () -> b.Text <- conv engText) }
+            retext = (fun () ->
+                b.Text <- conv engText
+                icon |> Option.iter setIcon) }
         tipOn [b] tip None
         addRow [b :> Control, 3]
 

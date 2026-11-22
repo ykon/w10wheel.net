@@ -1683,8 +1683,7 @@ let private createSettingsDialog () =
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
         general.AddNote("W10Wheel is not running as administrator", SettingsForm.NoteKind.Warning)
-        use shield = Drawing.SystemIcons.GetStockIcon(Drawing.StockIconId.Shield, Drawing.StockIconOptions.SmallIcon)
-        general.AddButton("Restart as administrator", restartAsAdmin, image = shield.ToBitmap(),
+        general.AddButton("Restart as administrator", restartAsAdmin, icon = Drawing.StockIconId.Shield,
                           enabled = (fun () -> not restarting),
                           tip = "Windows asks for permission (User Account Control)")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
