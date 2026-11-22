@@ -30,6 +30,9 @@ let private JapaneseMessage =
 
         "Properties Name", "設定ファイル名";
         "Add Properties", "設定ファイル追加";
+        "This name cannot be used: characters not allowed in file names, spaces at either end, -- at the start, or Default.",
+            "この名前は使えません: ファイル名に使えない文字、前後の空白、先頭の --、Default は使えません。";
+        "Properties of this name already exist.", "この名前の設定ファイルは既にあります。";
         "OK", "OK";
         "Cancel", "キャンセル";
         "Invalid Name", "無効な名前";

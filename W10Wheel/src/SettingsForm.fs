@@ -60,7 +60,10 @@ let private highlightTint (amount: float) =
 // A text asked in a small dialog centered on owner (e.g. the name of new properties), in the
 // language of W10Wheel (the input box of Visual Basic used the language of Windows and could not
 // be centered on the settings dialog). None if canceled or empty.
-let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prompt: string): string option =
+// validate: why the text cannot be used (an English text), checked as it is typed: shown under the
+// box, and OK disabled (also while the box is empty), instead of an error after OK.
+let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prompt: string)
+            (validate: string -> string option): string option =
     use f = new Form(Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false,
                      MinimizeBox = false, ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent,
                      AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink)
@@ -73,6 +76,7 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
                                      ColumnCount = 1, Padding = Padding(12))
     let box = new TextBox(Width = 300, Anchor = (AnchorStyles.Left ||| AnchorStyles.Right))
     let label = new Label(AutoSize = true)
+    let error = new Label(AutoSize = true)
     let ok = new Button(AutoSize = true, DialogResult = DialogResult.OK)
     let cancel = new Button(AutoSize = true, DialogResult = DialogResult.Cancel)
     // OK on the left of Cancel, both on the right: added in this order, so that Tab goes from the
@@ -83,6 +87,7 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
     buttons.Controls.Add(cancel)
     table.Controls.Add(label)
     table.Controls.Add(box)
+    table.Controls.Add(error)
     table.Controls.Add(buttons)
     f.Controls.Add(table)
     f.AcceptButton <- ok
@@ -93,6 +98,17 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
     label.Text <- prompt
     ok.Text <- conv "OK"
     cancel.Text <- conv "Cancel"
+    // The reason wraps at the width of the box, and keeps a line when there is none (the dialog
+    // does not change its size as it is typed)
+    error.MaximumSize <- Size(box.Width, 0)
+    error.MinimumSize <- Size(0, error.Font.Height)
+
+    let check () =
+        let why = if box.Text = "" then None else validate box.Text
+        error.Text <- why |> Option.map conv |> Option.defaultValue ""
+        ok.Enabled <- box.Text <> "" && why.IsNone
+    box.TextChanged.Add(fun _ -> check ())
+    check ()
 
     if f.ShowDialog(owner) = DialogResult.OK && box.Text <> "" then Some(box.Text) else None
 

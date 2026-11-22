@@ -1438,8 +1438,18 @@ let private isValidPropertiesName (name: string) =
     name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
 
 // The new properties are a copy of the selected ones, and selected (the settings do not change)
+// Why a name cannot be used for new properties, checked as it is typed (and again after OK)
+let private whyInvalidPropertiesName (name: string) =
+    if not (isValidPropertiesName name) then
+        Some "This name cannot be used: characters not allowed in file names, spaces at either end, -- at the start, or Default."
+    elif Properties.exists name then
+        Some "Properties of this name already exist."
+    else
+        None
+
 let private addProperties (owner: IWin32Window) =
     let res = SettingsForm.askText owner convLang (convLang "Add Properties") (convLang "Properties Name")
+                                   whyInvalidPropertiesName
 
     try
         res |> Option.iter (fun name ->
