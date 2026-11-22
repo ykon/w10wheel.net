@@ -1690,6 +1690,9 @@ let private createSettingsDialog () =
         "Asked when W10Wheel is not running as administrator"
 
     let trigger = dialog.AddPage "Trigger"
+    // A key that starts scroll mode: the hook on and a key (not None, from the properties of 2.8.x
+    // and before: Keyboard is shown unchecked then, and checking it sets the default key)
+    let isKeyboardTrigger () = getBooleanOfName DataID.keyboardHook && not (isNoneTriggerKey())
     // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
     trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
                              (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
@@ -1701,7 +1704,7 @@ let private createSettingsDialog () =
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
                      setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
                      tip = "After a drag with a Drag trigger, scroll mode stays locked", key = "draggedLock")
-    trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
+    trigger.AddCheckComboBox("Keyboard", isKeyboardTrigger, (fun b ->
                                  // Without a key (None, from the properties of 2.8.x and before:
                                  // not in the list), the default key: Keyboard checked would do nothing
                                  if b && isNoneTriggerKey() then setTargetVKCode DataID.VK_NONCONVERT
@@ -1716,11 +1719,11 @@ let private createSettingsDialog () =
     // The lock by a quick release: not for the drag triggers (EventHandler.dragUp), but for the
     // keyboard trigger (KEventHandler.checkExitScrollUp)
     addTime trigger DataID.scrollLocktime 150 500
-        (fun () -> isSingleTrigger() || isDoubleTrigger() || getBooleanOfName DataID.keyboardHook)
+        (fun () -> isSingleTrigger() || isDoubleTrigger() || isKeyboardTrigger())
         "A trigger released within this time locks scroll mode"
     // Neither trigger: nothing starts scroll mode
     trigger.AddStatus((fun () ->
-        if isNoneTrigger() && not (getBooleanOfName DataID.keyboardHook) then
+        if isNoneTrigger() && not (isKeyboardTrigger()) then
             Some(SettingsForm.NoteKind.Warning, convLang "Scrolling is disabled")
         else None))
 
