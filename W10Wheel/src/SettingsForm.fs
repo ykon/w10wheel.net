@@ -28,10 +28,12 @@ let private fitComboBox (cb: ComboBox) =
     let textWidth =
         let widths (measure: string -> Size) =
             cb.Items |> Seq.cast<obj> |> Seq.map (fun item -> (measure (string item)).Width) |> Seq.fold max 0
-        // With the device context of the box once it exists: on a display of another DPI than
-        // the main one, the screen's would measure at the DPI of the main display
-        if cb.IsHandleCreated then
-            use g = cb.CreateGraphics()
+        // With the device context of the dialog once it exists (not the box's: the boxes of the
+        // pages not shown yet have none): on a display of another DPI than the main one, the
+        // screen's would measure at the DPI of the main display. Measured again at Load.
+        let form = cb.FindForm()
+        if not (isNull form) && form.IsHandleCreated then
+            use g = form.CreateGraphics()
             widths (fun text -> TextRenderer.MeasureText(g, text, cb.Font))
         else
             widths (fun text -> TextRenderer.MeasureText(text, cb.Font))
@@ -449,7 +451,9 @@ type SettingsDialog(conv: string -> string) =
         form.Controls.Add(root)
 
         form.Load.Add(fun _ ->
-            fitPages()
+            // The texts measured again with the handle of the dialog (fitComboBox), and the pages
+            // fitted
+            retext ()
             // Centered again at its fitted size: CenterScreen placed it at its size before
             form.PerformLayout()
             centerOn (Screen.FromControl(form)))
