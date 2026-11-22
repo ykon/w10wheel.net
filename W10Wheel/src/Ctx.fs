@@ -480,10 +480,12 @@ type private Scroll() =
     // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
     // Turning it on leaves scroll mode and refuses Starts until it is turned off. Under the
     // lock, so that a Start in progress on the EventWaiter thread is not missed. Applies Pass
-    // Mode as it is now: waiting for the lock on the UI thread can dispatch messages, e.g.
-    // another --sendPassMode that switched it again (and applied it) meanwhile. Scroll mode is
-    // left if this call turned it on (turnedOn), even if it is off again: the handlers' state
-    // has been reset (onPassModeOn), the trigger could not end it.
+    // Mode as it is now (read under the lock). It is switched on the UI thread only (the tray
+    // menu and icon, and --sendPassMode, which the mouse hook posts to the message loop: see
+    // W10Message.afterHook), so nothing switches it while the UI thread waits for the lock: the
+    // hook callbacks dispatched during the wait do not. Scroll mode is left if this call turned
+    // it on (turnedOn): the handlers' state has been reset (onPassModeOn), the trigger could not
+    // end it.
     static member SetPassMode (turnedOn: bool) = lock monitor (fun () ->
         let b = Pass.Mode
         passMode <- b
