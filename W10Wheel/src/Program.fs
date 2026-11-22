@@ -8,10 +8,6 @@ open System.Diagnostics
 open System.Threading
 open System.Windows.Forms
 open Microsoft.Win32
-open System.Security.Principal
-
-[<Literal>]
-let WikiUrl = "https://github.com/ykon/w10wheel.net/wiki"
 
 let private convLang msg =
     Ctx.convLang msg
@@ -28,11 +24,6 @@ let private checkDoubleLaunch () =
         messageDoubleLaunch()
         Environment.Exit(1)
 
-// Without changing the principal policy of the process (Thread.CurrentPrincipal)
-let private isAdmin () =
-    use identity = WindowsIdentity.GetCurrent()
-    WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)
-
 // Whether to restart as administrator. A task dialog, not a message box: its buttons say what they
 // do, and the restart has the shield of UAC. The link opens the wiki (startup as administrator,
 // etc.) and leaves the dialog open. Closed (Esc): continue.
@@ -45,7 +36,7 @@ let private askRestartAsAdmin (): bool =
                                               ShowShieldIcon = true)
     page.Buttons.Add(restart)
     page.Buttons.Add(TaskDialogCommandLinkButton(convLangP "Continue without administrator rights"))
-    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" WikiUrl (convLangP "More info (Wiki)"))
+    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" AppDef.WIKI_URL (convLangP "More info (Wiki)"))
     page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
 
     TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) = restart
@@ -78,7 +69,7 @@ let private restartAsAdmin (): bool =
             false
 
 let private checkAdmin () =
-    if not (isAdmin ()) && askRestartAsAdmin () && restartAsAdmin () then
+    if not (Ctx.isAdmin ()) && askRestartAsAdmin () && restartAsAdmin () then
         Environment.Exit(0)
 
 let private closeAll () =

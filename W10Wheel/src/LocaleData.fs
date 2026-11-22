@@ -21,7 +21,6 @@ let private JapaneseMessage =
         "Command Error", "コマンドのエラー";
 
         "Error", "エラー";
-        "Question", "質問";
         "Stopped", "停止中";
         "Runnable", "実行中";
 
@@ -31,7 +30,6 @@ let private JapaneseMessage =
         "Cancel", "キャンセル";
         "Invalid Name", "無効な名前";
         "Name Error", "名前のエラー";
-        "Delete properties", "設定ファイル削除";
 
         "Settings...", "設定...";
         "Settings", "設定";
@@ -85,7 +83,6 @@ let private JapaneseMessage =
         "The first direction is decided by a move above this (smaller moves are ignored).",
             "この値を超える移動で初回の方向を判定します (それ以下は無視します)。";
         "A move above this switches the direction (Switching).", "この値を超える移動で方向を切り替えます (切り替え)。";
-        "Reset all the settings to their defaults? The language is kept.", "すべての設定を既定値に戻しますか？ 言語は変わりません。";
 
         "Trigger", "トリガー";
         // The names of the mouse triggers stay English, as in the Readme and the properties
@@ -155,9 +152,15 @@ let private JapaneseMessage =
         "Japanese", "日本語";
         
         "About", "バージョン情報";
-        "Name", "名前";
         "Version", "バージョン";
-        
+        "Running as administrator", "管理者として実行";
+        "Yes", "はい";
+        "No", "いいえ";
+
+        "Delete these properties?", "この設定ファイルを削除しますか？";
+        "Reset all the settings to their defaults?", "すべての設定を既定値に戻しますか？";
+        "The language is kept.", "言語は変わりません。";
+
         "Exit", "終了";
     ] |> Map.ofList
 

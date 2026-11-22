@@ -1035,13 +1035,31 @@ let private createPassModeMenuItem () =
     passModeMenuItem <- item
     item
 
+// Without changing the principal policy of the process (Thread.CurrentPrincipal)
+let isAdmin () =
+    use identity = System.Security.Principal.WindowsIdentity.GetCurrent()
+    System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)
+
+// The version, whether W10Wheel runs as administrator (it does not work in the windows of the
+// programs that do, if not), and the links to GitHub and the wiki
+let private showAbout () =
+    let rights = convLang (if isAdmin() then "Yes" else "No")
+    let page = TaskDialogPage(Caption = convLang "About", Heading = AppDef.PROGRAM_NAME_NET,
+                              Text = sprintf "%s: %s\n%s: %s" (convLang "Version") AppDef.PROGRAM_VERSION
+                                                              (convLang "Running as administrator") rights,
+                              AllowCancel = true, EnableLinks = true)
+    // The icon of the program (released after the dialog)
+    use appIcon = try Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> null
+    page.Icon <- if isNull appIcon then TaskDialogIcon.Information else new TaskDialogIcon(appIcon)
+    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">GitHub</a>    <a href=\"%s\">Wiki</a>"
+                                                AppDef.PROJECT_URL AppDef.WIKI_URL)
+    page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
+    page.Buttons.Add(TaskDialogButton(convLang "OK"))
+    TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) |> ignore
+
 let private createInfoMenuItem () =
     let item = createMenuItem_NonID "About"
-
-    addClick item (fun _ ->
-        let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
-        MessageBox.Show(msg, convLang("About"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
-    )
+    addClick item (fun _ -> showAbout())
 
 // Before exiting without the message loop (Environment.Exit): the icon would remain in the tray
 let hideSystemTray () =
@@ -1344,9 +1362,21 @@ let private addProperties (owner: IWin32Window) =
     with
         | e -> Dialog.errorMessageE e
 
-let private openYesNoMessage msg =
-    let res = MessageBox.Show(msg, (convLang "Question"), MessageBoxButtons.YesNo, MessageBoxIcon.Information)
-    res = DialogResult.Yes
+// The confirmation of an action that cannot be undone, modal to and centered on owner (the settings
+// dialog): its button says what it does, and Cancel is the default (Enter does not do it by mistake)
+let private confirm (owner: IWin32Window) (heading: string) (text: string) (actionText: string) =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Warning,
+                              Heading = heading, Text = text, AllowCancel = true)
+    let action = TaskDialogButton(actionText)
+    let cancel = TaskDialogButton(convLang "Cancel")
+    page.Buttons.Add(action)
+    page.Buttons.Add(cancel)
+    page.DefaultButton <- cancel
+    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) = action
+
+// The name of properties as shown: only Default is translated
+let private shownPropertiesName name =
+    if name = DEFAULT_DEF then convLang name else name
 
 let private setProperties name =
     if getSelectedProperties() <> name then
@@ -1359,10 +1389,11 @@ let private setProperties name =
         refreshSettingsDialog()
 
 // The selected properties (not Default), then Default is selected
-let private deleteProperties () =
+let private deleteProperties (owner: IWin32Window) =
     let name = getSelectedProperties()
     try
-        if openYesNoMessage (sprintf "%s: %s" (convLang "Delete properties") name) then
+        if confirm owner (convLang "Delete these properties?")
+                   (sprintf "%s: %s" (convLang "Properties") name) (convLang "Delete") then
             Properties.delete name
             setProperties DEFAULT_DEF
     with
@@ -1371,12 +1402,10 @@ let private deleteProperties () =
 // The settings of the selected properties back to their default values (defaultProp), except the
 // language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
 // applied as a load does, and stored
-let private resetSettings () =
-    let name = getSelectedProperties()
-    let shownName = if name = DEFAULT_DEF then convLang name else name
-    let msg = sprintf "%s\n%s: %s" (convLang "Reset all the settings to their defaults? The language is kept.")
-                                   (convLang "Properties") shownName
-    if openYesNoMessage msg then
+let private resetSettings (owner: IWin32Window) =
+    let text = sprintf "%s\n%s: %s" (convLang "The language is kept.") (convLang "Properties")
+                                    (shownPropertiesName (getSelectedProperties()))
+    if confirm owner (convLang "Reset all the settings to their defaults?") text (convLang "Reset to defaults") then
         // prop has the values of the last load (storeProperties writes a copy of the file): the
         // current settings first, or the language changed since would be set back
         setSettings prop
@@ -1464,10 +1493,10 @@ let private createSettingsDialog () =
         (fun name -> name = getSelectedProperties()),
         switchProperties)
     dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
-    dialog.AddPropertiesButton("Delete", deleteProperties, enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
+    dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
     dialog.AddPropertiesButton("Reload", reloadProperties)
-    dialog.AddBottomButton("Reset to defaults", resetSettings)
+    dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
