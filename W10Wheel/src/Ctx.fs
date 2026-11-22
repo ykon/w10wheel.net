@@ -1380,32 +1380,80 @@ let private applyProperties () =
     // trigger changed (changeTrigger). Their trigger's up is still suppressed.
     exitScrollMode()
 
-let loadProperties (update:bool): unit =
+let private saveDefaults () =
     if not defaultSaved then
         setSettings defaultProp
         defaultSaved <- true
 
+// The settings of prop applied, and loaded: stored from now on (those changed since, see
+// storeProperties), the errors cleared
+let private applyLoaded () =
+    loaded <- true
+    loadError <- None
+    storeError <- None
+    Debug.WriteLine("Start load")
+    applyProperties ()
+    storedSettings <- currentSettings ()
+
+// At startup (and before, Program.checkDoubleLaunch): the file of the selected properties read in
+// prop (update false: not again if loadPropertiesFileOnly has read it) and applied. Not loaded if
+// it could not be read (e.g. locked): the settings (the default values) are not stored until a
+// load succeeds, or they would overwrite the file; their changes are not stored (see
+// switchProperties). Reload and a switch load only what they could read (tryLoadProperties).
+let loadProperties (update:bool): unit =
+    saveDefaults ()
     try
-        // Not loaded if the file could not be read (e.g. locked): the settings are not stored
-        // (storeProperties) until a load succeeds, or they would overwrite the file (with the
-        // default values, or those of another properties file switched from)
         loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
-        loaded <- true
-        loadError <- None
-        storeError <- None
-
-        Debug.WriteLine("Start load")
-        applyProperties ()
-        storedSettings <- currentSettings ()
+        applyLoaded ()
     with
         | e ->
-            if not loaded then loadError <- Some e
+            if not loaded then
+                loadError <- Some e
+                // The settings running: those changed from now on are not stored
+                storedSettings <- currentSettings ()
             Debug.WriteLine("load: " + (e.ToString()))
+
+// The properties of path read: empty if not found (the default values), Error if they cannot be
+// (e.g. locked by another program)
+let private readProperties (path: string): Result<Properties.Properties, exn> =
+    let p = Properties.Properties()
+    try
+        p.Load(path, true)
+        Ok p
+    with
+        | :? FileNotFoundException -> Ok p
+        | e -> Error e
+
+// The properties of name selected and loaded from what has been read of them (p): in prop (the
+// keys of the previous file not kept, they would be stored in this file), applied
+let private loadRead (name: string) (p: Properties.Properties) =
+    Debug.WriteLine("loadRead: " + name)
+    saveDefaults ()
+    setSelectedProperties name
+    prop.CopyFrom(p)
+    try
+        applyLoaded ()
+    with
+        | e -> Debug.WriteLine("load: " + (e.ToString()))
+    refreshSettingsDialog()
+    // The tip of the tray icon has the name of the properties
+    notifyIcon.Text <- getTrayText Pass.Mode
+
+// The properties of name selected and loaded if they can be read. Else nothing changes (the
+// selected properties, their settings, their changes not stored) and why is returned.
+let private tryLoadProperties (name: string): exn option =
+    match readProperties (Properties.getPath name) with
+    | Ok p -> loadRead name p; None
+    | Error e -> Some e
+
+// The settings changed since they were loaded or stored (current: as running)
+let private changedSettings (current: Properties.Properties) =
+    current.Keys |> List.filter (fun k -> current.GetPropertyOption k <> storedSettings.GetPropertyOption k)
 
 // Only the settings changed since they were loaded (or stored) are written, in the file as it is
 // now: what was edited in it meanwhile (other settings too), its other keys (e.g.
@@ -1423,8 +1471,7 @@ let storeProperties () =
                 Debug.WriteLine("First write properties")
                 current.Store(path)
             else
-                let changed =
-                    current.Keys |> List.filter (fun k -> current.GetPropertyOption k <> storedSettings.GetPropertyOption k)
+                let changed = changedSettings current
                 if changed.IsEmpty then
                     Debug.WriteLine("Not changed properties")
                 else
@@ -1436,10 +1483,15 @@ let storeProperties () =
             storeError <- Some e
             Debug.WriteLine("store: " + (e.ToString()))
 
+// Reload, --sendReloadProp: the file of the selected properties read again. If it cannot be (e.g.
+// locked), the settings stay as they are (still stored, if they were loaded), and why is shown in
+// the settings dialog.
 let reloadProperties () =
-    prop.Clear()
-    loadProperties true
-    refreshSettingsDialog()
+    match tryLoadProperties (getSelectedProperties()) with
+    | Some e ->
+        loadError <- Some e
+        refreshSettingsDialog()
+    | None -> ()
 
 let private openPropertiesDir () =
     Dialog.shellOpen Properties.USER_DIR
@@ -1464,7 +1516,6 @@ let private whyNotFileName (name: string): string option =
 let private isValidPropertiesName (name: string) =
     (whyNotFileName name).IsNone
 
-// The new properties are a copy of the selected ones, and selected (the settings do not change)
 // Why a name cannot be used for new properties, checked as it is typed (and again after OK)
 let private whyInvalidPropertiesName (name: string) =
     match whyNotFileName name with
@@ -1472,6 +1523,14 @@ let private whyInvalidPropertiesName (name: string) =
     | None when Properties.exists name -> Some "Properties of this name already exist"
     | None -> None
 
+// An error of an action of the settings dialog, modal to and centered on it (owner)
+let private showError (owner: IWin32Window) (heading: string) (e: exn) =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Error,
+                              Heading = heading, Text = e.Message)
+    page.Buttons.Add(TaskDialogButton.OK)
+    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
+
+// The new properties are a copy of the selected ones (see below), and selected
 let private addProperties (owner: IWin32Window) =
     let res = SettingsForm.askText owner convLang (convLang "Add Properties") (convLang "Properties Name")
                                    whyInvalidPropertiesName
@@ -1522,18 +1581,6 @@ let private confirm (owner: IWin32Window) (heading: string) (text: string) (acti
 let private shownPropertiesName name =
     if name = DEFAULT_DEF then convLang name else name
 
-let private setProperties name =
-    if getSelectedProperties() <> name then
-        Debug.WriteLine("setProperties: " + name)
-
-        setSelectedProperties name
-        // Do not keep the keys of the previous file (they would be stored in this file)
-        prop.Clear()
-        loadProperties true
-        refreshSettingsDialog()
-        // The tip of the tray icon has the name of the properties
-        notifyIcon.Text <- getTrayText Pass.Mode
-
 // From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
 // (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
 // is waited for on another thread: the hooks run on this one, and would time out (Windows removes
@@ -1569,8 +1616,13 @@ let private deleteProperties (owner: IWin32Window) =
     try
         if confirm owner (convLang "Delete these properties?")
                    (sprintf "%s: %s" (convLang "Properties") name) (convLang "Delete") then
-            Properties.delete name
-            setProperties DEFAULT_DEF
+            // Default read first: if it cannot be (e.g. locked), these properties are not deleted
+            // (their settings would run as Default, and be written again as these properties)
+            match readProperties (Properties.getPath DEFAULT_DEF) with
+            | Error e -> showError owner (convLang "The properties file could not be read") e
+            | Ok p ->
+                Properties.delete name
+                loadRead DEFAULT_DEF p
     with
         | e -> Dialog.errorMessageE e
 
@@ -1600,42 +1652,27 @@ let private resetSettings (owner: IWin32Window) =
         storeProperties()
         refreshSettingsDialog()
 
-// An error of an action of the settings dialog, modal to and centered on it (owner)
-let private showError (owner: IWin32Window) (heading: string) (e: exn) =
-    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Error,
-                              Heading = heading, Text = e.Message)
-    page.Buttons.Add(TaskDialogButton.OK)
-    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
-
-// Why the properties of name cannot be read (e.g. locked by another program), None if they can,
-// or do not exist (the default values)
-let private whyNotReadable name =
-    try
-        Properties.Properties().Load(Properties.getPath name, true)
-        None
-    with
-        | :? FileNotFoundException -> None
-        | e -> Some e
-
-// From the settings dialog (owner). The settings of the selected properties are stored first.
-// The properties switched to are read first: if they cannot be, nothing changes (the selected
-// ones, their settings, their changes not stored), and why is shown. If the changes could not be
-// stored (e.g. a read-only file), switching loses them, which is asked.
+// From the settings dialog (owner). The settings of the selected properties are stored first: if
+// some could not be (e.g. a read-only file, or properties not loaded: then none), switching loses
+// them, which is asked. The properties switched to are loaded only if they can be read (also if
+// they become locked while it is asked): else nothing changes (the selected properties, their
+// settings, their changes not stored), and why is shown.
 let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    let lose (e: exn) =
+    let lose () =
+        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
         confirm owner (convLang "The changes could not be saved")
-                (sprintf "%s\n%s" e.Message (convLang "Switching loses the settings changed in these properties."))
+                ((Option.defaultValue "" why) + convLang "Switching loses the settings changed in these properties.")
                 (convLang "Switch")
-    match whyNotReadable name, storeError with
-    | Some e, _ ->
+    if not (changedSettings (currentSettings ())).IsEmpty && not (lose ()) then
         // The current properties selected again in the list
         refreshSettingsDialog()
-        showError owner (convLang "The properties file could not be read") e
-    | None, Some e when loaded && not (lose e) ->
-        refreshSettingsDialog()
-    | _ ->
-        setProperties name
+    else
+        match tryLoadProperties name with
+        | Some e ->
+            refreshSettingsDialog()
+            showError owner (convLang "The properties file could not be read") e
+        | None -> ()
 
 // Not None: it is Mouse unchecked in the settings dialog
 let private triggerItems =
@@ -1729,6 +1766,9 @@ let private createSettingsDialog () =
     dialog.Status <- (fun () ->
         if not loaded then
             Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
+        elif loadError.IsSome then
+            // Reload: the settings are those before, still stored
+            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
         elif storeError.IsSome then
             Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
         else

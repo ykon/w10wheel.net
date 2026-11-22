@@ -80,6 +80,11 @@ type Properties() =
     member self.Keys: string list =
         List.ofSeq sdict.Keys
 
+    // The keys and the values of p instead of these
+    member self.CopyFrom (p:Properties): unit =
+        sdict.Clear()
+        for k in p.Keys do sdict.[k] <- p.[k]
+
     member self.GetProperty (key:string): string =
         try
             sdict.[key]
