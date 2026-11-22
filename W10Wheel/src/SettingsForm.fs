@@ -541,10 +541,12 @@ type SettingsDialog(conv: string -> string) =
             retext = reload }
         top.Controls.Add(cb)
 
-    member _.AddPropertiesButton (engText: string, onClick: unit -> unit, ?enabled: unit -> bool) =
+    // dropPending: the change waiting to be stored is not stored (Reload: storing would write the
+    // settings over the file edited outside W10Wheel, which is about to be read)
+    member _.AddPropertiesButton (engText: string, onClick: unit -> unit, ?enabled: unit -> bool, ?dropPending: bool) =
         let b = new Button(AutoSize = true, Anchor = AnchorStyles.Left)
         b.Click.Add(fun _ ->
-            flushChanged ()
+            if defaultArg dropPending false then changedTimer.Stop() else flushChanged ()
             onClick ())
         register {
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))

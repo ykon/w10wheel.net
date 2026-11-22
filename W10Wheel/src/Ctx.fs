@@ -1589,7 +1589,7 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
     dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
-    dialog.AddPropertiesButton("Reload", reloadProperties)
+    dialog.AddPropertiesButton("Reload", reloadProperties, dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
 
     let general = dialog.AddPage "General"
