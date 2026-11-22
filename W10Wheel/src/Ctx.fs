@@ -1449,9 +1449,15 @@ let private loadRead (name: string) (p: Properties.Properties) =
 // The properties of name selected and loaded if they can be read. Else nothing changes (the
 // selected properties, their settings, their changes not stored) and why is returned.
 let private tryLoadProperties (name: string): exn option =
-    match readProperties (Properties.getPath name) with
-    | Ok p -> loadRead name p; None
-    | Error e -> Some e
+    let path = Properties.getPath name
+    // Other properties than Default must exist (e.g. deleted outside W10Wheel, still in the list of
+    // the settings dialog): they would be written again with the default values
+    if name <> Properties.DEFAULT_DEF && not (File.Exists(path)) then
+        Some(FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
+    else
+        match readProperties path with
+        | Ok p -> loadRead name p; None
+        | Error e -> Some e
 
 // The settings changed since they were loaded or stored (current: as running)
 let private changedSettings (current: Properties.Properties) =
