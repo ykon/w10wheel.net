@@ -730,7 +730,8 @@ type SettingsDialog(conv: string -> string) =
             selectCurrent ()
             if fit && form.IsHandleCreated then fitPages()
 
-        cb.DropDown.Add(fun _ -> withRefreshing (fun () -> reload true))
+        // Also kept on the screen: a longer name added outside W10Wheel may widen the dialog
+        cb.DropDown.Add(fun _ -> keepingOnScreen (fun () -> withRefreshing (fun () -> reload true)))
         cb.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && cb.SelectedIndex >= 0 then
                 // Taken first: storing a number waiting (flushChanged) refreshes the dialog, which
