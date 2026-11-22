@@ -65,24 +65,33 @@ let private recvInitState () =
 // Run after the mouse hook has returned, from the message loop (the hook runs on its thread): a
 // hook must return quickly, or Windows removes it (W10Wheel would stop working, saying nothing).
 // A load reads the file and installs the keyboard hook again (an error shown in a message box if
-// it fails), and the exit closes the settings dialog (the settings stored). Not set (no message
-// loop yet): at once.
+// it fails), and the exit closes the settings dialog (the settings stored). No context (no message
+// loop yet): at once. After the message loop (Application.Run has returned: W10Wheel is exiting),
+// the context posts to the thread pool: the command is dropped, not run on another thread. An
+// exception is written to the debug output, as the hook did (Dispatcher.mouseProc), not shown as
+// unhandled.
 let private afterHook (f: unit -> unit) =
+    let run () =
+        try
+            f ()
+        with e ->
+            Debug.WriteLine("command: " + e.ToString())
     match SynchronizationContext.Current with
-    | null -> f ()
-    | ui -> ui.Post((fun _ -> f ()), null)
+    | :? WindowsFormsSynchronizationContext as ui -> ui.Post((fun _ -> run ()), null)
+    | null -> run ()
+    | _ -> Debug.WriteLine("command dropped: the message loop has ended")
 
 // Called by the mouse hook (Dispatcher.procCommand): true if msg is a command (its event is not
-// passed). Pass Mode and the state initialized at once: quick (a few values, the tray icon), and
-// for the events that follow.
+// passed). All run after the hook, in the order they have been received (e.g. --sendPassMode
+// after --sendReloadProp sent just before).
 let procMessage msg =
     match getFlag(msg) with
     | n when n = W10_MESSAGE_EXIT ->
         afterHook recvExit; true
     | n when n = W10_MESSAGE_PASSMODE ->
-        recvPassMode msg; true
+        afterHook (fun () -> recvPassMode msg); true
     | n when n = W10_MESSAGE_RELOAD_PROP ->
         afterHook recvReloadProp; true
     | n when n = W10_MESSAGE_INIT_STATE ->
-        recvInitState (); true
+        afterHook recvInitState; true
     | _ -> false
