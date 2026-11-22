@@ -303,6 +303,8 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         // The value last shown (set by refresh or by the user): reading n.Value would also take a
         // number being typed
         let mutable shown = Int32.MinValue
+        // As NumericUpDown shows a number (no decimals, no thousands separator)
+        let numberText (v: int) = (decimal v).ToString("F0", Globalization.CultureInfo.CurrentCulture)
         n.ValueChanged.Add(fun _ ->
             shown <- int n.Value
             // Applied at once, stored a little later: holding a button or turning the wheel on the
@@ -314,15 +316,19 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             refresh = (fun () ->
                 let v = Math.Clamp(get(), low, up)
                 // Only if the setting has changed, or the settings have been loaded (Reload,
-                // --sendReloadProp: the file is taken, even if its number is the same): a number
-                // being typed is dropped first (reading Value takes it, while refreshing: not set),
-                // or setting Value would parse and keep it. Otherwise it is left as typed, to be set
-                // when it is entered.
-                if v <> shown || isReloading() then
+                // --sendReloadProp: the file is taken, even if its number is the same), or the box
+                // has been emptied (not while it is typed in): a number being typed is dropped
+                // first (reading Value takes it, while refreshing: not set), or setting Value would
+                // parse and keep it. Otherwise it is left as typed, to be set when it is entered.
+                if v <> shown || isReloading() || (String.IsNullOrWhiteSpace(n.Text) && not n.ContainsFocus) then
                     n.Value |> ignore
                     n.Value <- decimal v
-                    shown <- v)
+                    shown <- v
+                    // The text too: an emptied box keeps it if the value does not change
+                    if n.Text <> numberText v then n.Text <- numberText v)
             retext = ignore }
+        // Left empty: the number shown again (else it stays empty, the setting unchanged)
+        n.Leave.Add(fun _ -> if String.IsNullOrWhiteSpace(n.Text) then n.Text <- numberText shown)
 
         let rangeText =
             match unit with
