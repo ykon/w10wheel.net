@@ -2,6 +2,7 @@
 
 open System
 open System.Diagnostics
+open System.Threading
 open System.Windows.Forms
 
 open WinAPI.Event
@@ -61,14 +62,27 @@ let private recvInitState () =
     Debug.WriteLine("recv W10_MESSAGE_INIT_STATE")
     Ctx.initState ()
 
+// Run after the mouse hook has returned, from the message loop (the hook runs on its thread): a
+// hook must return quickly, or Windows removes it (W10Wheel would stop working, saying nothing).
+// A load reads the file and installs the keyboard hook again (an error shown in a message box if
+// it fails), and the exit closes the settings dialog (the settings stored). Not set (no message
+// loop yet): at once.
+let private afterHook (f: unit -> unit) =
+    match SynchronizationContext.Current with
+    | null -> f ()
+    | ui -> ui.Post((fun _ -> f ()), null)
+
+// Called by the mouse hook (Dispatcher.procCommand): true if msg is a command (its event is not
+// passed). Pass Mode and the state initialized at once: quick (a few values, the tray icon), and
+// for the events that follow.
 let procMessage msg =
     match getFlag(msg) with
     | n when n = W10_MESSAGE_EXIT ->
-        recvExit (); true
+        afterHook recvExit; true
     | n when n = W10_MESSAGE_PASSMODE ->
         recvPassMode msg; true
     | n when n = W10_MESSAGE_RELOAD_PROP ->
-        recvReloadProp (); true
+        afterHook recvReloadProp; true
     | n when n = W10_MESSAGE_INIT_STATE ->
         recvInitState (); true
     | _ -> false
