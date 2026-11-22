@@ -99,13 +99,16 @@ type private Windows11Renderer() =
         use p = new Pen(line())
         e.Graphics.DrawLine(p, s 12, y, e.Item.Width - s 12, y)
 
-    // The check mark alone (no box), as Windows 11 draws it
+    // The check mark alone (no box), as Windows 11 draws it: centered in the height of the item
+    // (its rectangle is at the top of a taller item) and in the inset highlight
     override _.OnRenderItemCheck(e) =
         match glyphFont.Value with
         | Some name ->
             use font = new Font(name, float32 e.Item.Font.Height * 0.8f, GraphicsUnit.Pixel)
             let color = if e.Item.Enabled then foreground() else SystemColors.GrayText
-            TextRenderer.DrawText(e.Graphics, CHECK_MARK, font, e.ImageRectangle, color,
+            let r = e.ImageRectangle
+            let box = Rectangle(r.X + scaled e.ToolStrip 4, (e.Item.Height - r.Height) / 2, r.Width, r.Height)
+            TextRenderer.DrawText(e.Graphics, CHECK_MARK, font, box, color,
                                   TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding)
         | None -> base.OnRenderItemCheck(e)
 
@@ -113,13 +116,22 @@ type private Windows11Renderer() =
 // display of another DPI than before)
 let private setSpacing (menu: ContextMenuStrip) =
     let s (n: int) = menu.LogicalToDeviceUnits(n)
-    menu.Padding <- Padding(0, s 4, 0, s 4)
     // Taller items, as Windows 11 lays them out. Not wider: the menu ignores the horizontal padding
     // of its items, and a minimum width would not widen them (nor their highlight).
     for item in menu.Items do
+        item.Margin <- Padding.Empty
         match item with
         | :? ToolStripSeparator -> ()
         | _ -> item.Padding <- Padding(0, s 2, 0, s 2)
+    // A space above the first item and below the last (the highlight not against the rounded
+    // border): by their margins, the menu sets its own padding back (2 at the top and bottom)
+    let shown = menu.Items |> Seq.cast<ToolStripItem> |> Seq.filter (fun i -> i.Available) |> List.ofSeq
+    match shown with
+    | [] -> ()
+    | first :: _ ->
+        let last = List.last shown
+        first.Margin <- Padding(0, s 4, 0, first.Margin.Bottom)
+        last.Margin <- Padding(0, last.Margin.Top, 0, s 4)
 
 // Draws menu as the menus of Windows 11 (not in high contrast)
 let apply (menu: ContextMenuStrip) =
