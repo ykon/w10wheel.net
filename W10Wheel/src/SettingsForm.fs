@@ -422,27 +422,45 @@ type SettingsDialog(conv: string -> string) =
     // The tooltips of the grayed controls (e.g. Custom Table, Dragged Lock): a disabled control gets
     // no mouse messages (Windows sends them to its parent, the page), so the ToolTip never shows its
     // text. The page shows it while the mouse is on such a control (also a radio button in a
-    // disabled panel).
+    // disabled panel). As the ToolTip does: after its delay (InitialDelay, not as soon as the mouse
+    // crosses such a control), and not again on the same control after it has gone (AutoPopDelay).
     let showTipsOfDisabled (page: Control) =
+        // The control whose tip is shown, or waits for the delay
         let mutable shownFor: Control = null
+        let mutable at = Point.Empty
+        let delay = new System.Windows.Forms.Timer(Interval = tips.InitialDelay)
         let hide () =
+            delay.Stop()
             tips.Hide(page)
             shownFor <- null
+        delay.Tick.Add(fun _ ->
+            delay.Stop()
+            if not (isNull shownFor) then tips.Show(tips.GetToolTip(shownFor), page, at, tips.AutoPopDelay))
         page.MouseMove.Add(fun e ->
             let rec under (c: Control) (pt: Point) =
                 match c.GetChildAtPoint(pt) with
                 | null -> c
                 | child -> under child (Point(pt.X - child.Left, pt.Y - child.Top))
             let c = under page e.Location
-            let target = if not (obj.ReferenceEquals(c, page)) && not c.Enabled then c else null
+            // A NumericUpDown is covered by its text box and its buttons: the tip stays from one to
+            // the other
+            let c = match c.Parent with :? NumericUpDown as n -> n :> Control | _ -> c
+            let target =
+                if not (obj.ReferenceEquals(c, page)) && not c.Enabled && tips.GetToolTip(c) <> "" then c else null
+            // Where the mouse is when it shows
+            at <- Point(e.X, e.Y + page.LogicalToDeviceUnits(20))
             if not (obj.ReferenceEquals(target, shownFor)) then
                 hide ()
                 if not (isNull target) then
-                    let text = tips.GetToolTip(target)
-                    if text <> "" then
-                        shownFor <- target
-                        tips.Show(text, page, Point(e.X, e.Y + page.LogicalToDeviceUnits(20)), tips.AutoPopDelay))
+                    shownFor <- target
+                    delay.Start())
         page.MouseLeave.Add(fun _ -> hide ())
+        // Also when the mouse does not leave the page: another page shown (the arrow keys in the
+        // list), the dialog closed (Esc) or another window activated (Alt+Tab). Else the tip stayed
+        // on the screen until its AutoPopDelay, and was not shown again on the same control.
+        page.VisibleChanged.Add(fun _ -> if not page.Visible then hide ())
+        form.Deactivate.Add(fun _ -> hide ())
+        page.Disposed.Add(fun _ -> delay.Dispose())
 
     // The controls set from the settings do not change them (see SettingsPage.onChange)
     let withRefreshing f =
