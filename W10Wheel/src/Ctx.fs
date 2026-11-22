@@ -1696,6 +1696,7 @@ let private createSettingsMenuItem () =
 
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
+    MenuStyle.apply menu
     let add = fun (item: ToolStripMenuItem) -> menu.Items.Add(item) |> ignore
     // The settings are in the dialog. Pass Mode is also switched by a double click on the icon.
     add (createSettingsMenuItem())
