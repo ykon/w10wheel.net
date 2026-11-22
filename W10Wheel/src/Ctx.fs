@@ -1216,7 +1216,11 @@ let private setCustomAccelOfProperty (): unit =
         let isValidThreshold = cat |> Array.forall (fun n -> n >= 0) && isAscending
         let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
 
-        if cat.Length = 0 || cat.Length <> cam.Length then
+        if cat.Length = 0 && cam.Length = 0 then
+            // Written without values (e.g. customAccelThreshold=): shown as not written (the state
+            // set above), not as numbers that differ
+            ()
+        elif cat.Length <> cam.Length then
             customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ"
         elif not isValidThreshold then
             customTableState <- CustomInvalid "Not used: the thresholds must be ascending numbers of 0 or more"
