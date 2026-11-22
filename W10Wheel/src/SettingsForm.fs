@@ -526,18 +526,21 @@ type SettingsDialog(conv: string -> string) =
             nav.ResumeLayout(true)
             middle.ResumeLayout(true)
 
+    // The dialog moved into the working area of its display (as far as it fits)
+    let moveIntoWorkingArea () =
+        let wa = Screen.FromControl(form).WorkingArea
+        let x = max wa.Left (min form.Left (wa.Right - form.Width))
+        let y = max wa.Top (min form.Top (wa.Bottom - form.Height))
+        if x <> form.Left || y <> form.Top then form.Location <- Point(x, y)
+
     // Runs f, which may resize the dialog (fitPages), and moves it into the working area of its
     // display if it has grown out of it (e.g. a longer state of the custom table after Reload, with
     // the dialog at the right of the screen: Close went out of it). Not moved if its size has not
-    // changed: it can be left partly out of the screen.
+    // changed: it can be left partly out of the screen (moved in when it is shown again).
     let keepingOnScreen f =
         let size = form.Size
         f ()
-        if form.Visible && form.Size <> size then
-            let wa = Screen.FromControl(form).WorkingArea
-            let x = max wa.Left (min form.Left (wa.Right - form.Width))
-            let y = max wa.Top (min form.Top (wa.Bottom - form.Height))
-            if x <> form.Left || y <> form.Top then form.Location <- Point(x, y)
+        if form.Visible && form.Size <> size then moveIntoWorkingArea ()
 
     // The pages fitted again after all the controls have been refreshed: a text that follows the
     // settings may have become wider or narrower (e.g. the state of the custom table after Reload).
@@ -807,10 +810,14 @@ type SettingsDialog(conv: string -> string) =
             // text would be shown selected, as if it were to be changed
             navButtons |> Seq.tryFind (fun b -> b.Checked) |> Option.iter (fun b -> form.ActiveControl <- b)
             // Shown again where it was closed: not if that display is gone (e.g. disconnected),
-            // then on the display of the cursor
-            if form.IsHandleCreated &&
-               not (Screen.AllScreens |> Array.exists (fun s -> s.WorkingArea.IntersectsWith(form.Bounds))) then
-                centerOn (Screen.FromPoint(Cursor.Position))
+            // then on the display of the cursor. Else in the working area of its display: it may
+            // have grown while it was hidden (e.g. a longer state of the custom table after
+            // --sendReloadProp), or been left partly out of it.
+            if form.IsHandleCreated then
+                if not (Screen.AllScreens |> Array.exists (fun s -> s.WorkingArea.IntersectsWith(form.Bounds))) then
+                    centerOn (Screen.FromPoint(Cursor.Position))
+                else
+                    moveIntoWorkingArea ()
             form.Show()
 
         form.Activate()
