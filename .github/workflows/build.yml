@@ -1,7 +1,9 @@
 name: Build
 
-# - push / pull request: build and upload the zip as a workflow artifact
-# - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with the zip
+# - push / pull request: build and upload the two zips as workflow artifacts
+#   (W10Wheel.NET-<version>.zip: self-contained; W10Wheel.NET-<version>-no-runtime.zip:
+#   framework-dependent, the .NET 11 Desktop Runtime required)
+# - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with both zips
 on:
   push:
     branches: [master]
@@ -40,11 +42,17 @@ jobs:
             throw "Tag $env:TAG does not match PROGRAM_VERSION $env:VERSION in W10Wheel/src/AppDef.fs"
           }
 
-      # archive: false uploads the zip as is (otherwise it is wrapped in another zip).
-      # The artifact is named after the file: W10Wheel.NET-<version>.zip
+      # archive: false uploads a zip as is (otherwise it is wrapped in another zip). Each
+      # artifact is named after its file: W10Wheel.NET-<version>.zip, ...-no-runtime.zip
       - uses: actions/upload-artifact@v7
         with:
           path: artifacts/W10Wheel.NET-${{ steps.package.outputs.version }}.zip
+          archive: false
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/W10Wheel.NET-${{ steps.package.outputs.version }}-no-runtime.zip
           archive: false
           if-no-files-found: error
 
@@ -57,10 +65,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # skip-decompress: keep the zip as a file (by default a downloaded .zip is extracted)
+      # skip-decompress: keep the zips as files (by default a downloaded .zip is extracted)
       - uses: actions/download-artifact@v8
         with:
           name: W10Wheel.NET-${{ needs.build.outputs.version }}.zip
+          path: artifacts
+          skip-decompress: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: W10Wheel.NET-${{ needs.build.outputs.version }}-no-runtime.zip
           path: artifacts
           skip-decompress: true
 
@@ -70,16 +84,22 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          # Locate the downloaded zip (uploaded with archive: false, so it is a plain file)
-          zip=$(find . -maxdepth 3 -type f -name "W10Wheel.NET-${VERSION}.zip" -print -quit)
-          if [ -z "$zip" ]; then
-            echo "W10Wheel.NET-${VERSION}.zip not found. Zip files in the workspace:"
-            find . -maxdepth 3 -name '*.zip'
-            exit 1
-          fi
+          # Locate the downloaded zips (uploaded with archive: false, so they are plain files)
+          find_zip() {
+            local zip
+            zip=$(find . -maxdepth 3 -type f -name "$1" -print -quit)
+            if [ -z "$zip" ]; then
+              echo "$1 not found. Zip files in the workspace:" >&2
+              find . -maxdepth 3 -name '*.zip' >&2
+              exit 1
+            fi
+            echo "$zip"
+          }
+          zip=$(find_zip "W10Wheel.NET-${VERSION}.zip") || exit 1
+          zip_no_runtime=$(find_zip "W10Wheel.NET-${VERSION}-no-runtime.zip") || exit 1
           # Use the history line for this version in dist/Readme.ja.txt as the release notes
           notes=$(grep -m1 -F ": v${VERSION}:" dist/Readme.ja.txt | tr -d '\r' | sed 's/^[[:space:]]*//' || true)
-          gh release create "$TAG" "$zip" \
+          gh release create "$TAG" "$zip" "$zip_no_runtime" \
             --draft \
             --verify-tag \
             --title "${VERSION}" \
