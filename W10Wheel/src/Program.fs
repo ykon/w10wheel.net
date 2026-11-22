@@ -44,7 +44,7 @@ let private askRestartAsAdmin (): bool =
                               Heading = convLangP "W10Wheel is not running as administrator",
                               Text = convLangP LocaleData.AdminMessage, AllowCancel = true, EnableLinks = true)
     let restart = TaskDialogCommandLinkButton(convLangP "Restart as administrator",
-                                              convLangP "Windows asks for permission (User Account Control).",
+                                              convLangP "Windows asks for permission (User Account Control)",
                                               ShowShieldIcon = true)
     let continueWithout = TaskDialogCommandLinkButton(convLangP "Continue without administrator rights")
     page.Buttons.Add(restart)

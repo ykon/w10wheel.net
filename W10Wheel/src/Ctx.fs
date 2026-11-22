@@ -1217,11 +1217,11 @@ let private setCustomAccelOfProperty (): unit =
         let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
 
         if cat.Length = 0 || cat.Length <> cam.Length then
-            customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ."
+            customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ"
         elif not isValidThreshold then
-            customTableState <- CustomInvalid "Not used: the thresholds must be ascending numbers of 0 or more."
+            customTableState <- CustomInvalid "Not used: the thresholds must be ascending numbers of 0 or more"
         elif not isValidMultiplier then
-            customTableState <- CustomInvalid "Not used: the multipliers must be numbers of 0 or more."
+            customTableState <- CustomInvalid "Not used: the multipliers must be numbers of 0 or more"
         else
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
@@ -1236,13 +1236,13 @@ let private setCustomAccelOfProperty (): unit =
             // One of the two only
             if prop.GetPropertyOption(DataID.customAccelThreshold).IsSome ||
                prop.GetPropertyOption(DataID.customAccelMultiplier).IsSome then
-                customTableState <- CustomInvalid "Not used: customAccelThreshold and customAccelMultiplier are both needed."
+                customTableState <- CustomInvalid "Not used: customAccelThreshold and customAccelMultiplier are both needed"
         | :? FormatException as e ->
             Debug.WriteLine("Parse error: " + e.Message)
-            customTableState <- CustomInvalid "Not used: a value is not a number."
+            customTableState <- CustomInvalid "Not used: a value is not a number"
         | :? OverflowException as e ->
             Debug.WriteLine("Overflow: " + e.Message)
-            customTableState <- CustomInvalid "Not used: a value is not a number."
+            customTableState <- CustomInvalid "Not used: a value is not a number"
 
 let private setPriorityOfProperty (): unit =
     setStringOfProperty DataID.processPriority setPriority
@@ -1452,9 +1452,9 @@ let private isValidPropertiesName (name: string) =
 // Why a name cannot be used for new properties, checked as it is typed (and again after OK)
 let private whyInvalidPropertiesName (name: string) =
     if not (isValidPropertiesName name) then
-        Some "This name cannot be used (characters not allowed in file names, spaces at either end, -- at the start, or Default)."
+        Some "This name cannot be used (characters not allowed in file names, spaces at either end, -- at the start, or Default)"
     elif Properties.exists name then
-        Some "Properties of this name already exist."
+        Some "Properties of this name already exist"
     else
         None
 
@@ -1663,10 +1663,10 @@ let private createSettingsDialog () =
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
                         (fun id -> id = getUILanguage()), setUILanguage,
-                        tip = "The language of the menu and the dialogs.", key = "uiLanguage")
+                        tip = "The language of the menu and the dialogs", key = "uiLanguage")
     general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
                         (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
-                        tip = "The priority of the process of W10Wheel.", key = "processPriority")
+                        tip = "The priority of the process of W10Wheel", key = "processPriority")
     general.AddGap()
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
@@ -1674,22 +1674,22 @@ let private createSettingsDialog () =
         use shield = Drawing.SystemIcons.GetStockIcon(Drawing.StockIconId.Shield, Drawing.StockIconOptions.SmallIcon)
         general.AddButton("Restart as administrator", restartAsAdmin, image = shield.ToBitmap(),
                           enabled = (fun () -> not restarting),
-                          tip = "Windows asks for permission (User Account Control).")
+                          tip = "Windows asks for permission (User Account Control)")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
-        "Asked when W10Wheel is not running as administrator."
+        "Asked when W10Wheel is not running as administrator"
 
     let trigger = dialog.AddPage "Trigger"
     // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
     trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
                              (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
                              triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger,
-                             tip = "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).", key = "firstTrigger")
+                             tip = "The mouse buttons that start scroll mode\nUnchecked: no mouse trigger (the keyboard trigger only)", key = "firstTrigger")
     trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
                      setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true,
-                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only).", key = "sendMiddleClick")
+                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only)", key = "sendMiddleClick")
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
                      setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
-                     tip = "After a drag with a Drag trigger, scroll mode stays locked.", key = "draggedLock")
+                     tip = "After a drag with a Drag trigger, scroll mode stays locked", key = "draggedLock")
     trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
                                  // Without a key (None, from the properties of 2.8.x and before:
                                  // not in the list), the default key: Keyboard checked would do nothing
@@ -1697,98 +1697,98 @@ let private createSettingsDialog () =
                                  setBooleanOfName DataID.keyboardHook b
                                  setKeyboardHookOf b),
                              keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
-                             tip = "The key that starts scroll mode.\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers.", key = "keyboardHook, targetVKCode")
+                             tip = "The key that starts scroll mode\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers", key = "keyboardHook, targetVKCode")
     trigger.AddGap()
     // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
     addTime trigger DataID.pollTimeout 50 500 isDoubleTrigger
-        "How long the LR, Left and Right triggers wait for the other button."
+        "How long the LR, Left and Right triggers wait for the other button"
     // The lock by a quick release: not for the drag triggers (EventHandler.dragUp), but for the
     // keyboard trigger (KEventHandler.checkExitScrollUp)
     addTime trigger DataID.scrollLocktime 150 500
         (fun () -> isSingleTrigger() || isDoubleTrigger() || getBooleanOfName DataID.keyboardHook)
-        "A trigger released within this time locks scroll mode."
+        "A trigger released within this time locks scroll mode"
     // Neither trigger: nothing starts scroll mode
     trigger.AddStatus((fun () ->
         if isNoneTrigger() && not (getBooleanOfName DataID.keyboardHook) then
-            Some(SettingsForm.NoteKind.Warning, convLang "Scrolling is disabled.")
+            Some(SettingsForm.NoteKind.Warning, convLang "Scrolling is disabled")
         else None))
 
     let scroll = dialog.AddPage "Scroll"
-    addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode."
-    addBool scroll "Horizontal Scroll" DataID.horizontalScroll "Scrolls horizontally too.\nDisable it if you do not use it."
-    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll "Reverses the direction of the scroll."
-    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll "Swaps the vertical and the horizontal scroll."
+    addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode"
+    addBool scroll "Horizontal Scroll" DataID.horizontalScroll "Scrolls horizontally too\nDisable it if you do not use it"
+    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll "Reverses the direction of the scroll"
+    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll "Swaps the vertical and the horizontal scroll"
     scroll.AddGap()
     // The thresholds of the standard scroll: not with VH Adjuster (Windows.initStdMode)
     addNumberIf scroll DataID.verticalThreshold 0 500 (fun () -> not (isVhAdjusterMode()))
-        "A vertical move up to this does not scroll."
+        "A vertical move up to this does not scroll"
     addNumberIf scroll DataID.horizontalThreshold 0 500
         (fun () -> isHorizontalScroll() && not (isVhAdjusterMode()))
-        "A horizontal move up to this does not scroll.\nToo small, the vertical scroll becomes hard to use."
-    scroll.AddNote "The thresholds are not used while VH Adjuster is enabled."
+        "A horizontal move up to this does not scroll\nToo small, the vertical scroll becomes hard to use"
+    scroll.AddNote "The thresholds are not used while VH Adjuster is enabled"
 
     // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
     let accel = dialog.AddPage "Accel Table"
     let accelUsed () = not (isRealWheelMode())
     let customUsed () = not Accel.CustomDisabled && Accel.CustomTable
     addBoolIf accel "Enabled" DataID.accelTable accelUsed
-        "Accelerates the scroll by the speed of the move, with the multipliers of the table."
+        "Accelerates the scroll by the speed of the move, with the multipliers of the table"
     // The multipliers are not used with the custom table (getAccelMultiplier)
     accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
                           enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())),
-                          tip = "The multipliers of the table.", key = "accelMultiplier")
+                          tip = "The multipliers of the table", key = "accelMultiplier")
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
-                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid).", key = "customAccelTable")
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid)", key = "customAccelTable")
     // The custom table as read from the properties: why it cannot be checked
     accel.AddStatus((fun () ->
         match customTableState with
-        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not in the properties file.")
+        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not in the properties file")
         | CustomInvalid why -> Some(SettingsForm.NoteKind.Warning, convLang why)
         | CustomLoaded(t, m) ->
             let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
             Some(SettingsForm.NoteKind.Info,
                  String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
                                t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1]))), indent = true)
-    accel.AddNote "Not used while Real Wheel Mode is enabled."
+    accel.AddNote "Not used while Real Wheel Mode is enabled"
 
     let realWheel = dialog.AddPage "Real Wheel Mode"
     addBool realWheel "Enabled" DataID.realWheelMode
-        "Scrolls as a real wheel does, a notch at a time.\nThe accel table is not used."
+        "Scrolls as a real wheel does, a notch at a time\nThe accel table is not used"
     realWheel.AddGap()
     addNumberIf realWheel DataID.wheelDelta 10 500 isRealWheelMode
-        "The wheel value of a notch (a usual mouse sends 120)."
+        "The wheel value of a notch (a usual mouse sends 120)"
     addNumberIf realWheel DataID.vWheelMove 10 500 isRealWheelMode
-        "The vertical move made into a notch."
+        "The vertical move made into a notch"
     // With Horizontal Scroll only (Windows.sendRealHWheel)
     addNumberIf realWheel DataID.hWheelMove 10 500 (fun () -> isRealWheelMode() && isHorizontalScroll())
-        "The horizontal move made into a notch."
+        "The horizontal move made into a notch"
     realWheel.AddGap()
     addBoolIf realWheel "Quick first response" DataID.quickFirst isRealWheelMode
-        "Sends the first notch whatever the move (else after half of the move)."
+        "Sends the first notch whatever the move (else after half of the move)"
     addBoolIf realWheel "Quick turn response" DataID.quickTurn isRealWheelMode
-        "Sends a notch at once when the move turns back, whatever the move."
+        "Sends a notch at once when the move turns back, whatever the move"
 
     // Used with Horizontal Scroll only (isVhAdjusterMode)
     let vhAdjuster = dialog.AddPage "VH Adjuster"
     vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
                         setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal),
-                        tip = "Scrolls in one direction at a time, vertical or horizontal.", key = "vhAdjusterMode")
+                        tip = "Scrolls in one direction at a time, vertical or horizontal", key = "vhAdjusterMode")
     vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
                                (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod,
                                enabled = isVhAdjusterMode,
-                               tip = "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above the switching threshold.", key = "vhAdjusterMethod")
+                               tip = "Fixed: the direction of the larger first move\nSwitching: also switched by a move above the switching threshold", key = "vhAdjusterMethod")
     vhAdjuster.AddGap()
     addBoolIf vhAdjuster "Prefer vertical first" DataID.firstPreferVertical isVhAdjusterMode
-        "The first direction prefers vertical."
+        "The first direction prefers vertical"
     addNumberIf vhAdjuster DataID.firstMinThreshold 1 10 isVhAdjusterMode
-        "The first direction is decided by a move above this (smaller moves are ignored)."
+        "The first direction is decided by a move above this (smaller moves are ignored)"
     // For Switching only (Windows.switchVHD)
     addNumberIf vhAdjuster DataID.switchingThreshold 10 500
         (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
-        "A move above this switches the direction (Switching)."
-    vhAdjuster.AddNote "Used when Horizontal Scroll is enabled."
+        "A move above this switches the direction (Switching)"
+    vhAdjuster.AddNote "Used when Horizontal Scroll is enabled"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     retextSettingsDialog <- dialog.RetextLater

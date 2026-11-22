@@ -503,7 +503,7 @@ type SettingsDialog(conv: string -> string) =
             | _ -> ()
 
         let hint = new Label(AutoSize = true, Anchor = AnchorStyles.Left)
-        register { refresh = ignore; retext = (fun () -> hint.Text <- conv "Changes are applied and saved at once.") }
+        register { refresh = ignore; retext = (fun () -> hint.Text <- conv "Changes are applied and saved at once") }
         register { refresh = ignore; retext = (fun () -> closeButton.Text <- conv "Close") }
         closeButton.Click.Add(fun _ -> form.Close())
         // Esc closes it. Not Enter (AcceptButton): it ends the input of a number.
