@@ -221,7 +221,7 @@ type SettingsDialog(conv: string -> string) =
         for b in navButtons do b.MinimumSize <- Size(navW, 0)
 
         // The area of the pages does not size itself: as large as the largest page (it does not
-        // change with the page), as high as the list, and as wide as the properties above
+        // change with the page), as high as the list, and as wide as the rows above and below
         let mutable w = 0
         let mutable h = 0
         for page in pages do
@@ -230,8 +230,9 @@ type SettingsDialog(conv: string -> string) =
             h <- max h size.Height
 
         let navSize = nav.GetPreferredSize(Size.Empty)
+        let rowWidth (row: Control) = row.GetPreferredSize(Size.Empty).Width + row.Margin.Horizontal
         let besideNav =
-            top.GetPreferredSize(Size.Empty).Width + top.Margin.Horizontal
+            max (rowWidth top) (rowWidth bottom)
             - (navSize.Width + nav.Margin.Horizontal) - content.Margin.Horizontal
         content.Size <- Size(max (w + content.Padding.Horizontal) besideNav,
                              max (h + content.Padding.Vertical) navSize.Height)
@@ -349,7 +350,13 @@ type SettingsDialog(conv: string -> string) =
             cb.Items.Clear()
             items |> List.iter (fun (_, text) -> cb.Items.Add(text) |> ignore)
             fitComboBox cb
+            // The names are the user's: a long one would widen the dialog without a limit. The box
+            // is at most 240 wide (at 96 DPI), its list as wide as the longest name.
+            cb.DropDownWidth <- cb.Width
+            cb.Width <- min cb.Width (cb.LogicalToDeviceUnits(240))
             selectCurrent ()
+            // The area of the pages as wide as the row of the properties again
+            if form.IsHandleCreated then fitPages()
 
         cb.DropDown.Add(fun _ -> withRefreshing reload)
         cb.SelectedIndexChanged.Add(fun _ ->
