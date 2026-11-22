@@ -44,8 +44,9 @@ let private askRestartAsAdmin (): bool =
     let restart = TaskDialogCommandLinkButton(convLangP "Restart as administrator",
                                               convLangP "Windows asks for permission (User Account Control).",
                                               ShowShieldIcon = true)
+    let continueWithout = TaskDialogCommandLinkButton(convLangP "Continue without administrator rights")
     page.Buttons.Add(restart)
-    page.Buttons.Add(TaskDialogCommandLinkButton(convLangP "Continue without administrator rights"))
+    page.Buttons.Add(continueWithout)
     page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" AppDef.WIKI_URL (convLangP "More info (Wiki)"))
     page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
     // For those who run it without administrator rights on purpose: asked again by checking the
@@ -53,7 +54,9 @@ let private askRestartAsAdmin (): bool =
     page.Verification <- TaskDialogVerificationCheckBox(convLangP "Do not ask again")
 
     let res = TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen)
-    if page.Verification.Checked then Ctx.storeNoAdminCheck ()
+    // Only with Continue without administrator rights: the choice to run without them. Not if
+    // closed (Esc) or restarted.
+    if page.Verification.Checked && res = continueWithout then Ctx.storeNoAdminCheck ()
     res = restart
 
 // Starts this program as administrator (UAC) with the selected properties (procArgv has checked
