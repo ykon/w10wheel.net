@@ -52,6 +52,34 @@ type Properties() =
         let lines = Seq.map makePropLine sdict.Keys
         File.WriteAllLines(path, lines)
 
+    // Writes the values of keys to the file (path) as it is now: the lines of these keys get their
+    // values (a comment after a value is kept), the other lines stay as they are (the other keys,
+    // the comments, the empty lines, their order), and the keys not in it are added at the end
+    member self.Update (path:string, keys:string list): unit =
+        let toWrite = HashSet<string>(keys)
+        let written = HashSet<string>()
+        let keyOf (l:string) =
+            let p = (removeComment l).Trim()
+            if isPropLine p then Some(fst (getKeyValue p)) else None
+        let lines =
+            File.ReadAllLines(path) |> Array.map (fun l ->
+                match keyOf l with
+                | Some k when toWrite.Contains k ->
+                    written.Add k |> ignore
+                    let comment =
+                        match l.IndexOf('#') with
+                        | -1 -> ""
+                        | n -> " " + l.Substring(n)
+                    sprintf "%s=%s%s" k sdict.[k] comment
+                | _ -> l)
+        let added =
+            keys |> List.filter (fun k -> not (written.Contains k)) |>
+            List.map (fun k -> sprintf "%s=%s" k sdict.[k])
+        File.WriteAllLines(path, Array.append lines (Array.ofList added))
+
+    member self.Keys: string list =
+        List.ofSeq sdict.Keys
+
     member self.GetProperty (key:string): string =
         try
             sdict.[key]

@@ -1281,6 +1281,15 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
+// The settings as they were loaded, or last stored: only those changed since are stored
+// (storeProperties)
+let mutable private storedSettings = Properties.Properties()
+
+let private currentSettings () =
+    let p = Properties.Properties()
+    setSettings p
+    p
+
 // The default values are kept (defaultProp) once, before the first load: not after a load that
 // failed (loaded is false again), the settings are not the default values then
 let mutable private defaultSaved = false
@@ -1381,56 +1390,33 @@ let loadProperties (update:bool): unit =
 
         Debug.WriteLine("Start load")
         applyProperties ()
+        storedSettings <- currentSettings ()
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
 
-// Whether the settings differ from the properties of the file (p)
-let private isChangedProperties (p: Properties.Properties) =
-    try
-        let isChangedBoolean () =
-            BooleanNames |>
-            Array.map (fun n -> (p.GetBool n) <> getBooleanOfName n) |>
-            Array.contains true
-        let isChangedNumber () =
-            NumberNames |>
-            Array.map (fun n -> (p.GetInt n) <> getNumberOfName n) |>
-            Array.contains true
-
-        let check = fun n v -> p.GetString(n) <> v
-
-        check DataID.firstTrigger (getFirstTrigger().Name) ||
-        check DataID.accelMultiplier (Accel.Multiplier.Name) ||
-        check DataID.processPriority (getProcessPriority().Name) ||
-        check DataID.targetVKCode (Keyboard.getName(getTargetVKCode())) ||
-        check DataID.vhAdjusterMethod (getVhAdjusterMethod().Name) ||
-        check DataID.uiLanguage (getUILanguage()) ||
-        isChangedBoolean() || isChangedNumber() 
-    with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message); true
-        | e -> Debug.WriteLine("isChanged: " + (e.ToString())); true
-
-// The settings are stored in the file as it is now (read anew): its keys that are not settings
-// (e.g. customAccelThreshold) are kept as they are, and those removed from it since it was
-// loaded are not stored again. Not stored if it cannot be read (it could not be written either).
+// Only the settings changed since they were loaded (or stored) are written, in the file as it is
+// now: what was edited in it meanwhile (other settings too), its other keys (e.g.
+// customAccelThreshold), its comments and the order of its lines are kept. A setting changed in
+// both is written. A file not found is written with all the settings. Not stored if the
+// properties could not be loaded (the settings would be those of other properties, or defaults).
 let storeProperties () =
     try
         if not loaded then
             Debug.WriteLine("Not loaded properties")
         else
             let path = getSelectedPropertiesPath()
-            let file = Properties.Properties()
-            let found =
-                try
-                    file.Load(path, true)
-                    true
-                with
-                    | :? FileNotFoundException -> Debug.WriteLine("First write properties"); false
-
-            if found && not (isChangedProperties file) then
-                Debug.WriteLine("Not changed properties")
+            let current = currentSettings ()
+            if not (File.Exists(path)) then
+                Debug.WriteLine("First write properties")
+                current.Store(path)
             else
-                setSettings file
-                file.Store(path)
+                let changed =
+                    current.Keys |> List.filter (fun k -> current.GetPropertyOption k <> storedSettings.GetPropertyOption k)
+                if changed.IsEmpty then
+                    Debug.WriteLine("Not changed properties")
+                else
+                    current.Update(path, changed)
+            storedSettings <- current
     with
         | e -> Debug.WriteLine("store: " + (e.ToString()))
 
