@@ -1473,7 +1473,23 @@ let private addProperties (owner: IWin32Window) =
         res |> Option.iter (fun name ->
             if isValidPropertiesName name then
                 storeProperties()
-                Properties.copy (getSelectedProperties()) name
+                // A copy of the file (its comments, its other keys), and the running settings written
+                // in it if they are not all in the file: not stored (e.g. a read-only file) or not
+                // loaded. The new properties have them, and are loaded (as the settings running).
+                let path = Properties.getPath name
+                if File.Exists(getSelectedPropertiesPath()) then
+                    Properties.copy (getSelectedProperties()) name
+                let current = currentSettings ()
+                if not loaded || storeError.IsSome || not (File.Exists(path)) then
+                    if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
+                    // prop as the new file (e.g. its custom table, read when the settings are
+                    // applied again by Reset): it may not have been read
+                    prop.Clear()
+                    prop.Load(path, true)
+                storedSettings <- current
+                loaded <- true
+                loadError <- None
+                storeError <- None
                 setSelectedProperties name
                 refreshSettingsDialog()
                 notifyIcon.Text <- getTrayText Pass.Mode

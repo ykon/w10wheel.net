@@ -169,6 +169,11 @@ let copy (srcName:string) (destName:string): unit =
     let destPath = getPath(destName)
 
     File.Copy(srcPath, destPath)
+    // Not read-only as the source may be (File.Copy copies its attributes): the new properties are
+    // written when a setting is changed
+    let attrs = File.GetAttributes(destPath)
+    if attrs.HasFlag(FileAttributes.ReadOnly) then
+        File.SetAttributes(destPath, attrs &&& ~~~FileAttributes.ReadOnly)
 
 let delete (name:string): unit =
     File.Delete(getPath name)
