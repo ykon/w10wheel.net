@@ -1045,6 +1045,9 @@ let private createPassModeMenuItem () =
 // to exit (the instance lock, see Program.checkDoubleLaunch)
 [<Literal>]
 let RESTART_ADMIN_ARG = "--restartAdmin"
+// After RESTART_ADMIN_ARG: the settings dialog is opened again (restarted from it)
+[<Literal>]
+let OPEN_SETTINGS_ARG = "--openSettings"
 
 type AdminStart =
     | AdminStarted
@@ -1056,11 +1059,14 @@ type AdminStart =
 let private ERROR_CANCELLED = 1223
 
 // Starts W10Wheel as administrator (UAC) with the selected properties (a name has no quotes: see
-// isValidPropertiesName and Properties.exists). Waits for the answer to UAC.
-let startAsAdmin (): AdminStart =
+// isValidPropertiesName and Properties.exists), and the settings dialog if openSettings. Waits for
+// the answer to UAC.
+let startAsAdmin (openSettings: bool): AdminStart =
     try
         let name = getSelectedProperties()
-        let args = RESTART_ADMIN_ARG + (if name = Properties.DEFAULT_DEF then "" else " \"" + name + "\"")
+        let args =
+            RESTART_ADMIN_ARG + (if openSettings then " " + OPEN_SETTINGS_ARG else "")
+            + (if name = Properties.DEFAULT_DEF then "" else " \"" + name + "\"")
         let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
                                    WorkingDirectory = Environment.CurrentDirectory)
         use p = Process.Start(psi)
@@ -1507,7 +1513,7 @@ let private restartAsAdmin () =
         storeProperties()
         let ui = SynchronizationContext.Current
         Tasks.Task.Run(fun () ->
-            let res = startAsAdmin ()
+            let res = startAsAdmin true
             ui.Post((fun _ ->
                 match res with
                 | AdminStarted -> exitAction ()
@@ -1780,6 +1786,10 @@ let private createSettingsDialog () =
 
 // Made when it is opened first (not at startup), then kept: closing hides it
 let private settingsDialog = lazy (createSettingsDialog())
+
+// Also at startup after a restart from the dialog (Program: OPEN_SETTINGS_ARG)
+let showSettingsDialog () =
+    settingsDialog.Value.Show()
 
 let private createSettingsMenuItem () =
     let item = createMenuItem_NonID "Settings..."

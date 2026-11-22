@@ -21,6 +21,8 @@ let private messageDoubleLaunch () =
 
 // Started by a restart as administrator (Ctx.RESTART_ADMIN_ARG): the old instance is exiting
 let mutable private waitForLock = false
+// Restarted from the settings dialog (Ctx.OPEN_SETTINGS_ARG): it is opened again once running
+let mutable private openSettings = false
 
 // The lock of the old instance is waited for after a restart (30 s at most): it is released when
 // the old one has exited (after storing the properties, which this one then loads)
@@ -64,7 +66,7 @@ let private askRestartAsAdmin (): bool =
 // the tray icon: this instance exits at once if it has been started, and the new one waits for its
 // lock (see checkDoubleLaunch). Nothing to undo if not.
 let private restartAsAdmin (): bool =
-    match Ctx.startAsAdmin () with
+    match Ctx.startAsAdmin false with
     | Ctx.AdminStarted -> true
     | Ctx.AdminCanceled -> false
     | Ctx.AdminFailed e ->
@@ -154,6 +156,12 @@ let private procArgv (argv: string[]) =
         // Not a command for the users: the old instance is exiting (see checkDoubleLaunch)
         | Ctx.RESTART_ADMIN_ARG :: rest ->
             waitForLock <- true
+            let rest =
+                match rest with
+                | Ctx.OPEN_SETTINGS_ARG :: r ->
+                    openSettings <- true
+                    r
+                | r -> r
             rest |> List.tryHead |> Option.iter setSelectedProperties
             None
         | name :: _ when name.StartsWith("--") -> unknownCommand name; None
@@ -219,6 +227,9 @@ let main argv =
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") err) (convLang "Error")
         Environment.Exit(1)
     | None -> ()
+
+    // Shown when the message loop runs (after the hooks and the tray icon)
+    if openSettings then Ctx.showSettingsDialog ()
 
     Application.Run()
     Debug.WriteLine("Exit message loop")
