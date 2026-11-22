@@ -24,7 +24,7 @@ let private selectedProperties: string ref = ref Properties.DEFAULT_DEF
 let setSelectedProperties name =
     Volatile.Write(selectedProperties, name)
 
-let private getSelectedProperties () =
+let getSelectedProperties () =
     Volatile.Read(&selectedProperties.contents)
 
 let private firstTrigger: Trigger ref = ref LRTrigger
@@ -33,19 +33,10 @@ let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
 
 let private keyboardHook = ref false
+// Whether to ask at startup to restart as administrator (when W10Wheel does not run as one)
+let private adminCheck = ref true
 let private targetVKCode = ref (Keyboard.getVKCode(DataID.VK_NONCONVERT))
 let private uiLanguage = ref (Locale.getLanguage())
-
-type MenuDict = Dictionary<string, ToolStripMenuItem>
-
-let private boolMenuDict = new MenuDict()
-let private triggerMenuDict = new MenuDict()
-let private accelMenuDict = new MenuDict()
-let private priorityMenuDict = new MenuDict()
-let private languageMenuDict = new MenuDict()
-let private numberMenuDict = new MenuDict()
-let private keyboardMenuDict = new MenuDict()
-let private vhAdjusterMenuDict = new MenuDict()
 
 let isKeyboardHook () =
     Volatile.Read(&keyboardHook.contents)
@@ -74,7 +65,7 @@ let convLang (msg: string) =
     Debug.WriteLine("convLang: " + msg)
     Locale.convLang (getUILanguage()) msg
 
-type MenuData = { engText: string; id: string option }
+type MenuData = { engText: string }
 
 (*
 let private tagToEngText (item: ToolStripMenuItem): string =
@@ -82,19 +73,6 @@ let private tagToEngText (item: ToolStripMenuItem): string =
     | :? MenuData as tag -> tag.engText
     | _ -> raise (ArgumentException("Tag is not MenuTag."))
 *)
-
-let private tagToEngText (item: ToolStripMenuItem): string =
-    match item.Tag with
-    | :? string as engText -> engText
-    | _ -> raise (ArgumentException("Tag is not string."))
-
-let private getFirstWord (s: string): string =
-    s.Split([|' '|]).[0]
-
-let private isNumberMenuItem (item: ToolStripItem): bool =
-     match item.Tag with
-     | :? string as engText -> numberMenuDict.ContainsKey(getFirstWord engText)
-     | _ -> false
 
 let private resetMenuText (): unit =        
     let toList = fun (mc: ToolStripItemCollection) ->
@@ -105,14 +83,13 @@ let private resetMenuText (): unit =
             mc.CopyTo(array, 0)
             List.ofArray array
             |> List.filter (not << isSeparator)
-            |> List.filter (not << isNumberMenuItem)
             |> List.map (fun item -> item :?> ToolStripMenuItem)
 
     let rec loop (list: ToolStripMenuItem list): unit =
         match list with
         | [] -> ()
         | item :: rest ->
-            // Not the items whose text is not translated (the names of the properties files)
+            // Only the items with an English text (Tag) are translated
             match item.Tag with
             | :? string as engText -> item.Text <- convLang engText
             | _ -> ()
@@ -128,12 +105,19 @@ let private resetMenuText (): unit =
 
 let mutable private passModeMenuItem: ToolStripMenuItem = null
 
+// With the name of the selected properties if not Default (e.g. "W10Wheel.NET - 実行中 (Left)"), at
+// most 127 characters (NotifyIcon.Text throws above)
 let private getTrayText b =
-    sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
+    let text = sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
+    let name = getSelectedProperties()
+    let text = if name = Properties.DEFAULT_DEF then text else sprintf "%s (%s)" text name
+    if text.Length > 127 then text.Substring(0, 124) + "..." else text
 
+// At the size of the icons of the tray (16 at 100% ... 48 at 300%: the icon files have each), not
+// the default size (32 at 96 DPI) that Windows would scale
 let private getIcon (name: string) =
     use stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
-    new Drawing.Icon(stream)
+    new Drawing.Icon(stream, SystemInformation.SmallIconSize)
 
 // Made once: a new icon for every switch of Pass Mode would not be released
 let private trayIconRun = lazy (getIcon ICON_RUN_NAME)
@@ -846,7 +830,7 @@ let private createMenuItem (data: MenuData): ToolStripMenuItem =
     item
 
 let private createMenuItem_NonID text: ToolStripMenuItem =
-    createMenuItem {engText = text; id = None}
+    createMenuItem {engText = text}
 
 (*
 let private createMenuItem (text: string): ToolStripMenuItem =
@@ -892,6 +876,7 @@ let private getBooleanOfName (name: string): bool =
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
     | DataID.passMode -> Pass.Mode
     | DataID.excludeAvast -> Exclusion.Avast
+    | DataID.adminCheck -> Volatile.Read(&adminCheck.contents)
     | e -> raise (ArgumentException(e))
 
 let private setBooleanOfName (name:string) (b:bool) =
@@ -913,6 +898,7 @@ let private setBooleanOfName (name:string) (b:bool) =
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical <- b
     | DataID.passMode -> Pass.Mode <- b
     | DataID.excludeAvast -> Exclusion.Avast <- b
+    | DataID.adminCheck -> Volatile.Write(adminCheck, b)
     | e -> raise (ArgumentException(e))
 
 (*
@@ -931,24 +917,13 @@ let private makeSetBooleanEvent id =
         let b = item.Checked
         setBooleanOfName id b
 
-let private createBoolMenuItem (data: MenuData) enabled =
-    let item = createMenuItem data
-    item.Click.AddHandler(new EventHandler(makeSetBooleanEvent data.id.Value))
-    item.CheckOnClick <- true
-    item.Enabled <- enabled
-    boolMenuDict.[data.id.Value] <- item
-    item
-
-let private createBoolMenuItemS name =
-    createBoolMenuItem ({engText = name; id = Some(name)}) true
-
-let private uncheckAllItems (dict: MenuDict) =
-    for KeyValue(name, item) in dict do
-        item.CheckState <- CheckState.Unchecked
-
-let private setMenuEnabled (dict:MenuDict) key enabled =
-    if dict.ContainsKey(key) then
-        dict.[key].Enabled <- enabled
+// Set when the settings dialog is made (see createSettingsDialog): it shows the settings and the
+// list of the properties again when they have been loaded (or a file added or deleted), and its
+// texts when the language has changed
+let mutable private refreshSettingsDialog: unit -> unit = (fun () -> ())
+let mutable private retextSettingsDialog: unit -> unit = (fun () -> ())
+// The settings shown again, nothing having been loaded (a number being typed kept)
+let mutable private refreshSettingsLater: unit -> unit = (fun () -> ())
 
 // Called with whether the trigger has changed (not on every properties load)
 let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
@@ -956,14 +931,16 @@ let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
 let setChangeTrigger (f: bool -> unit) =
     changeTrigger <- f
 
+// The last mouse trigger other than None (in this session, or LR): the settings dialog shows it
+// while the trigger is None (Mouse unchecked) and sets it again when Mouse is checked
+let mutable private lastMouseTrigger = LRTrigger
+
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
     Debug.WriteLine("setTrigger: " + res.Name)
     let changed = res <> getFirstTrigger()
     Volatile.Write(firstTrigger, res)
-
-    setMenuEnabled boolMenuDict DataID.sendMiddleClick res.IsSingle
-    setMenuEnabled boolMenuDict DataID.draggedLock res.IsDrag
+    if not res.IsNone then lastMouseTrigger <- res
 
     changeTrigger changed
 
@@ -971,130 +948,18 @@ let private addClick (item: ToolStripMenuItem) f =
     item.Click.Add (fun e -> f (e))
     item
 
-(*
-let private addClickDictMenuItem (item: ToolStripMenuItem) dict f =
-    Debug.WriteLine("addClickDictMenuItem")
-
-    addClick item (fun e -> 
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems dict
-            item.CheckState <- CheckState.Indeterminate
-            f (e)
-    )
-*)
-
-let private createDictMenuItem (data: MenuData) (dict: MenuDict) (setID: (string -> unit)): ToolStripMenuItem =
-    let item = createMenuItem data
-    let id = data.id.Value
-    dict.[id] <- item
-
-    addClick item (fun _ -> 
-        if item.CheckState = CheckState.Unchecked then
-            uncheckAllItems dict
-            item.CheckState <- CheckState.Indeterminate
-            setID(id)
-    )
-
 let private addSeparator (col: ToolStripItemCollection) =
     col.Add(new ToolStripSeparator()) |> ignore
-
-let private createTriggerMenu () =
-    let menu = createMenuItem_NonID "Trigger"
-    let items = menu.DropDownItems
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord text)}
-        createDictMenuItem data triggerMenuDict setTrigger
-    let add = fun text -> items.Add(create text) |> ignore
-
-    add (DataID.LR + " (Left <<-->> Right)")
-    add (DataID.Left + " (Left -->> Right)")
-    add (DataID.Right + " (Right -->> Left)")
-    addSeparator items
-
-    add DataID.Middle
-    add DataID.X1
-    add DataID.X2
-    addSeparator items
-
-    add DataID.LeftDrag
-    add DataID.RightDrag
-    add DataID.MiddleDrag
-    add DataID.X1Drag
-    add DataID.X2Drag
-    addSeparator items
-
-    add DataID.None
-    addSeparator items
-
-    items.Add(createBoolMenuItem {engText = "Send MiddleClick"; id = Some(DataID.sendMiddleClick)} (isSingleTrigger())) |> ignore
-    items.Add(createBoolMenuItem {engText = "Dragged Lock"; id = Some(DataID.draggedLock)} (isDragTrigger())) |> ignore
-
-    menu
-
-let private getOnOffText (b: bool) =
-    //if b then "ON (-->> OFF)" else "OFF (-->> ON)"
-    "ON / OFF"
-
-let private createOnOffMenuItem (id:string) (action: bool -> unit) =
-    //let item = new ToolStripMenuItem(getOnOffText(getBooleanOfName id))
-    let item = createMenuItem {engText = getOnOffText(getBooleanOfName id); id = Some(id)}
-    item.CheckOnClick <- true
-    boolMenuDict.[id] <- item
-
-    addClick item (fun _ ->
-        let b  = item.Checked
-        item.Text <- convLang(getOnOffText b)
-        setBooleanOfName id b
-        action(b)
-    )
-
-let private createOnOffMenuItemNA (id:string) =
-    createOnOffMenuItem id (fun _ -> ())
 
 let private setAccelMultiplier name =
     Debug.WriteLine("setAccelMultiplier " + name)
     Accel.Multiplier <- getAccelMultiplierOfName name
-
-let private createAccelTableMenu () =
-    let menu = createMenuItem_NonID "Accel Table"
-    let items = menu.DropDownItems
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord text)}
-        createDictMenuItem data accelMenuDict setAccelMultiplier
-    let add = fun text -> items.Add(create text) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.accelTable) |> ignore
-    addSeparator items
-
-    add (DataID.M5 + " (1.0 ... 4.8)")
-    add (DataID.M6 + " (1.2 ... 5.8)")
-    add (DataID.M7 + " (1.4 ... 6.7)")
-    add (DataID.M8 + " (1.6 ... 7.7)")
-    add (DataID.M9 + " (1.8 ... 8.7)")
-    addSeparator items
-
-    items.Add(createBoolMenuItem {engText = "Custom Table"; id = Some(DataID.customAccelTable)} (not Accel.CustomDisabled)) |> ignore
-    
-    menu
 
 let private setPriority name =
     let p = ProcessPriority.getPriority name
     Debug.WriteLine("setPriority: " + p.Name)
     Volatile.Write(processPriority, p)
     ProcessPriority.setPriority p
-
-let private createPriorityMenu () =
-    let menu = createMenuItem_NonID "Priority"
-    let create = fun name id ->
-        let data = {engText = name; id = Some(id)}
-        createDictMenuItem data priorityMenuDict setPriority
-    let add = fun name id -> menu.DropDownItems.Add(create name id) |> ignore
-
-    add "High" DataID.High
-    add "Above Normal" DataID.AboveNormal
-    add "Normal" DataID.Normal
-
-    menu
 
 let private getNumberOfName (name: string): int =
     match name with
@@ -1123,60 +988,6 @@ let private setNumberOfName (name: string) (n: int): unit =
     | DataID.switchingThreshold -> VHAdjuster.SwitchingThreshold <- n
     | e -> raise (ArgumentException(e))
 
-let private makeNumberText (name: string) (num: int) =
-    sprintf "%s = %d" (convLang name) num
-
-let private createNumberMenuItem name low up =
-    let item = createMenuItem {engText = name; id = Some(name)}
-    numberMenuDict.[name] <- item
-
-    addClick item (fun _ ->
-        let cur = getNumberOfName name
-        let num = Dialog.openNumberInputBox (convLang name) (convLang "Set Number") low up cur
-        match num with
-        | Ok n ->
-            setNumberOfName name n
-            item.Text <- makeNumberText name n
-        | Error s ->
-            if s <> "" then
-                Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Number") s) (convLang "Error")
-    )
-
-let private createSetNumberMenu () =
-    let menu = createMenuItem_NonID "Set Number"
-    let add = fun name low up ->
-        menu.DropDownItems.Add(createNumberMenuItem name low up) |> ignore
-
-    add DataID.pollTimeout 50 500
-    add DataID.scrollLocktime 150 500
-    addSeparator menu.DropDownItems
-
-    add DataID.verticalThreshold 0 500
-    add DataID.horizontalThreshold 0 500
-
-    menu
-
-let private createRealWheelModeMenu () =
-    let menu = createMenuItem_NonID "Real Wheel Mode"
-    let items = menu.DropDownItems
-    let addNum = fun name low up ->
-        items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool = fun name ->
-        items.Add(createBoolMenuItemS name) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.realWheelMode) |> ignore
-    addSeparator items
-
-    addNum DataID.wheelDelta 10 500
-    addNum DataID.vWheelMove 10 500
-    addNum DataID.hWheelMove 10 500
-    addSeparator items
-        
-    addBool DataID.quickFirst
-    addBool DataID.quickTurn
-        
-    menu
-
 let private getVhAdjusterMethodOfName name =
     match name with
     | DataID.Fixed -> Fixed
@@ -1186,34 +997,6 @@ let private getVhAdjusterMethodOfName name =
 let private setVhAdjusterMethod name =
     Debug.WriteLine("setVhAdjusterMethod: " + name)
     VHAdjuster.Method <- (getVhAdjusterMethodOfName name)
-
-let private createVhAdjusterMenu () =
-    let menu = createMenuItem_NonID "VH Adjuster"
-    let items = menu.DropDownItems
-
-    let create = fun text ->
-        let data = {engText = text; id = Some(text)}
-        createDictMenuItem data vhAdjusterMenuDict setVhAdjusterMethod
-    let add = fun name -> items.Add(create name) |> ignore
-
-    let addNum = fun name low up ->
-        items.Add(createNumberMenuItem name low up) |> ignore
-    let addBool = fun name ->
-        items.Add(createBoolMenuItemS name) |> ignore
-
-    items.Add(createOnOffMenuItemNA DataID.vhAdjusterMode) |> ignore
-    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
-    addSeparator items
-
-    add DataID.Fixed
-    add DataID.Switching
-    addSeparator items
-
-    addBool DataID.firstPreferVertical
-    addNum DataID.firstMinThreshold 1 10
-    addNum DataID.switchingThreshold 10 500
-
-    menu
 
 // Called with the old trigger key when the key changes (true), or when the keyboard hook is
 // removed (false): see KEventHandler.changeTrigger
@@ -1240,13 +1023,9 @@ let private setTargetVKCode name =
 let private setKeyboardHookOf (b: bool) =
     match WinHook.setOrUnsetKeyboardHook b with
     | Some(err) ->
-        // Not installed (the previous hook removed): off, as the menu shows
+        // Not installed (the previous hook removed): off, as the settings dialog shows (refreshed
+        // after the change or the load)
         Volatile.Write(keyboardHook, false)
-        match boolMenuDict.TryGetValue DataID.keyboardHook with
-        | true, item ->
-            item.Checked <- false
-            item.Text <- convLang(getOnOffText false)
-        | _ -> ()
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
@@ -1260,77 +1039,76 @@ let private setKeyboardHookOf (b: bool) =
 
 
 
-let private createKeyboardMenu () =
-    let menu = createMenuItem_NonID "Keyboard"
-    let items = menu.DropDownItems
-
-    let create = fun text ->
-        let data = {engText = text; id = Some(getFirstWord(text))}
-        createDictMenuItem data keyboardMenuDict setTargetVKCode
-    let add = fun text -> items.Add(create text) |> ignore
-
-    items.Add(createOnOffMenuItem DataID.keyboardHook setKeyboardHookOf) |> ignore
-    addSeparator items
-
-    add (DataID.VK_TAB + " (Tab)")
-    add (DataID.VK_PAUSE + " (Pause)")
-    add (DataID.VK_CAPITAL + " (Caps Lock)")
-    add (DataID.VK_CONVERT + " (Henkan)")
-    add (DataID.VK_NONCONVERT + " (Muhenkan)")
-    add (DataID.VK_PRIOR + " (Page Up)")
-    add (DataID.VK_NEXT + " (Page Down)")
-    add (DataID.VK_END + " (End)")
-    add (DataID.VK_HOME + " (Home)")
-    add (DataID.VK_SNAPSHOT + " (Print Screen)")
-    add (DataID.VK_INSERT + " (Insert)")
-    add (DataID.VK_DELETE + " (Delete)")
-    add (DataID.VK_LWIN + " (Left Windows)")
-    add (DataID.VK_RWIN + " (Right Windows)")
-    add (DataID.VK_APPS + " (Application)")
-    add (DataID.VK_NUMLOCK + " (Number Lock)")
-    add (DataID.VK_SCROLL + " (Scroll Lock)")
-    add (DataID.VK_LSHIFT + " (Left Shift)")
-    add (DataID.VK_RSHIFT + " (Right Shift)")
-    add (DataID.VK_LCONTROL + " (Left Ctrl)")
-    add (DataID.VK_RCONTROL + " (Right Ctrl)")
-    add (DataID.VK_LMENU + " (Left Alt)")
-    add (DataID.VK_RMENU + " (Right Alt)")
-
-    addSeparator items
-    add DataID.None
-
-    menu
-
-let private createCursorChangeMenuItem () =
-    createBoolMenuItem {engText = "Cursor Change"; id = Some(DataID.cursorChange)} true
-
-let private createHorizontalScrollMenuItem () =
-    let item = createBoolMenuItem {engText = "Horizontal Scroll"; id = Some(DataID.horizontalScroll)} true
-    addClick item (fun _ ->
-        boolMenuDict.[DataID.vhAdjusterMode].Enabled <- item.Checked
-    )
-
-let private createReverseScrollMenuItem () =
-    createBoolMenuItem {engText = "Reverse Scroll (Flip)"; id = Some(DataID.reverseScroll)} true
-
-let private createSwapScrollMenuItem () =
-    createBoolMenuItem {engText = "Swap Scroll (V.H)"; id = Some(DataID.swapScroll)} true
-
 let private createPassModeMenuItem () =
     let id = DataID.passMode
-    let item = createMenuItem {engText = "Pass Mode"; id = Some(id)}
+    // Pass Mode (its name in the code and the command --sendPassMode)
+    let item = createMenuItem_NonID "Pause"
     item.Click.AddHandler(new EventHandler(makeSetBooleanEvent id))
     item.CheckOnClick <- true
     passModeMenuItem <- item
     item
 
-let private createInfoMenuItem () =
-    let item = createMenuItem_NonID "Info"
+// The argument of the instance started as administrator by startAsAdmin: it waits for this one
+// to exit (the instance lock, see Program.checkDoubleLaunch)
+[<Literal>]
+let RESTART_ADMIN_ARG = "--restartAdmin"
+// After RESTART_ADMIN_ARG: the settings dialog is opened again (restarted from it)
+[<Literal>]
+let OPEN_SETTINGS_ARG = "--openSettings"
 
-    addClick item (fun _ ->
-        let msg = sprintf "%s: %s / %s: %s" (convLang("Name")) AppDef.PROGRAM_NAME_NET (convLang("Version")) AppDef.PROGRAM_VERSION
-        MessageBox.Show(msg, convLang("Info"), MessageBoxButtons.OK, MessageBoxIcon.Information) |> ignore
-    )
+type AdminStart =
+    | AdminStarted
+    | AdminCanceled  // UAC answered No
+    | AdminFailed of exn
+
+// ERROR_CANCELLED: the user answered No to UAC
+[<Literal>]
+let private ERROR_CANCELLED = 1223
+
+// Starts W10Wheel as administrator (UAC) with the selected properties (a name has no quotes: see
+// isValidPropertiesName and Properties.exists), and the settings dialog if openSettings. Waits for
+// the answer to UAC.
+let startAsAdmin (openSettings: bool): AdminStart =
+    try
+        let name = getSelectedProperties()
+        let args =
+            RESTART_ADMIN_ARG + (if openSettings then " " + OPEN_SETTINGS_ARG else "")
+            + (if name = Properties.DEFAULT_DEF then "" else " \"" + name + "\"")
+        let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
+                                   WorkingDirectory = Environment.CurrentDirectory)
+        use p = Process.Start(psi)
+        AdminStarted
+    with
+        | :? System.ComponentModel.Win32Exception as e when e.NativeErrorCode = ERROR_CANCELLED -> AdminCanceled
+        | e -> AdminFailed e
+
+// Without changing the principal policy of the process (Thread.CurrentPrincipal)
+let isAdmin () =
+    use identity = System.Security.Principal.WindowsIdentity.GetCurrent()
+    System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)
+
+// The version, whether W10Wheel runs as administrator (it does not work in the windows of the
+// programs that do, if not), and the links to GitHub and the wiki
+let private showAbout () =
+    let rights = convLang (if isAdmin() then "Yes" else "No")
+    let page = TaskDialogPage(Caption = convLang "About", Heading = AppDef.PROGRAM_NAME_NET,
+                              Text = sprintf "%s: %s\n%s: %s" (convLang "Version") AppDef.PROGRAM_VERSION
+                                                              (convLang "Running as administrator") rights,
+                              AllowCancel = true, EnableLinks = true)
+    // The icon of the program (released after the dialog)
+    use appIcon = try Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> null
+    // Released too: it holds a copy of the icon handle, which TaskDialog does not release
+    use taskIcon = if isNull appIcon then null else new TaskDialogIcon(appIcon)
+    page.Icon <- if isNull taskIcon then TaskDialogIcon.Information else taskIcon
+    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">GitHub</a>    <a href=\"%s\">Wiki</a>"
+                                                AppDef.PROJECT_URL AppDef.WIKI_URL)
+    page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
+    page.Buttons.Add(TaskDialogButton(convLang "OK"))
+    TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) |> ignore
+
+let private createInfoMenuItem () =
+    let item = createMenuItem_NonID "About"
+    addClick item (fun _ -> showAbout())
 
 // Before exiting without the message loop (Environment.Exit): the icon would remain in the tray
 let hideSystemTray () =
@@ -1359,49 +1137,7 @@ let private BooleanNames: string[] =
      DataID.draggedLock; DataID.swapScroll;
      DataID.sendMiddleClick; DataID.keyboardHook;
      DataID.vhAdjusterMode; DataID.firstPreferVertical;
-     DataID.excludeAvast|]
-
-let private OnOffNames: string[] =
-    [|DataID.realWheelMode; DataID.accelTable; DataID.keyboardHook; DataID.vhAdjusterMode|]
-
-let private resetDictMenuItems (dict: MenuDict) pred =
-    Debug.WriteLine("resetDictMenuItems")
-    for KeyValue(id, item) in dict do
-        item.CheckState <-
-            if pred id then
-                CheckState.Indeterminate
-            else
-                CheckState.Unchecked
-
-let private resetTriggerMenuItems () =
-    resetDictMenuItems triggerMenuDict
-        (fun id -> Mouse.getTriggerOfStr id = getFirstTrigger())
-
-let private resetAccelMenuItems () =
-    resetDictMenuItems accelMenuDict
-        (fun id -> id = Accel.Multiplier.Name)
-
-let private resetPriorityMenuItems () =
-    resetDictMenuItems priorityMenuDict
-        (fun id -> ProcessPriority.getPriority id = getProcessPriority())
-
-let private resetLanguageMenuItems () =
-    resetDictMenuItems languageMenuDict
-        (fun id -> id = getUILanguage())
-
-let private resetKeyboardMenuItems () =
-    resetDictMenuItems keyboardMenuDict
-        (fun id -> Keyboard.getVKCode id = getTargetVKCode())
-
-let private resetVhAdjusterMenuItems () =
-    boolMenuDict.[DataID.vhAdjusterMode].Enabled <- Scroll.Horizontal
-    resetDictMenuItems vhAdjusterMenuDict
-        (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod())
-
-let private resetNumberMenuItems () =
-    for KeyValue(id, item) in numberMenuDict do
-        let num = getNumberOfName id
-        item.Text <- makeNumberText id num
+     DataID.excludeAvast; DataID.adminCheck|]
 
 let private isCreatedMenuItems (): bool =
     notifyIcon.ContextMenuStrip <> null
@@ -1413,49 +1149,8 @@ let private setUILanguage lang =
 
     if reset && isCreatedMenuItems() then
         resetMenuText()
-        resetNumberMenuItems()
         notifyIcon.Text <- getTrayText Pass.Mode
-
-let private createLanguageMenu () =
-    let menu = createMenuItem_NonID "Language"
-    let create = fun text id ->
-        createDictMenuItem {engText = text; id = Some(id)} languageMenuDict setUILanguage
-    let add = fun text id ->
-        menu.DropDownItems.Add(create text id) |> ignore
-
-    add "English" DataID.English
-    add "Japanese" DataID.Japanese
-
-    menu 
-
-let private resetBoolNumberMenuItems () =
-    for KeyValue(name, item) in boolMenuDict do
-        item.Checked <- getBooleanOfName name
-
-let private resetOnOffMenuItems () =
-    OnOffNames |> Array.iter (fun name ->
-        let item = boolMenuDict.[name]
-        item.Text <- convLang(getOnOffText(getBooleanOfName name))
-    )
-
-// Reload or switching properties can add or remove the custom table
-let private resetCustomAccelMenuItem () =
-    match boolMenuDict.TryGetValue DataID.customAccelTable with
-    | true, item -> item.Enabled <- not Accel.CustomDisabled
-    | _ -> ()
-
-let private resetAllMenuItems () =
-    Debug.WriteLine("resetAllMenuItems")
-    resetTriggerMenuItems()
-    resetKeyboardMenuItems()
-    resetAccelMenuItems()
-    resetPriorityMenuItems()
-    resetLanguageMenuItems()
-    resetNumberMenuItems()
-    resetBoolNumberMenuItems()
-    resetCustomAccelMenuItem()
-    resetVhAdjusterMenuItems()
-    resetOnOffMenuItems()
+        retextSettingsDialog()
 
 let private prop = Properties.Properties()
 
@@ -1499,9 +1194,18 @@ let private setTriggerOfProperty (): unit =
 let private setAccelOfProperty (): unit =
     setStringOfProperty DataID.accelMultiplier setAccelMultiplier
 
+// The custom table of the properties as read (shown in the settings dialog): why it is not used
+type private CustomTableState =
+    | CustomNotWritten
+    | CustomInvalid of string  // why (an English text)
+    | CustomLoaded of int[] * double[]
+
+let mutable private customTableState = CustomNotWritten
+
 let private setCustomAccelOfProperty (): unit =
     // Without a valid custom table in this file, do not keep the table of the previous file
     Accel.CustomDisabled <- true
+    customTableState <- CustomNotWritten
 
     try
         let cat = prop.GetIntArray(DataID.customAccelThreshold)
@@ -1514,17 +1218,37 @@ let private setCustomAccelOfProperty (): unit =
         let isValidThreshold = cat |> Array.forall (fun n -> n >= 0) && isAscending
         let isValidMultiplier = cam |> Array.forall (fun d -> Double.IsFinite(d) && d >= 0.0)
 
-        if cat.Length <> 0 && cat.Length = cam.Length && isValidThreshold && isValidMultiplier then
+        if cat.Length = 0 && cam.Length = 0 then
+            // Written without values (e.g. customAccelThreshold=): shown as not written (the state
+            // set above), not as numbers that differ
+            ()
+        elif cat.Length <> cam.Length then
+            customTableState <- CustomInvalid "Not used: the numbers of thresholds and multipliers differ"
+        elif not isValidThreshold then
+            customTableState <- CustomInvalid "Not used: the thresholds must be ascending numbers of 0 or more"
+        elif not isValidMultiplier then
+            customTableState <- CustomInvalid "Not used: the multipliers must be numbers of 0 or more"
+        else
             Debug.WriteLine(sprintf "customAccelThreshold: %A" cat)
             Debug.WriteLine(sprintf "customAccelMultiplier: %A" cam)
 
             Accel.CustomThreshold <- cat
             Accel.CustomMultiplier <- cam
             Accel.CustomDisabled <- false
+            customTableState <- CustomLoaded(cat, cam)
     with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message)
-        | :? FormatException as e -> Debug.WriteLine("Parse error: " + e.Message)
-        | :? OverflowException as e -> Debug.WriteLine("Overflow: " + e.Message)
+        | :? KeyNotFoundException as e ->
+            Debug.WriteLine("Not found: " + e.Message)
+            // One of the two only
+            if prop.GetPropertyOption(DataID.customAccelThreshold).IsSome ||
+               prop.GetPropertyOption(DataID.customAccelMultiplier).IsSome then
+                customTableState <- CustomInvalid "Not used: customAccelThreshold and customAccelMultiplier are both needed"
+        | :? FormatException as e ->
+            Debug.WriteLine("Parse error: " + e.Message)
+            customTableState <- CustomInvalid "Not used: a value is not a number"
+        | :? OverflowException as e ->
+            Debug.WriteLine("Overflow: " + e.Message)
+            customTableState <- CustomInvalid "Not used: a value is not a number"
 
 let private setPriorityOfProperty (): unit =
     setStringOfProperty DataID.processPriority setPriority
@@ -1559,11 +1283,28 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
+// The settings as they were loaded, or last stored: only those changed since are stored
+// (storeProperties)
+let mutable private storedSettings = Properties.Properties()
+
+let private currentSettings () =
+    let p = Properties.Properties()
+    setSettings p
+    p
+
+// Why the properties could not be loaded (loaded is false), or the settings stored (the last
+// time): told in the settings dialog. Cleared by a load that succeeds.
+let mutable private loadError: exn option = None
+let mutable private storeError: exn option = None
+
 // The default values are kept (defaultProp) once, before the first load: not after a load that
 // failed (loaded is false again), the settings are not the default values then
 let mutable private defaultSaved = false
 
+// Read again after a restart as administrator (Program.checkDoubleLaunch): cleared first, or the
+// keys removed from the file since the first read would stay
 let loadPropertiesFileOnly (): unit =
+    prop.Clear()
     try
         prop.Load(getSelectedPropertiesPath(), true)
     with
@@ -1574,262 +1315,640 @@ let convLangWithProp (msg: string) =
     Debug.WriteLine((sprintf "convLangWithProp: lang:[%s], msg:[%s]" lang msg))
     Locale.convLang lang msg
 
-let loadProperties (update:bool): unit =
+// Before loadProperties (from loadPropertiesFileOnly): whether to ask at startup to restart as
+// administrator. True if missing or invalid (the default).
+let isAdminCheckWithProp () =
+    match prop.GetPropertyOption(DataID.adminCheck) with
+    | Some s ->
+        match Boolean.TryParse(s) with
+        | true, b -> b
+        | _ -> true
+    | None -> true
+
+// Do not ask again (at startup, before loadProperties): adminCheck false written in the file of the
+// selected properties at once, its other lines kept as storeProperties keeps them (which would
+// write the default values of the other settings, not loaded yet). A new file has all the settings,
+// as at a first exit (no file to load: their default values, those running). Then in prop: the
+// first load does not read the file again if loadPropertiesFileOnly has read it, and it would be
+// stored as true at exit. Not if it could not be written (e.g. a read-only file): it would be loaded
+// as stored (storedSettings), and never written; asked again at the next startup.
+let storeNoAdminCheck () =
+    try
+        let path = getSelectedPropertiesPath()
+        if File.Exists(path) then
+            let file = Properties.Properties()
+            file.SetBool(DataID.adminCheck, false)
+            file.Update(path, [DataID.adminCheck])
+        else
+            let file = currentSettings ()
+            file.SetBool(DataID.adminCheck, false)
+            file.Store(path)
+        prop.SetBool(DataID.adminCheck, false)
+    with
+        | e -> Debug.WriteLine("storeNoAdminCheck: " + e.Message)
+
+// Applies the settings in prop (a load, or a reset to the default values)
+let private applyProperties () =
+    setTriggerOfProperty()
+    setAccelOfProperty()
+    setCustomAccelOfProperty()
+    setPriorityOfProperty()
+    setVKCodeOfProperty()
+    setVhAdjusterMethodOfProperty()
+    setUILanguageOfProperty()
+
+    BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
+    setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
+
+    Debug.WriteLine("setNumberOfProperties")
+    let setNum = setNumberOfProperty
+    setNum DataID.pollTimeout 50 500
+    setNum DataID.scrollLocktime 150 500
+    setNum DataID.verticalThreshold 0 500
+    setNum DataID.horizontalThreshold 0 500
+
+    setNum DataID.wheelDelta 10 500
+    setNum DataID.vWheelMove 10 500
+    setNum DataID.hWheelMove 10 500
+
+    setNum DataID.firstMinThreshold 1 10
+    setNum DataID.switchingThreshold 10 500
+
+    // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+    // progress (Reload, switching properties) ends once they are set, so that the new ones
+    // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+    // keyboard hook). Not if the file could not be read: the settings have not changed. The
+    // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+    // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+    exitScrollMode()
+
+let private saveDefaults () =
     if not defaultSaved then
         setSettings defaultProp
         defaultSaved <- true
 
+// The settings of prop applied, and loaded: stored from now on (those changed since, see
+// storeProperties), the errors cleared
+let private applyLoaded () =
+    loaded <- true
+    loadError <- None
+    storeError <- None
+    Debug.WriteLine("Start load")
+    applyProperties ()
+    storedSettings <- currentSettings ()
+
+// At startup (and before, Program.checkDoubleLaunch): the file of the selected properties read in
+// prop (update false: not again if loadPropertiesFileOnly has read it) and applied. Not loaded if
+// it could not be read (e.g. locked): the settings (the default values) are not stored until a
+// load succeeds, or they would overwrite the file; their changes are not stored (see
+// switchProperties). Reload and a switch load only what they could read (tryLoadProperties).
+let loadProperties (update:bool): unit =
+    saveDefaults ()
     try
-        // Not loaded if the file could not be read (e.g. locked): the settings are not stored
-        // (storeProperties) until a load succeeds, or they would overwrite the file (with the
-        // default values, or those of another properties file switched from)
         loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
-        loaded <- true
+        applyLoaded ()
+    with
+        | e ->
+            if not loaded then
+                loadError <- Some e
+                // The settings running: those changed from now on are not stored
+                storedSettings <- currentSettings ()
+            Debug.WriteLine("load: " + (e.ToString()))
 
-        Debug.WriteLine("Start load")
+// The properties of path read: Error if they cannot be (e.g. locked by another program), or are
+// not found and missingIsDefault is false (else empty: the default values, for Default)
+let private readProperties (path: string) (missingIsDefault: bool): Result<Properties.Properties, exn> =
+    let p = Properties.Properties()
+    try
+        p.Load(path, true)
+        Ok p
+    with
+        | :? FileNotFoundException when missingIsDefault -> Ok p
+        | e -> Error e
 
-        setTriggerOfProperty()
-        setAccelOfProperty()
-        setCustomAccelOfProperty()
-        setPriorityOfProperty()
-        setVKCodeOfProperty()
-        setVhAdjusterMethodOfProperty()
-        setUILanguageOfProperty()
-
-        BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
-        setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
-
-        Debug.WriteLine("setNumberOfProperties")
-        let setNum = setNumberOfProperty
-        setNum DataID.pollTimeout 50 500
-        setNum DataID.scrollLocktime 150 500
-        setNum DataID.verticalThreshold 0 500
-        setNum DataID.horizontalThreshold 0 500
-
-        setNum DataID.wheelDelta 10 500
-        setNum DataID.vWheelMove 10 500
-        setNum DataID.hWheelMove 10 500
-
-        setNum DataID.firstMinThreshold 1 10
-        setNum DataID.switchingThreshold 10 500
-
-        // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
-        // progress (Reload, switching properties) ends once they are set, so that the new ones
-        // apply from the next (also one started meanwhile, e.g. during the error dialog of the
-        // keyboard hook). Not if the file could not be read: the settings have not changed. The
-        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
-        exitScrollMode()
+// The properties of name selected and loaded from what has been read of them (p): in prop (the
+// keys of the previous file not kept, they would be stored in this file), applied
+let private loadRead (name: string) (p: Properties.Properties) =
+    Debug.WriteLine("loadRead: " + name)
+    saveDefaults ()
+    setSelectedProperties name
+    prop.CopyFrom(p)
+    try
+        applyLoaded ()
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
+    refreshSettingsDialog()
+    // The tip of the tray icon has the name of the properties
+    notifyIcon.Text <- getTrayText Pass.Mode
 
-// Whether the settings differ from the properties of the file (p)
-let private isChangedProperties (p: Properties.Properties) =
-    try
-        let isChangedBoolean () =
-            BooleanNames |>
-            Array.map (fun n -> (p.GetBool n) <> getBooleanOfName n) |>
-            Array.contains true
-        let isChangedNumber () =
-            NumberNames |>
-            Array.map (fun n -> (p.GetInt n) <> getNumberOfName n) |>
-            Array.contains true
+// The properties of name selected and loaded if they can be read. Else nothing changes (the
+// selected properties, their settings, their changes not stored) and why is returned.
+let private tryLoadProperties (name: string): exn option =
+    let path = Properties.getPath name
+    // Other properties than Default must exist (e.g. deleted outside W10Wheel, still in the list of
+    // the settings dialog, also while they are read): they would be loaded with the default values,
+    // and written again with them
+    match readProperties path (name = Properties.DEFAULT_DEF) with
+    | Ok p -> loadRead name p; None
+    | Error (:? FileNotFoundException) ->
+        Some(FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
+    | Error e -> Some e
 
-        let check = fun n v -> p.GetString(n) <> v
+// The settings changed since they were loaded or stored (current: as running)
+let private changedSettings (current: Properties.Properties) =
+    current.Keys |> List.filter (fun k -> current.GetPropertyOption k <> storedSettings.GetPropertyOption k)
 
-        check DataID.firstTrigger (getFirstTrigger().Name) ||
-        check DataID.accelMultiplier (Accel.Multiplier.Name) ||
-        check DataID.processPriority (getProcessPriority().Name) ||
-        check DataID.targetVKCode (Keyboard.getName(getTargetVKCode())) ||
-        check DataID.vhAdjusterMethod (getVhAdjusterMethod().Name) ||
-        check DataID.uiLanguage (getUILanguage()) ||
-        isChangedBoolean() || isChangedNumber() 
-    with
-        | :? KeyNotFoundException as e -> Debug.WriteLine("Not found: " + e.Message); true
-        | e -> Debug.WriteLine("isChanged: " + (e.ToString())); true
-
-// The settings are stored in the file as it is now (read anew): its keys that are not settings
-// (e.g. customAccelThreshold) are kept as they are, and those removed from it since it was
-// loaded are not stored again. Not stored if it cannot be read (it could not be written either).
+// Only the settings changed since they were loaded (or stored) are written, in the file as it is
+// now: what was edited in it meanwhile (other settings too), its other keys (e.g.
+// customAccelThreshold), its comments and the order of its lines are kept. A setting changed in
+// both is written. A file not found is written with all the settings. Not stored if the
+// properties could not be loaded (the settings would be those of other properties, or defaults).
 let storeProperties () =
     try
         if not loaded then
             Debug.WriteLine("Not loaded properties")
         else
             let path = getSelectedPropertiesPath()
-            let file = Properties.Properties()
-            let found =
-                try
-                    file.Load(path, true)
-                    true
-                with
-                    | :? FileNotFoundException -> Debug.WriteLine("First write properties"); false
-
-            if found && not (isChangedProperties file) then
-                Debug.WriteLine("Not changed properties")
+            let current = currentSettings ()
+            if not (File.Exists(path)) then
+                Debug.WriteLine("First write properties")
+                current.Store(path)
             else
-                setSettings file
-                file.Store(path)
+                let changed = changedSettings current
+                if changed.IsEmpty then
+                    Debug.WriteLine("Not changed properties")
+                else
+                    current.Update(path, changed)
+            storedSettings <- current
+            storeError <- None
     with
-        | e -> Debug.WriteLine("store: " + (e.ToString()))
+        | e ->
+            storeError <- Some e
+            Debug.WriteLine("store: " + (e.ToString()))
+
+// Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
+// If it cannot be (e.g. locked), nothing changes: the settings stay as they are (still stored, if
+// they were loaded), with a number being typed and a change waiting to be stored, and why is shown
+// in the settings dialog.
+let private tryReloadProperties () =
+    match tryLoadProperties (getSelectedProperties()) with
+    | Some e ->
+        loadError <- Some e
+        refreshSettingsLater ()
+        false
+    | None -> true
 
 let reloadProperties () =
-    prop.Clear()
-    loadProperties true
-    resetAllMenuItems()
+    tryReloadProperties () |> ignore
 
-let private createReloadPropertiesMenuItem () =
-    let item = createMenuItem_NonID "Reload"
-    addClick item (fun _ -> reloadProperties ())
-
-let private createSavePropertiesMenuItem () =
-    let item = createMenuItem_NonID "Save"
-    addClick item (fun _ -> storeProperties())
-
-let private createOpenDirMenuItem (dir: string) =
-    let item = createMenuItem_NonID "Open Dir"
-    addClick item (fun _ -> Process.Start(ProcessStartInfo(dir, UseShellExecute = true)) |> ignore)
+let private openPropertiesDir () =
+    Dialog.shellOpen Properties.USER_DIR
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 
-// A part of a file name (see Properties.getPath), not Default whatever its case (a name only
-// differing in case would be confused with it), nor a command (--)
+// Why a name cannot be a part of a file name (see Properties.getPath), None if it can: one reason,
+// on one line under the box of askText. Not Default whatever its case (a name only differing in
+// case would be confused with it), nor a command (--). An empty name too (askText does not show it).
+let private whyNotFileName (name: string): string option =
+    if String.IsNullOrWhiteSpace(name) || name.Trim() <> name then
+        Some "Spaces at either end cannot be used"
+    elif name.StartsWith("--") then
+        Some "Cannot start with --"
+    elif String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase) then
+        Some "Default cannot be used"
+    elif name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 then
+        Some "Contains characters not allowed in file names"
+    else
+        None
+
 let private isValidPropertiesName (name: string) =
-    not (String.IsNullOrWhiteSpace(name)) && name.Trim() = name &&
-    not (String.Equals(name, DEFAULT_DEF, StringComparison.OrdinalIgnoreCase)) &&
-    not (name.StartsWith("--")) &&
-    name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+    (whyNotFileName name).IsNone
 
-let private createAddPropertiesMenuItem () =
-    let item = createMenuItem_NonID "Add"
-    addClick item (fun _ ->
-        let res = Dialog.openTextInputBox (convLang "Properties Name") (convLang "Add Properties")
+// Why a name cannot be used for new properties, checked as it is typed (and again after OK)
+let private whyInvalidPropertiesName (name: string) =
+    match whyNotFileName name with
+    | Some why -> Some why
+    | None when Properties.exists name -> Some "Properties of this name already exist"
+    | None -> None
 
-        try
-            res |> Option.iter (fun name ->
-                if isValidPropertiesName name then
-                    storeProperties()
+// An error of an action of the settings dialog, modal to and centered on it (owner)
+let private showError (owner: IWin32Window) (heading: string) (e: exn) =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Error,
+                              Heading = heading, Text = e.Message)
+    page.Buttons.Add(TaskDialogButton.OK)
+    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
+
+// The new properties are a copy of the selected ones (see below), and selected
+let private addProperties (owner: IWin32Window) =
+    let res = SettingsForm.askText owner convLang (convLang "Add Properties") (convLang "Properties Name")
+                                   whyInvalidPropertiesName
+
+    try
+        res |> Option.iter (fun name ->
+            if isValidPropertiesName name then
+                storeProperties()
+                // A copy of the file (its comments, its other keys) with the settings running, those
+                // shown: also those not stored (e.g. a read-only file, properties not loaded), or
+                // edited in the file and not reloaded (the file's would be copied). Then loaded as by
+                // a switch: the same settings, and the other keys of the file (e.g. the custom table)
+                // applied.
+                let path = Properties.getPath name
+                if File.Exists(getSelectedPropertiesPath()) then
                     Properties.copy (getSelectedProperties()) name
-                    setSelectedProperties name
-                else
-                    Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
-            )
-        with
-            | e -> Dialog.errorMessageE e 
-    )
+                let current = currentSettings ()
+                if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
+                match readProperties path false with
+                | Ok p -> loadRead name p
+                | Error e -> showError owner (convLang "The properties file could not be read") e
+            else
+                Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
+        )
+    with
+        | e -> Dialog.errorMessageE e
 
-let private openYesNoMessage msg =
-    let res = MessageBox.Show(msg, (convLang "Question"), MessageBoxButtons.YesNo, MessageBoxIcon.Information)
-    res = DialogResult.Yes
+// The confirmation of an action that cannot be undone, modal to and centered on owner (the settings
+// dialog): its button says what it does, and Cancel is the default (Enter does not do it by mistake)
+let private confirm (owner: IWin32Window) (heading: string) (text: string) (actionText: string) =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Warning,
+                              Heading = heading, Text = text, AllowCancel = true)
+    let action = TaskDialogButton(actionText)
+    let cancel = TaskDialogButton(convLang "Cancel")
+    page.Buttons.Add(action)
+    page.Buttons.Add(cancel)
+    page.DefaultButton <- cancel
+    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) = action
 
-let private setProperties name =
-    if getSelectedProperties() <> name then
-        Debug.WriteLine("setProperties: " + name)
+// The name of properties as shown: only Default is translated
+let private shownPropertiesName name =
+    if name = DEFAULT_DEF then convLang name else name
 
-        setSelectedProperties name
-        // Do not keep the keys of the previous file (they would be stored in this file)
-        prop.Clear()
-        loadProperties true
-        resetAllMenuItems()
+// From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
+// (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
+// is waited for on another thread: the hooks run on this one, and would time out (Windows removes
+// them) while the user answers, if the input is not on the secure desktop.
+// Set while UAC is answered (on the UI thread): pressed again meanwhile, the button would start a
+// second instance as administrator, which would wait for the lock and then fail (double launch)
+let mutable private restarting = false
 
-let private createDeletePropertiesMenuItem () =
-    let item = createMenuItem_NonID "Delete"
-    let name = getSelectedProperties()
-    item.Enabled <- (name <> DEFAULT_DEF)
-    addClick item (fun _ ->
-        try
-            if openYesNoMessage (sprintf "%s: %s" (convLang "Delete properties") name) then
-                Properties.delete name
-                setProperties DEFAULT_DEF
-        with
-            | e -> Dialog.errorMessageE e
-    )
-
-let private createPropertiesMenuItem (name: string) =
-    // Only Default is translated: the other names are the user's (e.g. "Middle" is not "中央")
-    let item =
-        if name = DEFAULT_DEF then createMenuItem_NonID name else new ToolStripMenuItem(name)
-    item.CheckState <-
-        if name = getSelectedProperties() then
-            CheckState.Indeterminate
-        else
-            CheckState.Unchecked
-
-    addClick item (fun _ ->
+let private restartAsAdmin () =
+    if not restarting then
+        restarting <- true
+        // The button grayed until the answer
+        refreshSettingsDialog()
+        // Stored first: the new instance may read them before this one stores them again at its exit
         storeProperties()
-        setProperties name
-    )
+        let ui = SynchronizationContext.Current
+        Tasks.Task.Run(fun () ->
+            let res = startAsAdmin true
+            ui.Post((fun _ ->
+                match res with
+                | AdminStarted -> exitAction ()
+                | AdminCanceled
+                | AdminFailed _ ->
+                    restarting <- false
+                    refreshSettingsDialog()
+                    match res with
+                    | AdminFailed e -> Dialog.errorMessageE e
+                    | _ -> ()), null)) |> ignore
 
-let private createPropertiesMenu () =
-    let menu = createMenuItem_NonID "Properties"
-    let items = menu.DropDownItems
-    addSeparator items
+// The selected properties (not Default), then Default is selected
+let private deleteProperties (owner: IWin32Window) =
+    let name = getSelectedProperties()
+    try
+        if confirm owner (convLang "Delete these properties?")
+                   (sprintf "%s: %s" (convLang "Properties") name) (convLang "Delete") then
+            // Default read first: if it cannot be (e.g. locked), these properties are not deleted
+            // (their settings would run as Default, and be written again as these properties)
+            match readProperties (Properties.getPath DEFAULT_DEF) true with
+            | Error e -> showError owner (convLang "The properties file could not be read") e
+            | Ok p ->
+                Properties.delete name
+                loadRead DEFAULT_DEF p
+    with
+        | e -> Dialog.errorMessageE e
 
-    let addItem = fun (menuItem: ToolStripMenuItem) -> items.Add(menuItem) |> ignore
-    let addDefault = fun () -> addItem (createPropertiesMenuItem DEFAULT_DEF)
-    let add = fun path -> addItem (createPropertiesMenuItem (Properties.getUserDefName path))
+// The settings of the selected properties back to their default values (defaultProp), except the
+// language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
+// applied as a load does, and stored
+let private resetSettings (owner: IWin32Window) =
+    let text = sprintf "%s\n%s: %s" (convLang "The language is kept.") (convLang "Properties")
+                                    (shownPropertiesName (getSelectedProperties()))
+    if confirm owner (convLang "Reset all the settings to their defaults?") text (convLang "Reset to defaults") then
+        // prop has the values of the last load (storeProperties writes a copy of the file): the
+        // current settings first, or the language changed since would be set back
+        setSettings prop
+        let keys =
+            [DataID.firstTrigger; DataID.accelMultiplier; DataID.processPriority;
+             DataID.targetVKCode; DataID.vhAdjusterMethod]
+            @ List.ofArray BooleanNames @ List.ofArray NumberNames
+        keys |> List.iter (fun key -> prop.[key] <- defaultProp.GetProperty key)
 
-    menu.DropDownOpening.Add(fun _ ->
-        // The items made the last time are released (Clear does not dispose them)
-        let old = Array.init items.Count (fun i -> items.[i])
-        items.Clear()
-        old |> Array.iter (fun item -> item.Dispose())
+        try
+            applyProperties ()
+        with
+            | e -> Debug.WriteLine("reset: " + (e.ToString()))
+        // All the settings written (not only those changed in W10Wheel: one edited in the file and
+        // not reloaded would stay), the other lines of the file kept
+        storedSettings <- Properties.Properties()
+        storeProperties()
+        refreshSettingsDialog()
 
-        addItem (createReloadPropertiesMenuItem())
-        addItem (createSavePropertiesMenuItem())
-        addSeparator items
+// From the settings dialog (owner). The settings of the selected properties are stored first: if
+// some could not be (e.g. a read-only file, or properties not loaded: then none), switching loses
+// them, which is asked. The properties switched to are loaded only if they can be read (also if
+// they become locked while it is asked): else nothing changes (the selected properties, their
+// settings, their changes not stored), and why is shown.
+let private switchProperties (owner: IWin32Window) name =
+    storeProperties()
+    let lose () =
+        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
+        confirm owner (convLang "The changes could not be saved")
+                ((Option.defaultValue "" why) + convLang "Switching loses the settings changed in these properties.")
+                (convLang "Switch")
+    if not (changedSettings (currentSettings ())).IsEmpty && not (lose ()) then
+        // The current properties selected again in the list
+        refreshSettingsDialog()
+    else
+        match tryLoadProperties name with
+        | Some e ->
+            refreshSettingsDialog()
+            showError owner (convLang "The properties file could not be read") e
+        | None -> ()
 
-        addItem (createOpenDirMenuItem(Properties.USER_DIR))
-        addItem (createAddPropertiesMenuItem())
-        addItem (createDeletePropertiesMenuItem())
-        addSeparator items
+// Not None: it is Mouse unchecked in the settings dialog
+let private triggerItems =
+    [DataID.LR, DataID.LR + " (Left <<-->> Right)";
+     DataID.Left, DataID.Left + " (Left -->> Right)";
+     DataID.Right, DataID.Right + " (Right -->> Left)";
+     DataID.Middle, DataID.Middle; DataID.X1, DataID.X1; DataID.X2, DataID.X2;
+     DataID.LeftDrag, DataID.LeftDrag; DataID.RightDrag, DataID.RightDrag;
+     DataID.MiddleDrag, DataID.MiddleDrag; DataID.X1Drag, DataID.X1Drag; DataID.X2Drag, DataID.X2Drag]
 
-        addDefault()
-        addSeparator items
+// The mouse trigger shown in the settings dialog: the last one while it is None
+let private getShownMouseTrigger () =
+    let t = getFirstTrigger()
+    if t.IsNone then lastMouseTrigger else t
 
-        Properties.getPropFiles() |> Array.iter add
-    )
+// Not None: Keyboard unchecked turns the keyboard trigger off. (None, the hook without a trigger
+// key, is still read from the properties: the dialog then shows no key.)
+let private keyboardItems =
+    [DataID.VK_TAB, " (Tab)"; DataID.VK_PAUSE, " (Pause)"; DataID.VK_CAPITAL, " (Caps Lock)";
+     DataID.VK_CONVERT, " (Henkan)"; DataID.VK_NONCONVERT, " (Muhenkan)";
+     DataID.VK_PRIOR, " (Page Up)"; DataID.VK_NEXT, " (Page Down)"; DataID.VK_END, " (End)";
+     DataID.VK_HOME, " (Home)"; DataID.VK_SNAPSHOT, " (Print Screen)"; DataID.VK_INSERT, " (Insert)";
+     DataID.VK_DELETE, " (Delete)"; DataID.VK_LWIN, " (Left Windows)"; DataID.VK_RWIN, " (Right Windows)";
+     DataID.VK_APPS, " (Application)"; DataID.VK_NUMLOCK, " (Number Lock)"; DataID.VK_SCROLL, " (Scroll Lock)";
+     DataID.VK_LSHIFT, " (Left Shift)"; DataID.VK_RSHIFT, " (Right Shift)";
+     DataID.VK_LCONTROL, " (Left Ctrl)"; DataID.VK_RCONTROL, " (Right Ctrl)";
+     DataID.VK_LMENU, " (Left Alt)"; DataID.VK_RMENU, " (Right Alt)"]
+    |> List.map (fun (id, name) -> id, id + name)
 
-    menu
+let private accelItems =
+    [DataID.M5, DataID.M5 + " (1.0 ... 4.8)"; DataID.M6, DataID.M6 + " (1.2 ... 5.8)";
+     DataID.M7, DataID.M7 + " (1.4 ... 6.7)"; DataID.M8, DataID.M8 + " (1.6 ... 7.7)";
+     DataID.M9, DataID.M9 + " (1.8 ... 8.7)"]
+
+// The settings dialog. A change is applied and stored at once. Not for Pass Mode (in the tray
+// menu): it is not stored, and storing would overwrite the file edited outside W10Wheel and not
+// reloaded yet.
+let private createSettingsDialog () =
+    let dialog = SettingsForm.SettingsDialog(convLang)
+    dialog.Changed <- (fun () ->
+        storeProperties()
+        // The settings depending on it (e.g. Dragged Lock is for a drag trigger only, the keyboard
+        // hook is off again if it could not be installed)
+        dialog.RefreshValues())
+
+    // tip: the explanation of the setting (from the Readme), converted as the other texts; the name
+    // of the setting in the properties file (id) is shown after it
+    let addBool (page: SettingsForm.SettingsPage) engText id tip =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, tip = tip, key = id)
+    // enabled: whether the setting is used (see Windows.initScroll), else grayed
+    let addBoolIf (page: SettingsForm.SettingsPage) engText id enabled tip =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled,
+                      tip = tip, key = id)
+    // The labels of the numbers (their names in the properties file are in the tooltips)
+    let numberLabel id =
+        match id with
+        | DataID.pollTimeout -> "Simultaneous press time"
+        | DataID.scrollLocktime -> "Scroll mode lock time"
+        | DataID.verticalThreshold -> "Vertical scroll threshold"
+        | DataID.horizontalThreshold -> "Horizontal scroll threshold"
+        | DataID.wheelDelta -> "Wheel delta"
+        | DataID.vWheelMove -> "Vertical move per notch"
+        | DataID.hWheelMove -> "Horizontal move per notch"
+        | DataID.firstMinThreshold -> "First direction threshold"
+        | DataID.switchingThreshold -> "Switching threshold"
+        | _ -> id
+    // The ranges of loadProperties
+    let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled tip =
+        page.AddNumber(numberLabel id, low, up, (fun () -> getNumberOfName id), setNumberOfName id,
+                       enabled = enabled, tip = tip, key = id)
+    let addTime (page: SettingsForm.SettingsPage) id low up enabled tip =
+        page.AddNumber(numberLabel id, low, up, (fun () -> getNumberOfName id), setNumberOfName id,
+                       enabled = enabled, unit = "ms", tip = tip, key = id)
+
+    dialog.AddPropertiesLabel "Properties"
+    dialog.AddPropertiesComboBox(
+        (fun () ->
+            // Only Default is translated: the other names are the user's
+            (DEFAULT_DEF, convLang DEFAULT_DEF) ::
+            (Properties.getPropFiles() |> Array.map Properties.getUserDefName
+             |> Array.map (fun name -> name, name) |> List.ofArray)),
+        (fun name -> name = getSelectedProperties()),
+        switchProperties dialog.Owner)
+    dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
+    dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
+    dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
+    // The change waiting to be stored is dropped, and waits again if nothing could be loaded: not
+    // stored at once (the file may still be locked), and nothing stored if no change was waiting
+    // (e.g. the file deleted outside W10Wheel is not written again)
+    dialog.AddPropertiesButton("Reload", (fun () -> if not (tryReloadProperties ()) then dialog.RestorePending ()),
+                               dropPending = true)
+    dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
+    // Instead of the hint that the changes are stored: the properties could not be read (Reload
+    // again), or written (e.g. a read-only file: tried again at the next change)
+    dialog.Status <- (fun () ->
+        if not loaded then
+            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
+        // Before a Reload that failed: the changes made after it are not stored
+        elif storeError.IsSome then
+            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
+        elif loadError.IsSome then
+            // Reload: the settings are those before, still stored
+            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
+        else
+            None)
+
+    let general = dialog.AddPage "General"
+    general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
+                        (fun id -> id = getUILanguage()), setUILanguage,
+                        tip = "The language of the menu and the dialogs", key = "uiLanguage")
+    general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
+                        (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
+                        tip = "The priority of the process of W10Wheel", key = "processPriority")
+    general.AddGap()
+    // Not as administrator: said, and the restart offered (as at startup)
+    if not (isAdmin()) then
+        general.AddNote("W10Wheel is not running as administrator", SettingsForm.NoteKind.Warning)
+        general.AddButton("Restart as administrator", restartAsAdmin, icon = Drawing.StockIconId.Shield,
+                          enabled = (fun () -> not restarting),
+                          tip = "Windows asks for permission (User Account Control)")
+    addBool general "Ask to restart as administrator at startup" DataID.adminCheck
+        "Asked when W10Wheel is not running as administrator"
+
+    let trigger = dialog.AddPage "Trigger"
+    // A key that starts scroll mode: the hook on and a key (not None, from the properties of 2.8.x
+    // and before: Keyboard is shown unchecked then, and checking it sets the default key)
+    let isKeyboardTrigger () = getBooleanOfName DataID.keyboardHook && not (isNoneTriggerKey())
+    // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
+    trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
+                             (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
+                             triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger,
+                             tip = "The mouse buttons that start scroll mode\nUnchecked: no mouse trigger (the keyboard trigger only)", key = "firstTrigger")
+    trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
+                     setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true,
+                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only)", key = "sendMiddleClick")
+    trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
+                     setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
+                     tip = "After a drag with a Drag trigger, scroll mode stays locked", key = "draggedLock")
+    trigger.AddCheckComboBox("Keyboard", isKeyboardTrigger, (fun b ->
+                                 // Without a key (None, from the properties of 2.8.x and before:
+                                 // not in the list), the default key: Keyboard checked would do nothing
+                                 if b && isNoneTriggerKey() then setTargetVKCode DataID.VK_NONCONVERT
+                                 setBooleanOfName DataID.keyboardHook b
+                                 setKeyboardHookOf b),
+                             keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
+                             tip = "The key that starts scroll mode\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers", key = "keyboardHook, targetVKCode")
+    trigger.AddGap()
+    // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
+    addTime trigger DataID.pollTimeout 50 500 isDoubleTrigger
+        "How long the LR, Left and Right triggers wait for the other button"
+    // The lock by a quick release: not for the drag triggers (EventHandler.dragUp), but for the
+    // keyboard trigger (KEventHandler.checkExitScrollUp)
+    addTime trigger DataID.scrollLocktime 150 500
+        (fun () -> isSingleTrigger() || isDoubleTrigger() || isKeyboardTrigger())
+        "A trigger released within this time locks scroll mode"
+    // Neither trigger: nothing starts scroll mode
+    trigger.AddStatus((fun () ->
+        if isNoneTrigger() && not (isKeyboardTrigger()) then
+            Some(SettingsForm.NoteKind.Warning, convLang "Scrolling is disabled")
+        else None))
+
+    let scroll = dialog.AddPage "Scroll"
+    addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode"
+    addBool scroll "Horizontal Scroll" DataID.horizontalScroll "Scrolls horizontally too\nDisable it if you do not use it"
+    addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll "Reverses the direction of the scroll"
+    addBool scroll "Swap Scroll (V.H)" DataID.swapScroll "Swaps the vertical and the horizontal scroll"
+    scroll.AddGap()
+    // The thresholds of the standard scroll: not with VH Adjuster (Windows.initStdMode)
+    addNumberIf scroll DataID.verticalThreshold 0 500 (fun () -> not (isVhAdjusterMode()))
+        "A vertical move up to this does not scroll"
+    addNumberIf scroll DataID.horizontalThreshold 0 500
+        (fun () -> isHorizontalScroll() && not (isVhAdjusterMode()))
+        "A horizontal move up to this does not scroll\nToo small, the vertical scroll becomes hard to use"
+    scroll.AddNote "The thresholds are not used while VH Adjuster is enabled"
+
+    // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
+    let accel = dialog.AddPage "Accel Table"
+    let accelUsed () = not (isRealWheelMode())
+    let customUsed () = not Accel.CustomDisabled && Accel.CustomTable
+    addBoolIf accel "Enabled" DataID.accelTable accelUsed
+        "Accelerates the scroll by the speed of the move, with the multipliers of the table"
+    // The multipliers are not used with the custom table (getAccelMultiplier)
+    accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
+                          enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())),
+                          tip = "The multipliers of the table", key = "accelMultiplier")
+    accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
+                   setBooleanOfName DataID.customAccelTable,
+                   enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid)", key = "customAccelTable")
+    // The custom table as read from the properties: why it cannot be checked (a warning if it is
+    // not valid, else a plain text: the info icon is for the note of the page)
+    accel.AddStatus((fun () ->
+        match customTableState with
+        | CustomNotWritten -> Some(SettingsForm.NoteKind.Plain, convLang "Not in the properties file")
+        | CustomInvalid why -> Some(SettingsForm.NoteKind.Warning, convLang why)
+        | CustomLoaded(t, m) ->
+            let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
+            Some(SettingsForm.NoteKind.Plain,
+                 String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
+                               t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1]))), indent = true)
+    accel.AddNote "Not used while Real Wheel Mode is enabled"
+
+    let realWheel = dialog.AddPage "Real Wheel Mode"
+    addBool realWheel "Enabled" DataID.realWheelMode
+        "Scrolls as a real wheel does, a notch at a time\nThe accel table is not used"
+    realWheel.AddGap()
+    addNumberIf realWheel DataID.wheelDelta 10 500 isRealWheelMode
+        "The wheel value of a notch (a usual mouse sends 120)"
+    addNumberIf realWheel DataID.vWheelMove 10 500 isRealWheelMode
+        "The vertical move made into a notch"
+    // With Horizontal Scroll only (Windows.sendRealHWheel)
+    addNumberIf realWheel DataID.hWheelMove 10 500 (fun () -> isRealWheelMode() && isHorizontalScroll())
+        "The horizontal move made into a notch"
+    realWheel.AddGap()
+    addBoolIf realWheel "Quick first response" DataID.quickFirst isRealWheelMode
+        "Sends the first notch whatever the move (else after half of the move)"
+    addBoolIf realWheel "Quick turn response" DataID.quickTurn isRealWheelMode
+        "Sends a notch at once when the move turns back, whatever the move"
+
+    // Used with Horizontal Scroll only (isVhAdjusterMode)
+    let vhAdjuster = dialog.AddPage "VH Adjuster"
+    vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
+                        setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal),
+                        tip = "Scrolls in one direction at a time, vertical or horizontal", key = "vhAdjusterMode")
+    vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
+                               (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod,
+                               enabled = isVhAdjusterMode,
+                               tip = "Fixed: the direction of the larger first move\nSwitching: also switched by a move above the switching threshold", key = "vhAdjusterMethod")
+    vhAdjuster.AddGap()
+    addBoolIf vhAdjuster "Prefer vertical first" DataID.firstPreferVertical isVhAdjusterMode
+        "The first direction prefers vertical"
+    addNumberIf vhAdjuster DataID.firstMinThreshold 1 10 isVhAdjusterMode
+        "The first direction is decided by a move above this (smaller moves are ignored)"
+    // For Switching only (Windows.switchVHD)
+    addNumberIf vhAdjuster DataID.switchingThreshold 10 500
+        (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
+        "A move above this switches the direction (Switching)"
+    vhAdjuster.AddNote "Used when Horizontal Scroll is enabled"
+
+    refreshSettingsDialog <- dialog.RefreshAllLater
+    refreshSettingsLater <- dialog.RefreshLater
+    retextSettingsDialog <- dialog.RetextLater
+    dialog
+
+// Made when it is opened first (not at startup), then kept: closing hides it
+let private settingsDialog = lazy (createSettingsDialog())
+
+// Also at startup after a restart from the dialog (Program: OPEN_SETTINGS_ARG)
+let showSettingsDialog () =
+    settingsDialog.Value.Show()
+
+// In bold: the main item of the menu (the double click on the icon switches Pause)
+let private createSettingsMenuItem () =
+    let item = createMenuItem_NonID "Settings..."
+    item.Font <- new Drawing.Font(item.Font, Drawing.FontStyle.Bold)
+    addClick item (fun _ -> showSettingsDialog ())
 
 let private createContextMenuStrip (): ContextMenuStrip =
     let menu = new ContextMenuStrip()
+    MenuStyle.apply menu
     let add = fun (item: ToolStripMenuItem) -> menu.Items.Add(item) |> ignore
-    add (createTriggerMenu())
-    add (createKeyboardMenu())
-    addSeparator menu.Items
-
-    add (createAccelTableMenu())
-    add (createPriorityMenu())
-    add (createSetNumberMenu())
-    add (createRealWheelModeMenu())
-    add (createVhAdjusterMenu())
-    addSeparator menu.Items
-
-    add (createPropertiesMenu())
-    addSeparator menu.Items
-    
-    add (createCursorChangeMenuItem())
-    add (createHorizontalScrollMenuItem())
-    add (createReverseScrollMenuItem())
-    add (createSwapScrollMenuItem())
+    // The settings are in the dialog. Pass Mode is also switched by a double click on the icon.
+    add (createSettingsMenuItem())
     add (createPassModeMenuItem())
     addSeparator menu.Items
 
-    add (createLanguageMenu())
     add (createInfoMenuItem())
     add (createExitMenuItem())
 
-    resetAllMenuItems()
-
     menu
-
-let mutable private contextMenu: ContextMenuStrip = null
 
 let setSystemTray (): unit =
     let ni = notifyIcon
@@ -1837,7 +1956,9 @@ let setSystemTray (): unit =
     ni.Text <- getTrayText false
     ni.Visible <- true
     ni.ContextMenuStrip <- createContextMenuStrip()
-    ni.DoubleClick.Add (fun _ -> Pass.toggleMode())
+    // A double click of the left button only: DoubleClick is also raised for the other buttons
+    // (e.g. two right clicks to open the menu)
+    ni.MouseDoubleClick.Add (fun e -> if e.Button = MouseButtons.Left then Pass.toggleMode())
     
 let mutable private initStateMEH: unit -> unit = (fun () -> ())
 let mutable private initStateKEH: unit -> unit = (fun () -> ())

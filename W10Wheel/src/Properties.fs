@@ -52,6 +52,39 @@ type Properties() =
         let lines = Seq.map makePropLine sdict.Keys
         File.WriteAllLines(path, lines)
 
+    // Writes the values of keys to the file (path) as it is now: the lines of these keys get their
+    // values (a comment after a value is kept), the other lines stay as they are (the other keys,
+    // the comments, the empty lines, their order), and the keys not in it are added at the end
+    member self.Update (path:string, keys:string list): unit =
+        let toWrite = HashSet<string>(keys)
+        let written = HashSet<string>()
+        let keyOf (l:string) =
+            let p = (removeComment l).Trim()
+            if isPropLine p then Some(fst (getKeyValue p)) else None
+        let lines =
+            File.ReadAllLines(path) |> Array.map (fun l ->
+                match keyOf l with
+                | Some k when toWrite.Contains k ->
+                    written.Add k |> ignore
+                    let comment =
+                        match l.IndexOf('#') with
+                        | -1 -> ""
+                        | n -> " " + l.Substring(n)
+                    sprintf "%s=%s%s" k sdict.[k] comment
+                | _ -> l)
+        let added =
+            keys |> List.filter (fun k -> not (written.Contains k)) |>
+            List.map (fun k -> sprintf "%s=%s" k sdict.[k])
+        File.WriteAllLines(path, Array.append lines (Array.ofList added))
+
+    member self.Keys: string list =
+        List.ofSeq sdict.Keys
+
+    // The keys and the values of p instead of these
+    member self.CopyFrom (p:Properties): unit =
+        sdict.Clear()
+        for k in p.Keys do sdict.[k] <- p.[k]
+
     member self.GetProperty (key:string): string =
         try
             sdict.[key]
@@ -141,6 +174,11 @@ let copy (srcName:string) (destName:string): unit =
     let destPath = getPath(destName)
 
     File.Copy(srcPath, destPath)
+    // Not read-only as the source may be (File.Copy copies its attributes): the new properties are
+    // written when a setting is changed
+    let attrs = File.GetAttributes(destPath)
+    if attrs.HasFlag(FileAttributes.ReadOnly) then
+        File.SetAttributes(destPath, attrs &&& ~~~FileAttributes.ReadOnly)
 
 let delete (name:string): unit =
     File.Delete(getPath name)

@@ -7,7 +7,6 @@
 
 open System
 open System.Windows.Forms
-open Microsoft.VisualBasic
 
 let errorMessage msg title =
     MessageBox.Show(msg, title, MessageBoxButtons.OK, MessageBoxIcon.Error) |> ignore
@@ -15,21 +14,11 @@ let errorMessage msg title =
 let errorMessageE (e: Exception) =
     errorMessage e.Message (e.GetType().Name)
 
-let private isValidNumber (input: string) low up =
-    match Int32.TryParse(input)  with
-    | (true, res) -> res >= low && res <= up 
-    | _ -> false
-
-let openNumberInputBox name title low up cur =
-    let msg = sprintf "%s (%d - %d)" name low up
-    let dvalue = cur.ToString()
-    let input = Interaction.InputBox(msg, title, dvalue)
-    if isValidNumber input low up then
-        Ok (Int32.Parse(input))
-    else
-        Error (input)
-
-let openTextInputBox msg title: string option =
-    let input = Interaction.InputBox(msg, title)
-    if input <> "" then Some(input) else None
-
+// Opens a folder or a URL as Explorer would. An error (e.g. no default browser) is shown, not
+// thrown: it would end the program from an event handler.
+let shellOpen (target: string) =
+    try
+        use p = System.Diagnostics.Process.Start(System.Diagnostics.ProcessStartInfo(target, UseShellExecute = true))
+        ()
+    with
+        | e -> errorMessageE e

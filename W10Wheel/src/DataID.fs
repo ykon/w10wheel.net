@@ -52,6 +52,8 @@
     let passMode = "passMode"
     [<Literal>]
     let excludeAvast = "excludeAvast"
+    [<Literal>]
+    let adminCheck = "adminCheck"
     
     // String
     [<Literal>]

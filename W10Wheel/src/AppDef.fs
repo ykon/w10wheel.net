@@ -7,6 +7,9 @@
 
 let PROGRAM_NAME = "W10Wheel"
 let PROGRAM_NAME_NET = "W10Wheel.NET"
-let PROGRAM_VERSION = "2.8.4"
+let PROGRAM_VERSION = "2.9.0"
+
+let PROJECT_URL = "https://github.com/ykon/w10wheel.net"
+let WIKI_URL = PROJECT_URL + "/wiki"
 
 
