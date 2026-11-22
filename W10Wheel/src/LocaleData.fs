@@ -47,9 +47,9 @@ let private JapaneseMessage =
         "Changes are applied and saved at once", "変更はすぐに反映・保存されます";
         "Close", "閉じる";
         "Reset to defaults", "既定値に戻す";
-        "Not used while Real Wheel Mode is enabled", "リアルホイールモードが有効な間は使われません";
+        "Not used while Real Wheel Mode is enabled", "リアルホイールモードが有効な場合は使われません";
         "Used when Horizontal Scroll is enabled", "水平スクロールが有効な場合に使われます";
-        "The thresholds are not used while VH Adjuster is enabled", "垂直/水平スクロール調整が有効な間、閾値は使われません";
+        "The thresholds are not used while VH Adjuster is enabled", "垂直/水平スクロール調整が有効な場合、閾値は使われません";
         "Scrolling is disabled", "スクロール機能が無効になっています";
         "Not in the properties file", "設定ファイルに存在しません";
         "Not used: the numbers of thresholds and multipliers differ", "使われていません: 閾値と倍率の個数が違います";
