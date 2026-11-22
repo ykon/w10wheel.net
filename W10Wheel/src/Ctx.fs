@@ -24,7 +24,7 @@ let private selectedProperties: string ref = ref Properties.DEFAULT_DEF
 let setSelectedProperties name =
     Volatile.Write(selectedProperties, name)
 
-let private getSelectedProperties () =
+let getSelectedProperties () =
     Volatile.Read(&selectedProperties.contents)
 
 let private firstTrigger: Trigger ref = ref LRTrigger
@@ -1320,7 +1320,7 @@ let reloadProperties () =
     refreshSettingsDialog()
 
 let private openPropertiesDir () =
-    Process.Start(ProcessStartInfo(Properties.USER_DIR, UseShellExecute = true)) |> ignore
+    Dialog.shellOpen Properties.USER_DIR
 
 let private DEFAULT_DEF = Properties.DEFAULT_DEF
 

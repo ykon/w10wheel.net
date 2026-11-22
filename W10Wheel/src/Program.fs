@@ -46,7 +46,7 @@ let private askRestartAsAdmin (): bool =
     page.Buttons.Add(restart)
     page.Buttons.Add(TaskDialogCommandLinkButton(convLangP "Continue without administrator rights"))
     page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" WikiUrl (convLangP "More info (Wiki)"))
-    page.LinkClicked.Add(fun e -> Process.Start(ProcessStartInfo(e.LinkHref, UseShellExecute = true)) |> ignore)
+    page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
 
     TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) = restart
 
@@ -54,28 +54,31 @@ let private askRestartAsAdmin (): bool =
 [<Literal>]
 let private ERROR_CANCELLED = 1223
 
-// Starts this program as administrator (UAC) with the same argument (the properties name; the
-// commands have exited before). Before the hooks and the tray icon: only the lock is released
-// first, or the new instance would take this one for a double launch. Returns whether it has
-// been started (this one exits then); if not, the lock is taken again.
-let private restartAsAdmin (argv: string[]): bool =
+// Starts this program as administrator (UAC) with the selected properties (procArgv has checked
+// the argument: Default if it does not exist, and the commands have exited). Before the hooks and
+// the tray icon: only the lock is released first, or the new instance would take this one for a
+// double launch. Returns whether it has been started (this one exits then); if not, the lock is
+// taken again.
+let private restartAsAdmin (): bool =
     PreventMultiInstance.unlock()
     try
         // A properties name has no quotes (Ctx.isValidPropertiesName, Properties.exists)
-        let args = argv |> Array.map (fun a -> "\"" + a + "\"") |> String.concat " "
+        let name = Ctx.getSelectedProperties()
+        let args = if name = Properties.DEFAULT_DEF then "" else "\"" + name + "\""
         let psi = ProcessStartInfo(Environment.ProcessPath, args, UseShellExecute = true, Verb = "runas",
                                    WorkingDirectory = Environment.CurrentDirectory)
-        Process.Start(psi) |> ignore
+        use p = Process.Start(psi)
         true
     with
-        | :? System.ComponentModel.Win32Exception as e ->
-            if e.NativeErrorCode <> ERROR_CANCELLED then
-                Dialog.errorMessageE e
+        | e ->
+            match e with
+            | :? System.ComponentModel.Win32Exception as we when we.NativeErrorCode = ERROR_CANCELLED -> ()
+            | _ -> Dialog.errorMessageE e
             checkDoubleLaunch ()
             false
 
-let private checkAdmin (argv: string[]) =
-    if not (isAdmin ()) && askRestartAsAdmin () && restartAsAdmin argv then
+let private checkAdmin () =
+    if not (isAdmin ()) && askRestartAsAdmin () && restartAsAdmin () then
         Environment.Exit(0)
 
 let private closeAll () =
@@ -203,7 +206,7 @@ let main argv =
 
     Ctx.loadPropertiesFileOnly ()
     checkDoubleLaunch ()
-    checkAdmin argv
+    checkAdmin ()
 
     // Not at SessionEnding: the shutdown can still be canceled there (and W10Wheel kept running)
     SystemEvents.SessionEnded.Add (fun _ -> procExit())

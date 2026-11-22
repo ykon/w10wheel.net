@@ -15,6 +15,15 @@ let errorMessage msg title =
 let errorMessageE (e: Exception) =
     errorMessage e.Message (e.GetType().Name)
 
+// Opens a folder or a URL as Explorer would. An error (e.g. no default browser) is shown, not
+// thrown: it would end the program from an event handler.
+let shellOpen (target: string) =
+    try
+        use p = System.Diagnostics.Process.Start(System.Diagnostics.ProcessStartInfo(target, UseShellExecute = true))
+        ()
+    with
+        | e -> errorMessageE e
+
 let openTextInputBox msg title: string option =
     let input = Interaction.InputBox(msg, title)
     if input <> "" then Some(input) else None
