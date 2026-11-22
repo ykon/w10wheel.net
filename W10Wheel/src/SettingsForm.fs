@@ -135,6 +135,41 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
 [<RequireQualifiedAccess>]
 type NoteKind = Info | Warning | Plain
 
+// A note with the icon of its kind before it (getNote: its kind and its text, already converted;
+// None: empty), and how it is refreshed and retexted. It keeps the height of a line when empty, so
+// that its page does not grow beyond its area when it shows (the area is fitted at Show). The icon
+// is as high as a line of the text: made again when the font changes (another DPI) or the kind.
+// indent: as SettingsPage.AddCheck.
+let private noteRow (getNote: unit -> (NoteKind * string) option) (indent: bool): Control * Binding =
+    // The margins of the label it replaces (Label: 3, 0, 3, 0)
+    let panel = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                    WrapContents = false, Anchor = AnchorStyles.Left,
+                                    Margin = Padding((if indent then 19 else 3), 0, 3, 0))
+    // Anchor Left (not Top): centered on the line of the text
+    let icon = new PictureBox(SizeMode = PictureBoxSizeMode.AutoSize, Anchor = AnchorStyles.Left,
+                              Margin = Padding.Empty, Visible = false)
+    let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(4, 0, 0, 0))
+    panel.Controls.Add(icon)
+    panel.Controls.Add(l)
+    let setIcon = stockIconSetter icon l (fun () -> icon.Image) (fun i -> icon.Image <- i)
+    let show () =
+        let note = getNote()
+        l.Text <- note |> Option.map snd |> Option.defaultValue ""
+        l.ForeColor <-
+            match note with
+            | Some(NoteKind.Warning, _) -> SystemColors.ControlText
+            | _ -> SystemColors.GrayText
+        // Hidden: the text moves to its place
+        match note with
+        | Some(NoteKind.Warning, _) -> setIcon StockIconId.Warning; icon.Visible <- true
+        | Some(NoteKind.Info, _) -> setIcon StockIconId.Info; icon.Visible <- true
+        | Some(NoteKind.Plain, _) | None -> icon.Visible <- false
+    panel :> Control,
+    { refresh = show
+      retext = (fun () ->
+          l.MinimumSize <- Size(0, l.Font.Height)
+          show ()) }
+
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
 // refresh (isRefreshing) does not. isReloading: the settings have been loaded (Reload, a switch of
@@ -194,40 +229,11 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register { refresh = (fun () -> cb.Checked <- get()); retext = (fun () -> cb.Text <- conv engText) }
         cb
 
-    // A note with the icon of its kind before it (getNote: its kind and its text, already
-    // converted; None: an empty row). Its row keeps the height of a line when empty, so that the
-    // page does not grow beyond its area when it shows (the area is fitted at Show). The icon is as
-    // high as a line of the text: made again when the font changes (another DPI) or the kind.
+    // A note of the page (noteRow)
     let addNote (getNote: unit -> (NoteKind * string) option) (indent: bool) =
-        // The margins of the label it replaces (Label: 3, 0, 3, 0)
-        let panel = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                        WrapContents = false, Anchor = AnchorStyles.Left,
-                                        Margin = Padding((if indent then 19 else 3), 0, 3, 0))
-        // Anchor Left (not Top): centered on the line of the text
-        let icon = new PictureBox(SizeMode = PictureBoxSizeMode.AutoSize, Anchor = AnchorStyles.Left,
-                                  Margin = Padding.Empty, Visible = false)
-        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(4, 0, 0, 0))
-        panel.Controls.Add(icon)
-        panel.Controls.Add(l)
-        let setIcon = stockIconSetter icon l (fun () -> icon.Image) (fun i -> icon.Image <- i)
-        let show () =
-            let note = getNote()
-            l.Text <- note |> Option.map snd |> Option.defaultValue ""
-            l.ForeColor <-
-                match note with
-                | Some(NoteKind.Warning, _) -> SystemColors.ControlText
-                | _ -> SystemColors.GrayText
-            // Hidden: the text moves to its place
-            match note with
-            | Some(NoteKind.Warning, _) -> setIcon StockIconId.Warning; icon.Visible <- true
-            | Some(NoteKind.Info, _) -> setIcon StockIconId.Info; icon.Visible <- true
-            | Some(NoteKind.Plain, _) | None -> icon.Visible <- false
-        register {
-            refresh = show
-            retext = (fun () ->
-                l.MinimumSize <- Size(0, l.Font.Height)
-                show ()) }
-        addRow [panel :> Control, 3]
+        let row, binding = noteRow getNote indent
+        register binding
+        addRow [row, 3]
 
     member _.AddGap () =
         gap <- true
@@ -369,6 +375,9 @@ type SettingsDialog(conv: string -> string) =
     // or deleted), not at every change of a setting
     let mutable readLists = false
     let mutable changed: unit -> unit = (fun () -> ())
+    // Why the changes are not stored (e.g. the properties file could not be written), shown at
+    // the bottom instead of the hint that they are (Status)
+    let mutable status: unit -> (NoteKind * string) option = (fun () -> None)
 
     // A change of a number calls changed 300 ms after the last one (changedLater): changed stores
     // the properties, which a button held on a number box would do many times. Called at once
@@ -597,8 +606,12 @@ type SettingsDialog(conv: string -> string) =
         with
             | _ -> ()
 
-        let hint = new Label(AutoSize = true, Anchor = AnchorStyles.Left)
-        register { refresh = ignore; retext = (fun () -> hint.Text <- conv "Changes are applied and saved at once") }
+        let hint, hintBinding =
+            noteRow (fun () ->
+                match status () with
+                | Some note -> Some note
+                | None -> Some(NoteKind.Plain, conv "Changes are applied and saved at once")) false
+        register hintBinding
         register { refresh = ignore; retext = (fun () -> closeButton.Text <- conv "Close") }
         closeButton.Click.Add(fun _ -> form.Close())
         // Esc closes it. Not Enter (AcceptButton): it ends the input of a number.
@@ -645,6 +658,10 @@ type SettingsDialog(conv: string -> string) =
 
     // Called after a setting has been changed in the dialog (not after a properties switch)
     member _.Changed with set (f: unit -> unit) = changed <- f
+
+    // Why the changes are not stored (its kind and its text, converted), None if they are: shown at
+    // the bottom when the dialog is refreshed
+    member _.Status with set (f: unit -> (NoteKind * string) option) = status <- f
 
     member _.AddPage (engText: string) =
         let index = pages.Count

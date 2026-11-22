@@ -1290,6 +1290,11 @@ let private currentSettings () =
     setSettings p
     p
 
+// Why the properties could not be loaded (loaded is false), or the settings stored (the last
+// time): told in the settings dialog. Cleared by a load that succeeds.
+let mutable private loadError: exn option = None
+let mutable private storeError: exn option = None
+
 // The default values are kept (defaultProp) once, before the first load: not after a load that
 // failed (loaded is false again), the settings are not the default values then
 let mutable private defaultSaved = false
@@ -1387,12 +1392,16 @@ let loadProperties (update:bool): unit =
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
         loaded <- true
+        loadError <- None
+        storeError <- None
 
         Debug.WriteLine("Start load")
         applyProperties ()
         storedSettings <- currentSettings ()
     with
-        | e -> Debug.WriteLine("load: " + (e.ToString()))
+        | e ->
+            if not loaded then loadError <- Some e
+            Debug.WriteLine("load: " + (e.ToString()))
 
 // Only the settings changed since they were loaded (or stored) are written, in the file as it is
 // now: what was edited in it meanwhile (other settings too), its other keys (e.g.
@@ -1417,8 +1426,11 @@ let storeProperties () =
                 else
                     current.Update(path, changed)
             storedSettings <- current
+            storeError <- None
     with
-        | e -> Debug.WriteLine("store: " + (e.ToString()))
+        | e ->
+            storeError <- Some e
+            Debug.WriteLine("store: " + (e.ToString()))
 
 let reloadProperties () =
     prop.Clear()
@@ -1565,10 +1577,35 @@ let private resetSettings (owner: IWin32Window) =
         storeProperties()
         refreshSettingsDialog()
 
-// The settings of the selected properties are stored first
-let private switchProperties name =
+// An error of an action of the settings dialog, modal to and centered on it (owner)
+let private showError (owner: IWin32Window) (heading: string) (e: exn) =
+    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Error,
+                              Heading = heading, Text = e.Message)
+    page.Buttons.Add(TaskDialogButton.OK)
+    TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
+
+// From the settings dialog (owner). The settings of the selected properties are stored first: if
+// they cannot be (e.g. a read-only file), switching loses their changes, which is asked. The
+// properties switched to that cannot be read (e.g. locked by another program): the previous ones
+// again (their settings were still running), and why.
+let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    setProperties name
+    let previous = getSelectedProperties()
+    let lose (e: exn) =
+        confirm owner (convLang "The changes could not be saved")
+                (sprintf "%s\n%s" e.Message (convLang "Switching loses the settings changed in these properties."))
+                (convLang "Switch")
+    match storeError with
+    | Some e when loaded && not (lose e) ->
+        // The current properties selected again in the list
+        refreshSettingsDialog()
+    | _ ->
+        setProperties name
+        match loadError with
+        | Some e when not loaded ->
+            setProperties previous
+            showError owner (convLang "The properties file could not be read") e
+        | _ -> ()
 
 // Not None: it is Mouse unchecked in the settings dialog
 let private triggerItems =
@@ -1651,12 +1688,21 @@ let private createSettingsDialog () =
             (Properties.getPropFiles() |> Array.map Properties.getUserDefName
              |> Array.map (fun name -> name, name) |> List.ofArray)),
         (fun name -> name = getSelectedProperties()),
-        switchProperties)
+        switchProperties dialog.Owner)
     dialog.AddPropertiesButton("Add", (fun () -> addProperties dialog.Owner))
     dialog.AddPropertiesButton("Delete", (fun () -> deleteProperties dialog.Owner), enabled = (fun () -> getSelectedProperties() <> DEFAULT_DEF))
     dialog.AddPropertiesButton("Open Dir", openPropertiesDir)
     dialog.AddPropertiesButton("Reload", reloadProperties, dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
+    // Instead of the hint that the changes are stored: the properties could not be read (Reload
+    // again), or written (e.g. a read-only file: tried again at the next change)
+    dialog.Status <- (fun () ->
+        if not loaded then
+            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
+        elif storeError.IsSome then
+            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
+        else
+            None)
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
