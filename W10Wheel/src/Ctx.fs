@@ -108,9 +108,11 @@ let mutable private passModeMenuItem: ToolStripMenuItem = null
 let private getTrayText b =
     sprintf "%s - %s" AppDef.PROGRAM_NAME_NET (convLang (if b then "Stopped" else "Runnable"))
 
+// At the size of the icons of the tray (16 at 100% ... 48 at 300%: the icon files have each), not
+// the default size (32 at 96 DPI) that Windows would scale
 let private getIcon (name: string) =
     use stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
-    new Drawing.Icon(stream)
+    new Drawing.Icon(stream, SystemInformation.SmallIconSize)
 
 // Made once: a new icon for every switch of Pass Mode would not be released
 let private trayIconRun = lazy (getIcon ICON_RUN_NAME)

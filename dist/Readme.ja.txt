@@ -378,8 +378,9 @@ URL:
         Library.txt を参照
         
 アイコン:
-        こちらのジェネレーターで作りました。
-        http://icon-generator.net/
+        ソースの build/IconGen で描いています。
+        # 2.8.4 までのアイコンは、こちらのジェネレーターで作りました。
+        # http://icon-generator.net/
 
 連絡:
         何かの問題や、気になる点、また改良案などがあったら
