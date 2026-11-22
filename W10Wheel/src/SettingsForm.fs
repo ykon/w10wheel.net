@@ -494,9 +494,14 @@ type SettingsDialog(conv: string -> string) =
         if not SystemInformation.HighContrast then
             item.FlatStyle <- FlatStyle.Flat
             item.FlatAppearance.BorderSize <- 0
-            item.FlatAppearance.CheckedBackColor <- highlightTint 0.2
-            item.FlatAppearance.MouseOverBackColor <- highlightTint 0.1
-            item.FlatAppearance.MouseDownBackColor <- highlightTint 0.3
+            // The tints computed again at each Show (retext): the colors of the theme may have
+            // changed since (light or dark)
+            register {
+                refresh = ignore
+                retext = (fun () ->
+                    item.FlatAppearance.CheckedBackColor <- highlightTint 0.2
+                    item.FlatAppearance.MouseOverBackColor <- highlightTint 0.1
+                    item.FlatAppearance.MouseDownBackColor <- highlightTint 0.3) }
         item.CheckedChanged.Add(fun _ ->
             if item.Checked then
                 pages |> Seq.iteri (fun i page -> page.Visible <- (i = index)))
