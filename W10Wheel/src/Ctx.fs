@@ -1567,18 +1567,34 @@ let private createSettingsDialog () =
         // hook is off again if it could not be installed)
         dialog.RefreshValues())
 
-    // tip: the explanation of the setting (from the Readme), converted as the other texts
+    // tip: the explanation of the setting (from the Readme), converted as the other texts; the name
+    // of the setting in the properties file (id) is shown after it
     let addBool (page: SettingsForm.SettingsPage) engText id tip =
-        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, tip = tip)
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, tip = tip, key = id)
     // enabled: whether the setting is used (see Windows.initScroll), else grayed
     let addBoolIf (page: SettingsForm.SettingsPage) engText id enabled tip =
-        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled, tip = tip)
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled,
+                      tip = tip, key = id)
+    // The labels of the numbers (their names in the properties file are in the tooltips)
+    let numberLabel id =
+        match id with
+        | DataID.pollTimeout -> "Simultaneous press time"
+        | DataID.scrollLocktime -> "Scroll mode lock time"
+        | DataID.verticalThreshold -> "Vertical scroll threshold"
+        | DataID.horizontalThreshold -> "Horizontal scroll threshold"
+        | DataID.wheelDelta -> "Wheel delta"
+        | DataID.vWheelMove -> "Vertical move per notch"
+        | DataID.hWheelMove -> "Horizontal move per notch"
+        | DataID.firstMinThreshold -> "First direction threshold"
+        | DataID.switchingThreshold -> "Switching threshold"
+        | _ -> id
     // The ranges of loadProperties
     let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled tip =
-        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled, tip = tip)
+        page.AddNumber(numberLabel id, low, up, (fun () -> getNumberOfName id), setNumberOfName id,
+                       enabled = enabled, tip = tip, key = id)
     let addTime (page: SettingsForm.SettingsPage) id low up enabled tip =
-        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled,
-                       unit = "ms", tip = tip)
+        page.AddNumber(numberLabel id, low, up, (fun () -> getNumberOfName id), setNumberOfName id,
+                       enabled = enabled, unit = "ms", tip = tip, key = id)
 
     dialog.AddPropertiesLabel "Properties"
     dialog.AddPropertiesComboBox(
@@ -1598,10 +1614,10 @@ let private createSettingsDialog () =
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
                         (fun id -> id = getUILanguage()), setUILanguage,
-                        tip = "The language of the menu and the dialogs.")
+                        tip = "The language of the menu and the dialogs.", key = "uiLanguage")
     general.AddComboBox("Priority", [DataID.High, "High"; DataID.AboveNormal, "Above Normal"; DataID.Normal, "Normal"],
                         (fun id -> ProcessPriority.getPriority id = getProcessPriority()), setPriority,
-                        tip = "The priority of the process of W10Wheel.")
+                        tip = "The priority of the process of W10Wheel.", key = "processPriority")
     general.AddGap()
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
@@ -1618,13 +1634,13 @@ let private createSettingsDialog () =
     trigger.AddCheckComboBox("Mouse", (fun () -> not (isNoneTrigger())),
                              (fun b -> setTrigger (if b then lastMouseTrigger.Name else DataID.None)),
                              triggerItems, (fun id -> Mouse.getTriggerOfStr id = getShownMouseTrigger()), setTrigger,
-                             tip = "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).")
+                             tip = "The mouse buttons that start scroll mode.\nUnchecked: no mouse trigger (the keyboard trigger only).", key = "firstTrigger")
     trigger.AddCheck("Send MiddleClick", (fun () -> getBooleanOfName DataID.sendMiddleClick),
                      setBooleanOfName DataID.sendMiddleClick, enabled = isSingleTrigger, indent = true,
-                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).")
+                     tip = "The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2).", key = "sendMiddleClick")
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
                      setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true,
-                     tip = "After a drag with a Drag trigger, scroll mode stays locked.")
+                     tip = "After a drag with a Drag trigger, scroll mode stays locked.", key = "draggedLock")
     trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
                                  // Without a key (None, from the properties of 2.8.x and before:
                                  // not in the list), the default key: Keyboard checked would do nothing
@@ -1632,7 +1648,7 @@ let private createSettingsDialog () =
                                  setBooleanOfName DataID.keyboardHook b
                                  setKeyboardHookOf b),
                              keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode,
-                             tip = "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.")
+                             tip = "The key that starts scroll mode.\nThe keys sent by other software (password managers, macros, key remapping tools) are not triggers.", key = "keyboardHook, targetVKCode")
     trigger.AddGap()
     // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
     addTime trigger DataID.pollTimeout 50 500 isDoubleTrigger
@@ -1665,11 +1681,11 @@ let private createSettingsDialog () =
     // The multipliers are not used with the custom table (getAccelMultiplier)
     accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
                           enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())),
-                          tip = "The multipliers of the table, from the slowest move to the fastest.")
+                          tip = "The multipliers of the table, from the slowest move to the fastest.", key = "accelMultiplier")
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
                    setBooleanOfName DataID.customAccelTable,
                    enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled),
-                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).")
+                   tip = "Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are written in it).", key = "customAccelTable")
     accel.AddNote "Not used while Real Wheel Mode is enabled."
 
     let realWheel = dialog.AddPage "Real Wheel Mode"
@@ -1684,22 +1700,22 @@ let private createSettingsDialog () =
     addNumberIf realWheel DataID.hWheelMove 10 500 (fun () -> isRealWheelMode() && isHorizontalScroll())
         "The horizontal move made into a notch."
     realWheel.AddGap()
-    addBoolIf realWheel DataID.quickFirst DataID.quickFirst isRealWheelMode
+    addBoolIf realWheel "Quick first response" DataID.quickFirst isRealWheelMode
         "Sends the first notch whatever the move (else after half of the move)."
-    addBoolIf realWheel DataID.quickTurn DataID.quickTurn isRealWheelMode
+    addBoolIf realWheel "Quick turn response" DataID.quickTurn isRealWheelMode
         "Sends a notch at once when the move turns back, whatever the move."
 
     // Used with Horizontal Scroll only (isVhAdjusterMode)
     let vhAdjuster = dialog.AddPage "VH Adjuster"
     vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
                         setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal),
-                        tip = "Scrolls in one direction at a time, vertical or horizontal.")
+                        tip = "Scrolls in one direction at a time, vertical or horizontal.", key = "vhAdjusterMode")
     vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
                                (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod,
                                enabled = isVhAdjusterMode,
-                               tip = "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above switchingThreshold.")
+                               tip = "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above the switching threshold.", key = "vhAdjusterMethod")
     vhAdjuster.AddGap()
-    addBoolIf vhAdjuster DataID.firstPreferVertical DataID.firstPreferVertical isVhAdjusterMode
+    addBoolIf vhAdjuster "Prefer vertical first" DataID.firstPreferVertical isVhAdjusterMode
         "The first direction prefers vertical."
     addNumberIf vhAdjuster DataID.firstMinThreshold 1 10 isVhAdjusterMode
         "The first direction is decided by a move above this (smaller moves are ignored)."

@@ -81,7 +81,7 @@ let private JapaneseMessage =
             "移動量に関係なく最初の一回分を送ります (無効のときは半分の移動量で送ります)。";
         "Sends a notch at once when the move turns back, whatever the move.", "折り返したとき、移動量に関係なく一回分を送ります。";
         "Scrolls in one direction at a time, vertical or horizontal.", "垂直か水平の一方向だけにスクロールします。";
-        "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above switchingThreshold.",
+        "Fixed: the direction of the larger first move.\nSwitching: also switched by a move above the switching threshold.",
             "固定: 初回の移動量が多い方向に固定します。\n切り替え: さらに切り替え閾値を超える移動で方向を切り替えます。";
         "The first direction prefers vertical.", "初回の方向の判定で垂直を優先します。";
         "The first direction is decided by a move above this (smaller moves are ignored).",
@@ -119,24 +119,24 @@ let private JapaneseMessage =
         "Above Normal", "通常以上";
         "Normal", "通常";
         
-        "pollTimeout", "同時押し判定時間";
-        "scrollLocktime", "スクロールモード固定判定時間";
-        "verticalThreshold", "垂直スクロール閾値";
-        "horizontalThreshold", "水平スクロール閾値";
+        "Simultaneous press time", "同時押し判定時間";
+        "Scroll mode lock time", "スクロールモード固定判定時間";
+        "Vertical scroll threshold", "垂直スクロール閾値";
+        "Horizontal scroll threshold", "水平スクロール閾値";
 
         "Real Wheel Mode", "リアルホイールモード";
-        "wheelDelta", "ホイール回転値";
-        "vWheelMove", "垂直ホイール移動値";
-        "hWheelMove", "水平ホイール移動値";
-        "quickFirst", "初回の反応を速くする";
-        "quickTurn", "折り返しの反応を速くする";
+        "Wheel delta", "ホイール回転値";
+        "Vertical move per notch", "垂直ホイール移動値";
+        "Horizontal move per notch", "水平ホイール移動値";
+        "Quick first response", "初回の反応を速くする";
+        "Quick turn response", "折り返しの反応を速くする";
         
         "VH Adjuster", "垂直/水平スクロール調整";
         "Fixed", "固定";
         "Switching", "切り替え";
-        "firstPreferVertical", "初回垂直スクロール優先";
-        "firstMinThreshold", "初回判定閾値";
-        "switchingThreshold", "切り替え閾値";
+        "Prefer vertical first", "初回垂直スクロール優先";
+        "First direction threshold", "初回判定閾値";
+        "Switching threshold", "切り替え閾値";
         
         "Properties", "設定ファイル";
         "Reload", "再読み込み";

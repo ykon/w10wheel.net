@@ -99,14 +99,15 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
 // refresh (isRefreshing) does not. tip (of the Add methods): an English text shown on the controls
-// (setTip), converted as the other texts.
+// (setTip), converted as the other texts; key: the name of the setting in the properties file,
+// shown after it (to find it in the file and the Readme).
 type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, register: Binding -> unit,
                             isRefreshing: unit -> bool, changed: unit -> unit, changedLater: unit -> unit,
-                            flushChanged: unit -> unit, setTip: Control -> string -> unit) =
+                            flushChanged: unit -> unit, setTip: Control -> string -> string option -> unit) =
     let mutable gap = false
 
-    let tipOn (controls: Control list) (tip: string option) =
-        tip |> Option.iter (fun t -> for c in controls do setTip c t)
+    let tipOn (controls: Control list) (tip: string option) (key: string option) =
+        tip |> Option.iter (fun t -> for c in controls do setTip c t key)
 
     let addRow (controls: (Control * int) list) =
         // The space between the groups of settings (AddGap)
@@ -158,23 +159,23 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
     // enabled: whether it can be changed (e.g. Dragged Lock for a drag trigger only); indent: an
     // option of the setting above (e.g. of the mouse trigger)
     member _.AddCheck (engText: string, get: unit -> bool, set: bool -> unit, ?enabled: unit -> bool, ?indent: bool,
-                       ?tip: string) =
+                       ?tip: string, ?key: string) =
         let cb = checkBox engText get set
         enabled |> Option.iter (fun f -> register { refresh = (fun () -> cb.Enabled <- f()); retext = ignore })
         if defaultArg indent false then
             cb.Margin <- Padding(cb.Margin.Left + 16, cb.Margin.Top, cb.Margin.Right, cb.Margin.Bottom)
-        tipOn [cb] tip
+        tipOn [cb] tip key
         addRow [cb :> Control, 3]
 
     // A check box with the ComboBox of its choice on its right, enabled while it is checked (e.g.
     // the keyboard trigger and its key)
     member _.AddCheckComboBox (engText: string, get: unit -> bool, set: bool -> unit,
                                items: (string * string) list, isCurrent: string -> bool, setItem: string -> unit,
-                               ?tip: string) =
+                               ?tip: string, ?key: string) =
         let check = checkBox engText get set
         let cb = comboBox items isCurrent setItem
         register { refresh = (fun () -> cb.Enabled <- check.Checked); retext = ignore }
-        tipOn [check; cb] tip
+        tipOn [check; cb] tip key
         addRow [check :> Control, 1; cb :> Control, 2]
 
     // A button of an action (e.g. Restart as administrator), with an image before its text. enabled:
@@ -192,7 +193,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register {
             refresh = (fun () -> enabled |> Option.iter (fun f -> b.Enabled <- f()))
             retext = (fun () -> b.Text <- conv engText) }
-        tipOn [b] tip
+        tipOn [b] tip None
         addRow [b :> Control, 3]
 
     // A short note in gray (e.g. what a setting of the page depends on)
@@ -204,7 +205,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range). enabled:
     // as AddCheck; unit: shown after the range (e.g. ms).
     member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit, ?enabled: unit -> bool,
-                        ?unit: string, ?tip: string) =
+                        ?unit: string, ?tip: string, ?key: string) =
         // Wider in the modern styles: their up and down buttons are side by side (at 96 DPI, scaled
         // with the dialog)
         let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up,
@@ -244,21 +245,21 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
                     let b = f()
                     for c in [l :> Control; n; range] do c.Enabled <- b)
                 retext = ignore })
-        tipOn [l; n] tip
+        tipOn [l; n] tip key
         addRow [l :> Control, 1; n :> Control, 1; range :> Control, 1]
 
     // items: the IDs of the choices and their texts; isCurrent: whether the ID is the setting
     member _.AddComboBox (engText: string, items: (string * string) list, isCurrent: string -> bool, set: string -> unit,
-                          ?tip: string) =
+                          ?tip: string, ?key: string) =
         let cb = comboBox items isCurrent set
         let l = label engText
-        tipOn [l; cb] tip
+        tipOn [l; cb] tip key
         addRow [l :> Control, 1; cb :> Control, 2]
 
     // A group of its own (one panel): the other radio buttons of the page are not unchecked.
     // enabled: as AddCheck.
     member _.AddRadioButtons (items: (string * string) list, isCurrent: string -> bool, set: string -> unit,
-                              ?enabled: unit -> bool, ?tip: string) =
+                              ?enabled: unit -> bool, ?tip: string, ?key: string) =
         let panel = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                         FlowDirection = FlowDirection.TopDown, WrapContents = false,
                                         Margin = Padding(16, 0, 0, 0))
@@ -268,7 +269,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             register {
                 refresh = (fun () -> rb.Checked <- isCurrent id)
                 retext = (fun () -> rb.Text <- conv engText) }
-            tipOn [rb] tip
+            tipOn [rb] tip key
             panel.Controls.Add(rb))
         enabled |> Option.iter (fun f -> register { refresh = (fun () -> panel.Enabled <- f()); retext = ignore })
         addRow [panel :> Control, 3]
@@ -333,12 +334,16 @@ type SettingsDialog(conv: string -> string) =
     // The short explanations of the settings, shown longer than the default (5 s) to be read
     let tips = new ToolTip(AutoPopDelay = 20000, InitialDelay = 500)
     // Also on the controls inside c: a NumericUpDown is covered by its text box and its buttons,
-    // which have their own tooltips (and are found under the mouse when it is disabled)
-    let setTip (c: Control) (engText: string) =
+    // which have their own tooltips (and are found under the mouse when it is disabled). key: the
+    // name of the setting in the properties file, on a line of its own.
+    let setTip (c: Control) (engText: string) (key: string option) =
         register {
             refresh = ignore
             retext = (fun () ->
-                let text = conv engText
+                let text =
+                    match key with
+                    | Some k -> sprintf "%s%s(%s)" (conv engText) Environment.NewLine k
+                    | None -> conv engText
                 tips.SetToolTip(c, text)
                 for child in c.Controls do tips.SetToolTip(child, text)) }
 
