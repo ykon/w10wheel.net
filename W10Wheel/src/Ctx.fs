@@ -1324,20 +1324,17 @@ let isAdminCheckWithProp () =
     | None -> true
 
 // Do not ask again (at startup, before loadProperties): adminCheck false written in the file of the
-// selected properties at once, its other keys kept (storeProperties would write the default values
-// of the other settings, not loaded yet), and in prop: the first load does not read the file again
-// if loadPropertiesFileOnly has read it, and it would be stored as true at exit.
+// selected properties at once, its other lines kept as storeProperties keeps them (which would
+// write the default values of the other settings, not loaded yet), and in prop: the first load
+// does not read the file again if loadPropertiesFileOnly has read it, and it would be stored as
+// true at exit.
 let storeNoAdminCheck () =
     prop.SetBool(DataID.adminCheck, false)
     try
         let path = getSelectedPropertiesPath()
         let file = Properties.Properties()
-        try
-            file.Load(path, true)
-        with
-            | :? FileNotFoundException -> ()
         file.SetBool(DataID.adminCheck, false)
-        file.Store(path)
+        if File.Exists(path) then file.Update(path, [DataID.adminCheck]) else file.Store(path)
     with
         | e -> Debug.WriteLine("storeNoAdminCheck: " + e.Message)
 
