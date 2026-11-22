@@ -121,8 +121,15 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register { refresh = (fun () -> cb.Enabled <- check.Checked); retext = ignore }
         addRow [check :> Control, 1; cb :> Control, 2]
 
-    // A number out of its range cannot be entered (NumericUpDown keeps it in the range)
-    member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit) =
+    // A short note in gray (e.g. what a setting of the page depends on)
+    member _.AddNote (engText: string) =
+        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = SystemColors.GrayText)
+        register { refresh = ignore; retext = (fun () -> l.Text <- conv engText) }
+        addRow [l :> Control, 3]
+
+    // A number out of its range cannot be entered (NumericUpDown keeps it in the range). enabled:
+    // as AddCheck.
+    member _.AddNumber (name: string, low: int, up: int, get: unit -> int, set: int -> unit, ?enabled: unit -> bool) =
         // Wider in the modern styles: their up and down buttons are side by side (at 96 DPI, scaled
         // with the dialog)
         let n = new NumericUpDown(Minimum = decimal low, Maximum = decimal up,
@@ -151,15 +158,24 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             retext = ignore }
 
         let range = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Text = sprintf "(%d - %d)" low up)
-        addRow [label name :> Control, 1; n :> Control, 1; range :> Control, 1]
+        let l = label name
+        enabled |> Option.iter (fun f ->
+            register {
+                refresh = (fun () ->
+                    let b = f()
+                    for c in [l :> Control; n; range] do c.Enabled <- b)
+                retext = ignore })
+        addRow [l :> Control, 1; n :> Control, 1; range :> Control, 1]
 
     // items: the IDs of the choices and their texts; isCurrent: whether the ID is the setting
     member _.AddComboBox (engText: string, items: (string * string) list, isCurrent: string -> bool, set: string -> unit) =
         let cb = comboBox items isCurrent set
         addRow [label engText :> Control, 1; cb :> Control, 2]
 
-    // A group of its own (one panel): the other radio buttons of the page are not unchecked
-    member _.AddRadioButtons (items: (string * string) list, isCurrent: string -> bool, set: string -> unit) =
+    // A group of its own (one panel): the other radio buttons of the page are not unchecked.
+    // enabled: as AddCheck.
+    member _.AddRadioButtons (items: (string * string) list, isCurrent: string -> bool, set: string -> unit,
+                              ?enabled: unit -> bool) =
         let panel = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                         FlowDirection = FlowDirection.TopDown, WrapContents = false,
                                         Margin = Padding(16, 0, 0, 0))
@@ -170,6 +186,7 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
                 refresh = (fun () -> rb.Checked <- isCurrent id)
                 retext = (fun () -> rb.Text <- conv engText) }
             panel.Controls.Add(rb))
+        enabled |> Option.iter (fun f -> register { refresh = (fun () -> panel.Enabled <- f()); retext = ignore })
         addRow [panel :> Control, 3]
 
 // The dialog: the properties at the top (AddPropertiesComboBox, AddPropertiesButton), the pages

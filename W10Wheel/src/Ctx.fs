@@ -1444,9 +1444,14 @@ let private createSettingsDialog () =
 
     let addBool (page: SettingsForm.SettingsPage) engText id =
         page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id)
+    // enabled: whether the setting is used (see Windows.initScroll), else grayed
+    let addBoolIf (page: SettingsForm.SettingsPage) engText id enabled =
+        page.AddCheck(engText, (fun () -> getBooleanOfName id), setBooleanOfName id, enabled = enabled)
     // The ranges of loadProperties
     let addNumber (page: SettingsForm.SettingsPage) id low up =
         page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id)
+    let addNumberIf (page: SettingsForm.SettingsPage) id low up enabled =
+        page.AddNumber(id, low, up, (fun () -> getNumberOfName id), setNumberOfName id, enabled = enabled)
 
     dialog.AddPropertiesLabel "Properties"
     dialog.AddPropertiesComboBox(
@@ -1495,34 +1500,48 @@ let private createSettingsDialog () =
     addBool scroll "Reverse Scroll (Flip)" DataID.reverseScroll
     addBool scroll "Swap Scroll (V.H)" DataID.swapScroll
     scroll.AddGap()
-    addNumber scroll DataID.verticalThreshold 0 500
-    addNumber scroll DataID.horizontalThreshold 0 500
+    // The thresholds of the standard scroll: not with VH Adjuster (Windows.initStdMode)
+    addNumberIf scroll DataID.verticalThreshold 0 500 (fun () -> not (isVhAdjusterMode()))
+    addNumberIf scroll DataID.horizontalThreshold 0 500
+        (fun () -> isHorizontalScroll() && not (isVhAdjusterMode()))
 
+    // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
     let accel = dialog.AddPage "Accel Table"
-    addBool accel "Enabled" DataID.accelTable
-    accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier)
+    let accelUsed () = not (isRealWheelMode())
+    let customUsed () = not Accel.CustomDisabled && Accel.CustomTable
+    addBoolIf accel "Enabled" DataID.accelTable accelUsed
+    // The multipliers are not used with the custom table (getAccelMultiplier)
+    accel.AddRadioButtons(accelItems, (fun id -> id = Accel.Multiplier.Name), setAccelMultiplier,
+                          enabled = (fun () -> accelUsed() && Accel.Table && not (customUsed())))
     accel.AddCheck("Custom Table", (fun () -> getBooleanOfName DataID.customAccelTable),
-                   setBooleanOfName DataID.customAccelTable, enabled = (fun () -> not Accel.CustomDisabled))
+                   setBooleanOfName DataID.customAccelTable,
+                   enabled = (fun () -> accelUsed() && Accel.Table && not Accel.CustomDisabled))
+    accel.AddNote "Not used while Real Wheel Mode is enabled."
 
     let realWheel = dialog.AddPage "Real Wheel Mode"
     addBool realWheel "Enabled" DataID.realWheelMode
     realWheel.AddGap()
-    addNumber realWheel DataID.wheelDelta 10 500
-    addNumber realWheel DataID.vWheelMove 10 500
-    addNumber realWheel DataID.hWheelMove 10 500
+    addNumberIf realWheel DataID.wheelDelta 10 500 isRealWheelMode
+    addNumberIf realWheel DataID.vWheelMove 10 500 isRealWheelMode
+    addNumberIf realWheel DataID.hWheelMove 10 500 isRealWheelMode
     realWheel.AddGap()
-    addBool realWheel DataID.quickFirst DataID.quickFirst
-    addBool realWheel DataID.quickTurn DataID.quickTurn
+    addBoolIf realWheel DataID.quickFirst DataID.quickFirst isRealWheelMode
+    addBoolIf realWheel DataID.quickTurn DataID.quickTurn isRealWheelMode
 
+    // Used with Horizontal Scroll only (isVhAdjusterMode)
     let vhAdjuster = dialog.AddPage "VH Adjuster"
     vhAdjuster.AddCheck("Enabled", (fun () -> getBooleanOfName DataID.vhAdjusterMode),
                         setBooleanOfName DataID.vhAdjusterMode, enabled = (fun () -> Scroll.Horizontal))
     vhAdjuster.AddRadioButtons([DataID.Fixed, "Fixed"; DataID.Switching, "Switching"],
-                               (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod)
+                               (fun id -> getVhAdjusterMethodOfName id = getVhAdjusterMethod()), setVhAdjusterMethod,
+                               enabled = isVhAdjusterMode)
     vhAdjuster.AddGap()
-    addBool vhAdjuster DataID.firstPreferVertical DataID.firstPreferVertical
-    addNumber vhAdjuster DataID.firstMinThreshold 1 10
-    addNumber vhAdjuster DataID.switchingThreshold 10 500
+    addBoolIf vhAdjuster DataID.firstPreferVertical DataID.firstPreferVertical isVhAdjusterMode
+    addNumberIf vhAdjuster DataID.firstMinThreshold 1 10 isVhAdjusterMode
+    // For Switching only (Windows.switchVHD)
+    addNumberIf vhAdjuster DataID.switchingThreshold 10 500
+        (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
+    vhAdjuster.AddNote "Used when Horizontal Scroll (Scroll) is enabled."
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     retextSettingsDialog <- dialog.RetextLater

@@ -40,6 +40,8 @@ let private JapaneseMessage =
         "Changes are applied and saved at once.", "変更はすぐに反映・保存されます。";
         "Close", "閉じる";
         "Reset to defaults", "既定値に戻す";
+        "Not used while Real Wheel Mode is enabled.", "リアルホイールモードが有効な間は使われません。";
+        "Used when Horizontal Scroll (Scroll) is enabled.", "水平スクロール (スクロール) が有効なときに使われます。";
         "Reset all the settings to their defaults? The language is kept.", "すべての設定を既定値に戻しますか？ 言語は変わりません。";
 
         "Trigger", "トリガー";
