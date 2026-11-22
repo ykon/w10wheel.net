@@ -112,6 +112,12 @@ let askText (owner: IWin32Window) (conv: string -> string) (title: string) (prom
 
     if f.ShowDialog(owner) = DialogResult.OK && box.Text <> "" then Some(box.Text) else None
 
+// The kind of a note of a page (SettingsPage.AddNote, AddStatus): its icon (the stock icons of
+// Windows) and its color. Warning: a setting does not work as it is set (e.g. no trigger), in the
+// color of the texts; Info: an explanation (e.g. what a setting depends on), in gray.
+[<RequireQualifiedAccess>]
+type NoteKind = Info | Warning
+
 // A page: rows of a label and a control (with the range of a number), or of a check box. A
 // change by the user sets the setting and calls changed (changedLater for a number); a change by
 // refresh (isRefreshing) does not. tip (of the Add methods): an English text shown on the controls
@@ -169,6 +175,49 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         register { refresh = (fun () -> cb.Checked <- get()); retext = (fun () -> cb.Text <- conv engText) }
         cb
 
+    // A note with the icon of its kind before it (getNote: its kind and its text, already
+    // converted; None: an empty row). Its row keeps the height of a line when empty, so that the
+    // page does not grow beyond its area when it shows (the area is fitted at Show). The icon is as
+    // high as a line of the text: made again when the font changes (another DPI) or the kind.
+    let addNote (getNote: unit -> (NoteKind * string) option) (indent: bool) =
+        // The margins of the label it replaces (Label: 3, 0, 3, 0)
+        let panel = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                        WrapContents = false, Anchor = AnchorStyles.Left,
+                                        Margin = Padding((if indent then 19 else 3), 0, 3, 0))
+        // Anchor Left (not Top): centered on the line of the text
+        let icon = new PictureBox(SizeMode = PictureBoxSizeMode.AutoSize, Anchor = AnchorStyles.Left,
+                                  Margin = Padding.Empty, Visible = false)
+        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(4, 0, 0, 0))
+        panel.Controls.Add(icon)
+        panel.Controls.Add(l)
+        let mutable shownIcon = None
+        let setIcon (kind: NoteKind) =
+            let size = l.Font.Height
+            if shownIcon <> Some(kind, size) then
+                let id = match kind with NoteKind.Warning -> StockIconId.Warning | NoteKind.Info -> StockIconId.Info
+                use ico = SystemIcons.GetStockIcon(id, size)
+                let old = icon.Image
+                icon.Image <- ico.ToBitmap()
+                if not (isNull old) then old.Dispose()
+                shownIcon <- Some(kind, size)
+        icon.Disposed.Add(fun _ -> if not (isNull icon.Image) then icon.Image.Dispose())
+        let show () =
+            match getNote() with
+            | Some(kind, text) ->
+                l.Text <- text
+                l.ForeColor <- if kind = NoteKind.Warning then SystemColors.ControlText else SystemColors.GrayText
+                setIcon kind
+                icon.Visible <- true
+            | None ->
+                l.Text <- ""
+                icon.Visible <- false
+        register {
+            refresh = show
+            retext = (fun () ->
+                l.MinimumSize <- Size(0, l.Font.Height)
+                show ()) }
+        addRow [panel :> Control, 3]
+
     member _.AddGap () =
         gap <- true
 
@@ -212,28 +261,15 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         tipOn [b] tip None
         addRow [b :> Control, 3]
 
-    // A short note in gray (e.g. what a setting of the page depends on)
-    member _.AddNote (engText: string) =
-        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = SystemColors.GrayText)
-        register { refresh = ignore; retext = (fun () -> l.Text <- conv engText) }
-        addRow [l :> Control, 3]
+    // A short note (e.g. what a setting of the page depends on): Info if no kind
+    member _.AddNote (engText: string, ?kind: NoteKind) =
+        let kind = defaultArg kind NoteKind.Info
+        addNote (fun () -> Some(kind, conv engText)) false
 
-    // A text that follows the settings (getText: already converted, empty if none): e.g. the state
-    // of the custom table. Its row keeps the height of a line when empty, so that the page does
-    // not grow beyond its area when it shows (the area is fitted at Show). warning: in the color of
-    // the texts, not gray; indent: as AddCheck.
-    member _.AddStatus (getText: unit -> string, ?warning: bool, ?indent: bool) =
-        let color = if defaultArg warning false then SystemColors.ControlText else SystemColors.GrayText
-        let l = new Label(AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = color)
-        if defaultArg indent false then
-            l.Margin <- Padding(l.Margin.Left + 16, l.Margin.Top, l.Margin.Right, l.Margin.Bottom)
-        let show () = l.Text <- getText()
-        register {
-            refresh = show
-            retext = (fun () ->
-                l.MinimumSize <- Size(0, l.Font.Height)
-                show ()) }
-        addRow [l :> Control, 3]
+    // A note that follows the settings (getNote: its kind and its text, already converted; None if
+    // none): e.g. the state of the custom table. indent: as AddCheck.
+    member _.AddStatus (getNote: unit -> (NoteKind * string) option, ?indent: bool) =
+        addNote getNote (defaultArg indent false)
 
     // A number out of its range cannot be entered (NumericUpDown keeps it in the range). enabled:
     // as AddCheck; unit: shown after the range (e.g. ms).

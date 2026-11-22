@@ -1670,7 +1670,7 @@ let private createSettingsDialog () =
     general.AddGap()
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
-        general.AddNote "W10Wheel is not running as administrator"
+        general.AddNote("W10Wheel is not running as administrator", SettingsForm.NoteKind.Warning)
         use shield = Drawing.SystemIcons.GetStockIcon(Drawing.StockIconId.Shield, Drawing.StockIconOptions.SmallIcon)
         general.AddButton("Restart as administrator", restartAsAdmin, image = shield.ToBitmap(),
                           enabled = (fun () -> not restarting),
@@ -1709,8 +1709,9 @@ let private createSettingsDialog () =
         "A trigger released within this time locks scroll mode."
     // Neither trigger: nothing starts scroll mode
     trigger.AddStatus((fun () ->
-        if isNoneTrigger() && not (getBooleanOfName DataID.keyboardHook) then convLang "Scrolling is disabled."
-        else ""), warning = true)
+        if isNoneTrigger() && not (getBooleanOfName DataID.keyboardHook) then
+            Some(SettingsForm.NoteKind.Warning, convLang "Scrolling is disabled.")
+        else None))
 
     let scroll = dialog.AddPage "Scroll"
     addBool scroll "Cursor Change" DataID.cursorChange "Changes the cursor in scroll mode."
@@ -1743,12 +1744,13 @@ let private createSettingsDialog () =
     // The custom table as read from the properties: why it cannot be checked
     accel.AddStatus((fun () ->
         match customTableState with
-        | CustomNotWritten -> convLang "Not written in the properties file."
-        | CustomInvalid why -> convLang why
+        | CustomNotWritten -> Some(SettingsForm.NoteKind.Info, convLang "Not written in the properties file.")
+        | CustomInvalid why -> Some(SettingsForm.NoteKind.Warning, convLang why)
         | CustomLoaded(t, m) ->
             let num (d: float) = d.ToString(Globalization.CultureInfo.InvariantCulture)
-            String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
-                          t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1])), indent = true)
+            Some(SettingsForm.NoteKind.Info,
+                 String.Format(convLang "Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})",
+                               t.Length, t.[0], t.[t.Length - 1], num m.[0], num m.[m.Length - 1]))), indent = true)
     accel.AddNote "Not used while Real Wheel Mode is enabled."
 
     let realWheel = dialog.AddPage "Real Wheel Mode"
