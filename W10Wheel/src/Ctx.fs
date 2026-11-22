@@ -1479,6 +1479,9 @@ let private createSettingsDialog () =
     trigger.AddCheck("Dragged Lock", (fun () -> getBooleanOfName DataID.draggedLock),
                      setBooleanOfName DataID.draggedLock, enabled = isDragTrigger, indent = true)
     trigger.AddCheckComboBox("Keyboard", (fun () -> getBooleanOfName DataID.keyboardHook), (fun b ->
+                                 // Without a key (None, from the properties of 2.8.x and before:
+                                 // not in the list), the default key: Keyboard checked would do nothing
+                                 if b && isNoneTriggerKey() then setTargetVKCode DataID.VK_NONCONVERT
                                  setBooleanOfName DataID.keyboardHook b
                                  setKeyboardHookOf b),
                              keyboardItems, (fun id -> Keyboard.getVKCode id = getTargetVKCode()), setTargetVKCode)
