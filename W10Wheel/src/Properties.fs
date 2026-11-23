@@ -27,7 +27,8 @@ let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
 // - a symbolic link (a reparse point): it stays a link, its target is written
 // - the replacement failed (e.g. the file open in another program that does not share its
 //   deletion, the temporary file being scanned): tried a few times first. The temporary file has
-//   been written, so the disk had room.
+//   been written, so the disk had room, which its deletion gives back first (the new lines may
+//   need more than the old).
 let private writeLines (path: string) (lines: string[]): unit =
     let attrs = if File.Exists(path) then Some(File.GetAttributes(path)) else None
     let direct () = File.WriteAllLines(path, lines)
@@ -38,30 +39,32 @@ let private writeLines (path: string) (lines: string[]): unit =
         // A name of its own (as the Java version, which shares the file): not another's being written
         let dir = Path.GetDirectoryName(Path.GetFullPath(path))
         let tmp = Path.Combine(dir, sprintf "%s-%s.tmp" (Path.GetFileName(path)) (Guid.NewGuid().ToString("N").Substring(0, 8)))
-        try
-            do
-                use fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None)
-                use w = new StreamWriter(fs, UTF8Encoding(false))
-                lines |> Array.iter w.WriteLine
-                w.Flush()
-                fs.Flush(true)
-            let replace () =
-                if attrs.IsSome then File.Replace(tmp, path, null) else File.Move(tmp, path)
-            let rec tryReplace n =
-                try
-                    replace ()
-                    true
-                with
-                    | :? IOException | :? UnauthorizedAccessException when n > 1 ->
-                        Thread.Sleep(20)
-                        tryReplace (n - 1)
-                    | :? IOException | :? UnauthorizedAccessException -> false
-            if not (tryReplace 5) then
-                Debug.WriteLine("writeLines: not replaced, written directly: " + path)
-                direct ()
-        finally
-            // Not over the error of the write
-            try File.Delete(tmp) with _ -> ()
+        let replaced =
+            try
+                do
+                    use fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None)
+                    use w = new StreamWriter(fs, UTF8Encoding(false))
+                    lines |> Array.iter w.WriteLine
+                    w.Flush()
+                    fs.Flush(true)
+                let replace () =
+                    if attrs.IsSome then File.Replace(tmp, path, null) else File.Move(tmp, path)
+                let rec tryReplace n =
+                    try
+                        replace ()
+                        true
+                    with
+                        | :? IOException | :? UnauthorizedAccessException when n > 1 ->
+                            Thread.Sleep(20)
+                            tryReplace (n - 1)
+                        | :? IOException | :? UnauthorizedAccessException -> false
+                tryReplace 5
+            finally
+                // Not over the error of the write
+                try File.Delete(tmp) with _ -> ()
+        if not replaced then
+            Debug.WriteLine("writeLines: not replaced, written directly: " + path)
+            direct ()
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
