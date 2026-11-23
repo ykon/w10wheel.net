@@ -165,8 +165,8 @@ let private JapaneseMessage =
         "Remove", "削除";
         "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed",
             "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます";
-        "In the windows of these programs, scrolling is disabled: the buttons and the key do what they usually do",
-            "登録したプログラムのウィンドウ上ではスクロール機能が無効になり、ボタンやキーは本来の動作を行います";
+        "In the windows of these programs, scrolling is disabled",
+            "登録したプログラムのウィンドウ上ではスクロール機能が無効になります";
         "Select programs to exclude", "除外するプログラムの選択";
         "Programs", "プログラム";
         "The exclusions file could not be read: changes are not saved", "除外リストのファイルを読み込めませんでした (変更は保存されません)";

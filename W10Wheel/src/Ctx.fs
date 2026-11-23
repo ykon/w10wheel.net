@@ -2044,7 +2044,7 @@ let private createSettingsDialog () =
             Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
         else
             None)
-    excluded.AddNote "In the windows of these programs, scrolling is disabled: the buttons and the key do what they usually do"
+    excluded.AddNote "In the windows of these programs, scrolling is disabled"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     refreshSettingsLater <- dialog.RefreshLater
