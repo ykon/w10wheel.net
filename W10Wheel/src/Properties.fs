@@ -280,9 +280,13 @@ let readExclusions (path:string): string[] =
         | :? FileNotFoundException -> [||]
 
 // Written whole (as writeLines writes the properties: a write that fails leaves the file as it
-// was), or deleted when there is none (not found: the default, none)
+// was), or deleted when there is none (not found: the default, none). A symbolic link (a reparse
+// point) is emptied instead: it stays a link, as writeLines keeps it.
 let writeExclusions (path:string) (paths:string[]): unit =
-    if paths.Length = 0 then
+    let isLink () =
+        try File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)
+        with :? FileNotFoundException | :? DirectoryNotFoundException -> false
+    if paths.Length = 0 && not (isLink ()) then
         File.Delete(path)
     else
         writeLines path paths
