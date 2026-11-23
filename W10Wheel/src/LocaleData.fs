@@ -163,10 +163,10 @@ let private JapaneseMessage =
         "Excluded Programs", "除外するプログラム";
         "Add...", "追加...";
         "Remove", "削除";
-        "The programs (.exe) in whose windows the triggers do nothing\nThe window under the cursor when a trigger is pressed",
-            "トリガーで何もしないプログラム (.exe) です\nトリガーを押したときのカーソルの下のウィンドウで判定します";
-        "In the windows of these programs, the triggers do not scroll: the buttons and the key work as usual",
-            "これらのプログラムのウィンドウでは、トリガーでスクロールせず、ボタンやキーは通常どおり動作します";
+        "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed",
+            "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます";
+        "In the windows of these programs, scrolling is disabled: the buttons and the key do what they usually do",
+            "登録したプログラムのウィンドウ上ではスクロール機能が無効になり、ボタンやキーは本来の動作を行います";
         "Select programs to exclude", "除外するプログラムの選択";
         "Programs", "プログラム";
         "A program whose path has # cannot be added", "パスに # を含むプログラムは追加できません";

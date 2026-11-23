@@ -1999,9 +1999,9 @@ let private createSettingsDialog () =
 
     let excluded = dialog.AddPage "Excluded Programs"
     excluded.AddList(getExcludedPrograms, setExcludedPrograms, askExcludedPrograms dialog.Owner, "Add...", "Remove",
-                     tip = "The programs (.exe) in whose windows the triggers do nothing\nThe window under the cursor when a trigger is pressed",
+                     tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed",
                      key = DataID.excludedPrograms)
-    excluded.AddNote "In the windows of these programs, the triggers do not scroll: the buttons and the key work as usual"
+    excluded.AddNote "In the windows of these programs, scrolling is disabled: the buttons and the key do what they usually do"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     refreshSettingsLater <- dialog.RefreshLater
