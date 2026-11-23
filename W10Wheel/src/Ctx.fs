@@ -1628,7 +1628,7 @@ let private restartAsAdmin (owner: IWin32Window) =
         // If some could not be (e.g. a read-only file), the new one would load the file without
         // them, and this one could not store them at its exit either: asked as when switching.
         storeProperties()
-        if not (confirmUnstoredLoss owner "Restarting loses the settings changed in these properties."
+        if not (confirmUnstoredLoss owner "Restarting loses the changes that could not be saved."
                                     "Restart as administrator") then
             restarting <- false
             refreshSettingsDialog()
@@ -1696,7 +1696,7 @@ let private resetSettings (owner: IWin32Window) =
 // settings, their changes not stored), and why is shown.
 let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    if not (confirmUnstoredLoss owner "Switching loses the settings changed in these properties." "Switch") then
+    if not (confirmUnstoredLoss owner "Switching loses the changes that could not be saved." "Switch") then
         // The current properties selected again in the list
         refreshSettingsDialog()
     else
