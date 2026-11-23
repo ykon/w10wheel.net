@@ -26,9 +26,10 @@ let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
 // - a read-only file: not opened, the error says so with its path (nothing written), as before
 // - a symbolic link (a reparse point): it stays a link, its target is written
 // - the replacement failed (e.g. the file open in another program that does not share its
-//   deletion, the temporary file being scanned): tried a few times first. The temporary file has
-//   been written, so the disk had room, which its deletion gives back first (the new lines may
-//   need more than the old).
+//   deletion, the temporary file being scanned): tried 3 times first, 10 ms apart (about 16 ms
+//   each with the timer of Windows: about 31 ms in all), not longer as this thread also runs the
+//   low-level hooks (the mouse stops meanwhile). The temporary file has been written, so the disk
+//   had room, which its deletion gives back first (the new lines may need more than the old).
 let private writeLines (path: string) (lines: string[]): unit =
     let attrs = if File.Exists(path) then Some(File.GetAttributes(path)) else None
     let direct () = File.WriteAllLines(path, lines)
@@ -55,10 +56,10 @@ let private writeLines (path: string) (lines: string[]): unit =
                         true
                     with
                         | :? IOException | :? UnauthorizedAccessException when n > 1 ->
-                            Thread.Sleep(20)
+                            Thread.Sleep(10)
                             tryReplace (n - 1)
                         | :? IOException | :? UnauthorizedAccessException -> false
-                tryReplace 5
+                tryReplace 3
             finally
                 // Not over the error of the write
                 try File.Delete(tmp) with _ -> ()
