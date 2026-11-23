@@ -44,9 +44,13 @@ let private writeLines (path: string) (lines: string[]): unit =
                   || a.HasFlag(FileAttributes.Directory) ->
         direct ()
     | _ ->
-        // A name of its own (as the Java version, which shares the file): not another's being written
+        // A name of its own (as the Java version, which shares the file): not another's being written.
+        // At most 255 characters as any file name: the name of the file cut if it is too long (it can
+        // be, the names of properties have no limit).
         let dir = Path.GetDirectoryName(Path.GetFullPath(path))
-        let tmp = Path.Combine(dir, sprintf "%s-%s.tmp" (Path.GetFileName(path)) (Guid.NewGuid().ToString("N").Substring(0, 8)))
+        let suffix = sprintf "-%s.tmp" (Guid.NewGuid().ToString("N").Substring(0, 8))
+        let name = Path.GetFileName(path)
+        let tmp = Path.Combine(dir, name.Substring(0, min name.Length (255 - suffix.Length)) + suffix)
         let replaced =
             try
                 do
