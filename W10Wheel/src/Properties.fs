@@ -22,7 +22,9 @@ let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
 // temporary file in its folder, flushed to the disk, which then replaces it: a write that fails
 // (e.g. a full disk, W10Wheel or Windows ended meanwhile) leaves the file as it was, not half
 // written or empty. File.Replace keeps the attributes of the file (e.g. hidden, which the direct
-// write cannot open) and its permissions. Written directly as before:
+// write cannot open) and its permissions; if it cannot merge them (e.g. a file system without them,
+// a network share), the file is still replaced: not written directly at each change for this.
+// Written directly as before:
 // - a read-only file: not opened, the error says so with its path (nothing written), as before
 // - a symbolic link (a reparse point): it stays a link, its target is written
 // - the replacement failed (e.g. the file open in another program that does not share its
@@ -49,7 +51,7 @@ let private writeLines (path: string) (lines: string[]): unit =
                     w.Flush()
                     fs.Flush(true)
                 let replace () =
-                    if attrs.IsSome then File.Replace(tmp, path, null) else File.Move(tmp, path)
+                    if attrs.IsSome then File.Replace(tmp, path, null, true) else File.Move(tmp, path)
                 let rec tryReplace n =
                     try
                         replace ()
