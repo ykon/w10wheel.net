@@ -29,7 +29,7 @@ let private inputQueue = new BlockingCollection<int * WinAPI.MINPUT[]>()
 // leaving the remapped button pressed.
 let private BATCH_INPUT_INTERVAL_MS = 10
 
-// Held while a batch is being sent, so that closeInput can wait for it at exit
+// Held while a batch is being sent (by the sender thread only, see closeInput)
 let private sendLock = new Object()
 
 // Set at exit (beginClose): no more inputs are sent but the ups (single), so that no button is
@@ -164,10 +164,10 @@ let private sendUps (ups: WinAPI.MINPUT[]) =
 let private isSingleUp (msgs: WinAPI.MINPUT[]) =
     msgs.Length = 1 && isUp msgs.[0]
 
-// At exit, an up for a down resent earlier is still sent. But the hooks are removed (or are
-// about to be), and nothing drops the up resent for a down resent alone that was not sent (see
-// dropResent): it is sent only if that down was, or it would be an up without a down (e.g. a
-// right up opens a context menu).
+// At exit, an up for a down resent earlier is still sent. But it is sent after the hooks are
+// removed (when the mark of closeInput comes, see closeOnSender), and nothing drops the up resent
+// for a down resent alone that was not sent (see dropResent): it is sent only if that down was,
+// or it would be an up without a down (e.g. a right up opens a context menu).
 let private isSendableAtExit (msgs: WinAPI.MINPUT[]) =
     isSingleUp msgs &&
         match inputResendKind msgs.[0] with
@@ -176,9 +176,10 @@ let private isSendableAtExit (msgs: WinAPI.MINPUT[]) =
 
 let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
     if Volatile.Read(&closing.contents) then
-        // At exit: an up for a down resent earlier is still sent (see closeInput)
+        // At exit: an up for a down resent earlier is still sent, after the unsent ones, when the
+        // mark of closeInput comes (closeOnSender)
         if isSendableAtExit msgs then
-            sendUps msgs
+            addUnsent msgs
         else
             Debug.WriteLine("sendBatch: dropped (closing)")
     else
@@ -222,23 +223,28 @@ let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock 
 let beginClose () =
     Volatile.Write(closing, true)
 
-// Called at exit after the hooks are removed: waits for a batch being sent (its up included),
-// sends the ups still queued (for downs resent earlier) and tries again an up that could not be
-// sent. The other inputs queued are dropped.
+// Set by the sender thread when it has handled the mark of closeInput (closeOnSender)
+let private closeDone = new ManualResetEventSlim(false)
+
+// Called at exit after the hooks are removed: queues a mark (no inputs) and waits for the sender
+// thread to take it. Everything queued before it has been handled then, also the batch the
+// sender had taken already (taken just before closeInput, draining the queue here would not see
+// it, and the process could end before it is sent: the button would stay pressed). The ups
+// queued (for downs resent earlier) are sent after the unsent ones, tried once with retries. The
+// other inputs are dropped.
 let closeInput () =
     Volatile.Write(closing, true)
-    if Monitor.TryEnter(sendLock, 1000) then
-        try
-            let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
-            while inputQueue.TryTake(&item, 0) do
-                let _, msgs = item
-                if isSendableAtExit msgs then addUnsent msgs
-
-            retryUnsent true
-        finally
-            Monitor.Exit(sendLock)
-    else
+    inputQueue.Add((0, null))
+    if not (closeDone.Wait(1000)) then
         Debug.WriteLine("closeInput: timeout")
+
+// The mark of closeInput, on the sender thread: the ups of the batches before it (unsent, see
+// sendBatch) are sent, and closeInput is told
+let private closeOnSender () =
+    try
+        lock sendLock (fun () -> retryUnsent true)
+    finally
+        closeDone.Set()
 
 // While ups are unsent, they are tried again at this interval even if nothing is queued
 // (e.g. SendInput fails while the secure desktop is shown)
@@ -251,15 +257,17 @@ let private retryUnsentIdle () = lock sendLock (fun () ->
 
 let private senderThread = new Thread(fun () ->
     while true do
-        // Read without sendLock: written on this thread, and by closeInput at exit
+        // Read without sendLock: unsent is written on this thread only (also at exit, see
+        // closeOnSender), closing by beginClose and closeInput
         let retry =
             not (Volatile.Read(&closing.contents)) && not (isNull (Volatile.Read(&unsent.contents)))
         let timeout = if retry then UNSENT_RETRY_INTERVAL_MS else Timeout.Infinite
         let mutable item = Unchecked.defaultof<int * WinAPI.MINPUT[]>
 
         if inputQueue.TryTake(&item, timeout) then
-            let generation, msgs = item
-            sendBatch generation msgs
+            match item with
+            | _, null -> closeOnSender ()
+            | generation, msgs -> sendBatch generation msgs
         else
             retryUnsentIdle ()
         //let res = WinAPI.SendInput(uint32 msgs.Length, msgs, MINPUT_SIZE)

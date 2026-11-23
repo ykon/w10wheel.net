@@ -28,8 +28,9 @@ let setMouseDispatcher disp =
 let setKeyboardDispatcher disp =
     keyboardDispatcher <- disp
 
-let private __unhook hhk =
-    WinAPI.UnhookWindowsHookEx(hhk) |> ignore
+// Whether it was removed (false: e.g. Windows had removed it already, for a timeout)
+let private __unhook (hhk: nativeint): bool =
+    WinAPI.UnhookWindowsHookEx(hhk)
 
 let private __setMouseHook () =
     let hMod = WinAPI.GetModuleHandle(null)
@@ -58,6 +59,12 @@ let setMouseHook (): string option =
     Volatile.Write(mouseHhk, hhk)
     err
 
+// Whether the keyboard hook removed by the last install had been removed by Windows already
+// (UnhookWindowsHookEx failed): the keys may have been pressed and released meanwhile, with no
+// hook to see them (see KEventHandler.hookInstalled). Set by setKeyboardHook, on the UI thread.
+let mutable private oldKeyboardHookLost = false
+let isOldKeyboardHookLost () = oldKeyboardHookLost
+
 // None if installed, else the error message
 let setKeyboardHook (): string option =
     // setOrUnsetKeyboardHook true is called on every properties load (Reload, switching properties).
@@ -65,8 +72,7 @@ let setKeyboardHook (): string option =
     // only removes the last one). Installing anew also recovers a hook that Windows removed
     // silently because of a timeout (UnhookWindowsHookEx then just fails).
     let old = Volatile.Read(&keyboardHhk.contents)
-    if old <> IntPtr.Zero then
-        __unhook old
+    oldKeyboardHookLost <- old <> IntPtr.Zero && not (__unhook old)
 
     let hhk = __setKeyboardHook()
     let err = getHookError hhk
@@ -76,13 +82,13 @@ let setKeyboardHook (): string option =
 let unhookMouse () =
     let hhk = Volatile.Read(&mouseHhk.contents)
     if hhk <> IntPtr.Zero then
-        __unhook hhk
+        __unhook hhk |> ignore
         Volatile.Write(mouseHhk, IntPtr.Zero)
 
 let unhookKeyboard () =
     let hhk = Volatile.Read(&keyboardHhk.contents)
     if hhk <> IntPtr.Zero then
-        __unhook hhk
+        __unhook hhk |> ignore
         Volatile.Write(keyboardHhk, IntPtr.Zero)
         
 // None if done, else the error message of the install (shown by Ctx, translated)

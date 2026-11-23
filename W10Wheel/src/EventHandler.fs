@@ -41,6 +41,14 @@ let mutable private earlierDownSuppressed = false
 // (e.g. the LR trigger's wait would resend it). Reset by the up or the next down of the button.
 let private canceledDowns = Array.create 5 false
 
+// The downs of the left and right buttons resent alone (LR trigger: the wait timed out or was
+// ended by a move) whose up had not come when the trigger was changed (changeTrigger), by button:
+// their up is resent (and the physical one suppressed) before the handlers of the current
+// trigger, which do not resend it (e.g. the middle trigger's would pass it: if the resent down has
+// not reached the hook yet, the up is dropped as alone, then the down as late, a lost click).
+// Reset by the up or the next down of the button.
+let private resentDowns = Array.create 2 false
+
 let private buttonIndex (me: MouseEvent): int =
     match me with
     | LeftEvent(_) -> 0
@@ -56,6 +64,7 @@ let private initState () =
     dragged <- false
     triggerStarted <- NonEvent
     Array.fill canceledDowns 0 canceledDowns.Length false
+    Array.fill resentDowns 0 resentDowns.Length false
 
 let setInitStateMEH () =
     Ctx.setInitStateMEH initState
@@ -608,7 +617,9 @@ let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
     earlierDownSuppressed <- false
     if not (Windows.isInjectedEvent d) then
-        canceledDowns.[buttonIndex d] <- false
+        let i = buttonIndex d
+        canceledDowns.[i] <- false
+        if i < resentDowns.Length then resentDowns.[i] <- false
 
         // Before the reset (see checkSameLastEvent)
         earlierDownSuppressed <- Ctx.LastFlags.IsSuppressedDown d
@@ -622,7 +633,8 @@ let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nati
 
 let private procUpBody (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): nativeint =
     let i = buttonIndex u
-    if not (Windows.isInjectedEvent u) && canceledDowns.[i] then
+    let physical = not (Windows.isInjectedEvent u)
+    if physical && canceledDowns.[i] then
         canceledDowns.[i] <- false
 
         // As the handlers do for an up: Esc initializes the state (and passes the up), and the
@@ -632,6 +644,17 @@ let private procUpBody (proc: (MouseEvent -> nativeint) ref) (u: MouseEvent): na
         | None ->
             debug "suppress (the down was canceled by changing the trigger)" u
             lastEvent <- u
+            suppress().Value
+    elif physical && i < resentDowns.Length && resentDowns.[i] then
+        resentDowns.[i] <- false
+
+        // As checkResentDown does (after Esc, as lrUp)
+        match checkEscape u with
+        | Some(res) -> res
+        | None ->
+            debug "resendUp and suppress (the down was resent before changing the trigger)" u
+            lastEvent <- u
+            Windows.resendUp u
             suppress().Value
     else
         Volatile.Read(&proc.contents)(u)
@@ -748,6 +771,11 @@ let private changeTrigger (changed: bool): unit =
         // handlers could take their up first (e.g. a new LR trigger wait)
         Ctx.LastFlags.TakeSuppressedDowns() |> Array.iteri (fun i b ->
             if b then canceledDowns.[i] <- true)
+
+        // The downs resent alone (the wait timed out or was ended by a move): their up is resent
+        // before the new handlers, which would not resend it (see resentDowns)
+        Ctx.LastFlags.TakeResentDowns() |> Array.iteri (fun i b ->
+            if b then resentDowns.[i] <- true)
 
         triggerStarted <- NonEvent
         drag <- dragDefault

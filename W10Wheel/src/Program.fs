@@ -97,8 +97,8 @@ let private closeAll () =
     // This also waits for a scroll start in progress and refuses later ones.
     Ctx.closeScrollMode()
 
-    // Wait for a resent click being sent (so that its up is sent), send the ups still queued
-    // and stop sending
+    // Wait for the sender to handle what is queued (also a resent click being sent, or an up it
+    // has taken already: their ups are sent), send the ups still queued and stop sending
     Windows.closeInput()
 
     Ctx.storeProperties()
@@ -131,10 +131,11 @@ let private getBool (sl: string list): bool =
 // is selected then)
 let private setSelectedProperties name =
     // Default is always valid (its file is not written until a setting is changed or W10Wheel
-    // exits)
-    if name = Properties.DEFAULT_DEF || Properties.exists(name) then
-        Ctx.setSelectedProperties name
-    else
+    // exits). Other properties are selected by the name of their file (the case may differ).
+    let found = if name = Properties.DEFAULT_DEF then Some name else Properties.findName name
+    match found with
+    | Some n -> Ctx.setSelectedProperties n
+    | None ->
         Ctx.loadPropertiesFileOnly ()
         Dialog.errorMessage (sprintf "%s: %s" (convLangP "Properties does not exist") name) (convLangP "Error")
 

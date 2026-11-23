@@ -649,9 +649,10 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up has
-    // not come yet: their up alone is suppressed (the application did not get the down). Their
-    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) or the keyboard
+    // hook installed again (KEventHandler.hookInstalled) and whose up has not come yet: their up
+    // alone is suppressed (the application did not get the down). Their next down resets them (a
+    // repeat cannot be told from a new press, it is taken for one).
     static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
@@ -755,9 +756,13 @@ type LastFlags() =
     static member GetAndReset_LoneUpKey (vk: int): bool =
         isKey vk && getAndReset(&kdL.[vk])
 
-    // The keyboard hook is installed again: a key whose up was missed while it was removed may
-    // have been pressed since, its down passing (no hook): do not suppress its up
-    static member ResetLoneUpKeys () =
+    // The keyboard hook is installed again after Windows had removed the old one: a key may have
+    // been released and pressed again meanwhile, its down reaching the application (no hook). The
+    // records that would suppress its repeats or its up are forgotten (the passed keys, kdP, are
+    // kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a repeat,
+    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookInstalled).
+    static member ForgetSuppressedKeys () =
+        Array.fill kdS 0 kdS.Length false
         Array.fill kdL 0 kdL.Length false
 
     // The keyboard hook is removed: the ups will not be seen
@@ -770,6 +775,12 @@ type LastFlags() =
     static member TakeSuppressedDowns (): bool[] =
         let res = [| ldS; rdS; mdS; x1S; x2S |]
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        res
+
+    // The downs resent alone whose up has not come yet (left, right); resets them
+    static member TakeResentDowns (): bool[] =
+        let res = [| ldR; rdR |]
+        ldR <- false; rdR <- false
         res
 
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
@@ -1007,8 +1018,9 @@ let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
 let setChangeKeyboardTrigger f =
     changeKeyboardTrigger <- f
 
-// Called when the keyboard hook is installed (again): see KEventHandler.hookInstalled
-let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
+// Called when the keyboard hook is installed (again), with whether Windows had removed the old one:
+// see KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: bool -> unit = (fun _ -> ())
 
 let setKeyboardHookInstalled f =
     keyboardHookInstalled <- f
@@ -1035,7 +1047,7 @@ let private setKeyboardHookOf (b: bool) =
         if b then
             // Installed again on every load (e.g. Reload after Windows removed it): ups may have
             // been missed
-            keyboardHookInstalled ()
+            keyboardHookInstalled (WinHook.isOldKeyboardHookLost ())
         else
             changeKeyboardTrigger (getTargetVKCode()) false
 
@@ -1468,16 +1480,27 @@ let private changedSettings (current: Properties.Properties) =
 // Only the settings changed since they were loaded (or stored) are written, in the file as it is
 // now: what was edited in it meanwhile (other settings too), its other keys (e.g.
 // customAccelThreshold), its comments and the order of its lines are kept. A setting changed in
-// both is written. A file not found is written with all the settings. Not stored if the
-// properties could not be loaded (the settings would be those of other properties, or defaults).
+// both is written. The file of Default not found is written with all the settings (the first
+// store). Other properties exist when they are loaded (see tryLoadProperties): their file not
+// found has been renamed or deleted outside W10Wheel since. It is not written again (it would
+// come back under the old name, without the comments and the custom table): if settings have
+// changed, they are not stored, which is told (switching and restarting as administrator ask). Not
+// stored if the properties could not be loaded (the settings would be those of other properties, or
+// defaults).
 let storeProperties () =
     try
         if not loaded then
             Debug.WriteLine("Not loaded properties")
         else
-            let path = getSelectedPropertiesPath()
+            let name = getSelectedProperties()
+            let path = Properties.getPath name
             let current = currentSettings ()
-            if not (File.Exists(path)) then
+            let exists = File.Exists(path)
+            if not exists && name <> Properties.DEFAULT_DEF then
+                if not (changedSettings current).IsEmpty then
+                    raise (FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
+                Debug.WriteLine("Properties file not found, not changed")
+            elif not exists then
                 Debug.WriteLine("First write properties")
                 current.Store(path)
             else
@@ -1589,34 +1612,53 @@ let private confirm (owner: IWin32Window) (heading: string) (text: string) (acti
 let private shownPropertiesName name =
     if name = DEFAULT_DEF then convLang name else name
 
-// From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
-// (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
+// After storeProperties, before leaving the selected properties: true if no setting changed in them
+// is left not stored, else whether to go on and lose them (e.g. a read-only file, or properties not
+// loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
+// of the action; modal to owner (the settings dialog).
+let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (actionText: string) =
+    if (changedSettings (currentSettings ())).IsEmpty then
+        true
+    else
+        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
+        confirm owner (convLang "The changes could not be saved")
+                ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
+
+// From the settings dialog (owner): W10Wheel started as administrator, then this one exits as by
+// Exit (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
 // is waited for on another thread: the hooks run on this one, and would time out (Windows removes
 // them) while the user answers, if the input is not on the secure desktop.
 // Set while UAC is answered (on the UI thread): pressed again meanwhile, the button would start a
 // second instance as administrator, which would wait for the lock and then fail (double launch)
 let mutable private restarting = false
 
-let private restartAsAdmin () =
+let private restartAsAdmin (owner: IWin32Window) =
     if not restarting then
         restarting <- true
         // The button grayed until the answer
         refreshSettingsDialog()
-        // Stored first: the new instance may read them before this one stores them again at its exit
+        // Stored first: the new instance may read them before this one stores them again at its exit.
+        // If some could not be (e.g. a read-only file), the new one would load the file without
+        // them, and this one could not store them at its exit either: asked as when switching.
         storeProperties()
-        let ui = SynchronizationContext.Current
-        Tasks.Task.Run(fun () ->
-            let res = startAsAdmin true
-            ui.Post((fun _ ->
-                match res with
-                | AdminStarted -> exitAction ()
-                | AdminCanceled
-                | AdminFailed _ ->
-                    restarting <- false
-                    refreshSettingsDialog()
+        if not (confirmUnstoredLoss owner "Restarting loses the changes that could not be saved."
+                                    "Restart as administrator") then
+            restarting <- false
+            refreshSettingsDialog()
+        else
+            let ui = SynchronizationContext.Current
+            Tasks.Task.Run(fun () ->
+                let res = startAsAdmin true
+                ui.Post((fun _ ->
                     match res with
-                    | AdminFailed e -> Dialog.errorMessageE e
-                    | _ -> ()), null)) |> ignore
+                    | AdminStarted -> exitAction ()
+                    | AdminCanceled
+                    | AdminFailed _ ->
+                        restarting <- false
+                        refreshSettingsDialog()
+                        match res with
+                        | AdminFailed e -> Dialog.errorMessageE e
+                        | _ -> ()), null)) |> ignore
 
 // The selected properties (not Default), then Default is selected
 let private deleteProperties (owner: IWin32Window) =
@@ -1667,12 +1709,7 @@ let private resetSettings (owner: IWin32Window) =
 // settings, their changes not stored), and why is shown.
 let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    let lose () =
-        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
-        confirm owner (convLang "The changes could not be saved")
-                ((Option.defaultValue "" why) + convLang "Switching loses the settings changed in these properties.")
-                (convLang "Switch")
-    if not (changedSettings (currentSettings ())).IsEmpty && not (lose ()) then
+    if not (confirmUnstoredLoss owner "Switching loses the changes that could not be saved." "Switch") then
         // The current properties selected again in the list
         refreshSettingsDialog()
     else
@@ -1798,8 +1835,8 @@ let private createSettingsDialog () =
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
         general.AddNote("W10Wheel is not running as administrator", SettingsForm.NoteKind.Warning)
-        general.AddButton("Restart as administrator", restartAsAdmin, icon = Drawing.StockIconId.Shield,
-                          enabled = (fun () -> not restarting),
+        general.AddButton("Restart as administrator", (fun () -> restartAsAdmin dialog.Owner),
+                          icon = Drawing.StockIconId.Shield, enabled = (fun () -> not restarting),
                           tip = "Windows asks for permission (User Account Control)")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
         "Asked when W10Wheel is not running as administrator"
