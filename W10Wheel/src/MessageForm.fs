@@ -271,10 +271,10 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                            form.DialogResult <- DialogResult.Cancel)) }
     res = DialogResult.Yes, (res = DialogResult.No && dontAskChecked.Value)
 
-// The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
-// windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
-// open)
-let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
+// About while it is shown (see showAbout)
+let mutable private shownAbout: Form = null
+
+let private showAboutDialog (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
     let text = new Label(AutoSize = true, Margin = Padding.Empty)
     let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
     let ok = new DialogButton(DialogResult = DialogResult.OK)
@@ -307,7 +307,21 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
                ok.Text <- conv "OK")
            fit = ignore
            prepare = (fun form ->
+               shownAbout <- form
                form.AcceptButton <- ok
                form.CancelButton <- ok
                form.ActiveControl <- ok) }
     |> ignore
+
+// The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
+// windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
+// open). One at a time: chosen again from the tray menu while it is shown (it does not disable the
+// menu), the one shown is brought to the front.
+let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
+    if not (isNull shownAbout) then
+        shownAbout.Activate()
+    else
+        try
+            showAboutDialog conv isAdmin openLink
+        finally
+            shownAbout <- null
