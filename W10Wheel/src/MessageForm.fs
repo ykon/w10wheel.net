@@ -261,7 +261,8 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                    // "Do not ask again")
                    form.KeyPreview <- true
                    form.KeyDown.Add(fun e ->
-                       if e.KeyCode = Keys.Escape then
+                       // Esc alone (not with Shift, etc.), as CancelButton
+                       if e.KeyData = Keys.Escape then
                            e.Handled <- true
                            form.DialogResult <- DialogResult.Cancel)) }
     res = DialogResult.Yes, (res = DialogResult.No && dontAskChecked.Value)
