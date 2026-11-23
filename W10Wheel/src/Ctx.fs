@@ -649,9 +649,10 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up has
-    // not come yet: their up alone is suppressed (the application did not get the down). Their
-    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) or the keyboard
+    // hook installed again (KEventHandler.hookInstalled) and whose up has not come yet: their up
+    // alone is suppressed (the application did not get the down). Their next down resets them (a
+    // repeat cannot be told from a new press, it is taken for one).
     static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =

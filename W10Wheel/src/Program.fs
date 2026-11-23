@@ -97,8 +97,8 @@ let private closeAll () =
     // This also waits for a scroll start in progress and refuses later ones.
     Ctx.closeScrollMode()
 
-    // Wait for a resent click being sent (so that its up is sent), send the ups still queued
-    // and stop sending
+    // Wait for the sender to handle what is queued (also a resent click being sent, or an up it
+    // has taken already: their ups are sent), send the ups still queued and stop sending
     Windows.closeInput()
 
     Ctx.storeProperties()

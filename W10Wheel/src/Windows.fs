@@ -164,10 +164,10 @@ let private sendUps (ups: WinAPI.MINPUT[]) =
 let private isSingleUp (msgs: WinAPI.MINPUT[]) =
     msgs.Length = 1 && isUp msgs.[0]
 
-// At exit, an up for a down resent earlier is still sent. But the hooks are removed (or are
-// about to be), and nothing drops the up resent for a down resent alone that was not sent (see
-// dropResent): it is sent only if that down was, or it would be an up without a down (e.g. a
-// right up opens a context menu).
+// At exit, an up for a down resent earlier is still sent. But it is sent after the hooks are
+// removed (when the mark of closeInput comes, see closeOnSender), and nothing drops the up resent
+// for a down resent alone that was not sent (see dropResent): it is sent only if that down was,
+// or it would be an up without a down (e.g. a right up opens a context menu).
 let private isSendableAtExit (msgs: WinAPI.MINPUT[]) =
     isSingleUp msgs &&
         match inputResendKind msgs.[0] with
@@ -257,7 +257,8 @@ let private retryUnsentIdle () = lock sendLock (fun () ->
 
 let private senderThread = new Thread(fun () ->
     while true do
-        // Read without sendLock: written on this thread, and by closeInput at exit
+        // Read without sendLock: unsent is written on this thread only (also at exit, see
+        // closeOnSender), closing by beginClose and closeInput
         let retry =
             not (Volatile.Read(&closing.contents)) && not (isNull (Volatile.Read(&unsent.contents)))
         let timeout = if retry then UNSENT_RETRY_INTERVAL_MS else Timeout.Infinite
