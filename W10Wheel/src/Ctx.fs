@@ -755,9 +755,13 @@ type LastFlags() =
     static member GetAndReset_LoneUpKey (vk: int): bool =
         isKey vk && getAndReset(&kdL.[vk])
 
-    // The keyboard hook is installed again: a key whose up was missed while it was removed may
-    // have been pressed since, its down passing (no hook): do not suppress its up
-    static member ResetLoneUpKeys () =
+    // The keyboard hook is installed again after Windows had removed the old one: a key may have
+    // been released and pressed again meanwhile, its down reaching the application (no hook). The
+    // records that would suppress its repeats or its up are forgotten (the passed keys, kdP, are
+    // kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a repeat,
+    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookInstalled).
+    static member ForgetSuppressedKeys () =
+        Array.fill kdS 0 kdS.Length false
         Array.fill kdL 0 kdL.Length false
 
     // The keyboard hook is removed: the ups will not be seen
@@ -1013,8 +1017,9 @@ let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
 let setChangeKeyboardTrigger f =
     changeKeyboardTrigger <- f
 
-// Called when the keyboard hook is installed (again): see KEventHandler.hookInstalled
-let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
+// Called when the keyboard hook is installed (again), with whether Windows had removed the old one:
+// see KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: bool -> unit = (fun _ -> ())
 
 let setKeyboardHookInstalled f =
     keyboardHookInstalled <- f
@@ -1041,7 +1046,7 @@ let private setKeyboardHookOf (b: bool) =
         if b then
             // Installed again on every load (e.g. Reload after Windows removed it): ups may have
             // been missed
-            keyboardHookInstalled ()
+            keyboardHookInstalled (WinHook.isOldKeyboardHookLost ())
         else
             changeKeyboardTrigger (getTargetVKCode()) false
 
