@@ -203,3 +203,38 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                            form.DialogResult <- DialogResult.Cancel)) }
     res = DialogResult.Yes, (res = DialogResult.No && dontAsk.Checked)
 
+// The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
+// windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
+// open)
+let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
+    let text = new Label(AutoSize = true, Margin = Padding(0, 0, 0, 8))
+    let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
+    let ok = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, DialogResult = DialogResult.OK)
+    links.LinkClicked.Add(fun e -> openLink (string e.Link.LinkData))
+
+    let arch = Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
+    show { title = conv "About"
+           iconSize = 48
+           makeIcon = (fun size -> Icon.ExtractIcon(Application.ExecutablePath, 0, size))
+           heading = AppDef.PROGRAM_NAME_NET
+           // A line between the name and the version, as in the Java version
+           headingGap = 16
+           body = [text; links]
+           buttons = [ok]
+           texts = (fun () ->
+               text.Text <- sprintf "%s: %s\n%s: %s\n.NET: %s (%s)" (conv "Version") AppDef.PROGRAM_VERSION
+                                    (conv "Running as administrator") (conv (if isAdmin then "Yes" else "No"))
+                                    (string Environment.Version) arch
+               // Two links in one label (a text sets a single link over it: the links after it)
+               links.Text <- "GitHub    Wiki"
+               links.Links.Clear()
+               links.Links.Add(0, 6, AppDef.PROJECT_URL) |> ignore
+               links.Links.Add(10, 4, AppDef.WIKI_URL) |> ignore
+               setLinkColors links
+               ok.Text <- conv "OK")
+           fit = ignore
+           prepare = (fun form ->
+               form.AcceptButton <- ok
+               form.CancelButton <- ok
+               form.ActiveControl <- ok) }
+    |> ignore
