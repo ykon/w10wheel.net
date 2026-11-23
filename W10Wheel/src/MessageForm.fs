@@ -121,9 +121,10 @@ let private show (spec: Spec): DialogResult =
     form.AutoScaleMode <- AutoScaleMode.Dpi
     if not (isNull appIcon) then form.Icon <- appIcon
 
-    // The margins and the gaps as those of the Java version
+    // The margins and the gaps as those of the Java version. No margin of its own (3 by default):
+    // the right and the bottom of the dialog were wider than the left and the top.
     let table = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                     ColumnCount = 2, RowCount = 2, Padding = Padding(12))
+                                     ColumnCount = 2, RowCount = 2, Padding = Padding(12), Margin = Padding.Empty)
     // At the top of the heading, as the icons of the message boxes
     let icon = new PictureBox(SizeMode = PictureBoxSizeMode.AutoSize, Anchor = (AnchorStyles.Top ||| AnchorStyles.Left),
                               Margin = Padding(0, 0, 16, 0))
