@@ -54,8 +54,8 @@ let private roundedRect (r: Rectangle) (radius: int) =
 type private Windows11Renderer() =
     inherit ToolStripRenderer()
 
-    // The colors of the menus of Windows 11, light or dark as the dialogs (Program.main:
-    // SystemColorMode.System)
+    // The colors of the menus of Windows 11, light or dark as the dialogs (Program.main: the mode
+    // of Windows at startup)
     let dark () = Application.IsDarkModeEnabled
     let background () = if dark() then Color.FromArgb(44, 44, 44) else Color.FromArgb(249, 249, 249)
     let highlight () = if dark() then Color.FromArgb(61, 61, 61) else Color.FromArgb(233, 233, 233)

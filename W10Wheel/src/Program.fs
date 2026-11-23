@@ -203,8 +203,15 @@ let main argv =
     Application.SetDefaultVisualStylesMode(VisualStylesMode.Net11)
     // Dark or light as the apps mode of Windows (the settings dialog, the tray menu, the input
     // box). SystemColors then return the colors of the mode, which SettingsForm uses. The message
-    // boxes (MessageBox, drawn by Windows) stay light.
-    Application.SetColorMode(SystemColorMode.System)
+    // boxes (MessageBox, drawn by Windows) stay light. The mode at startup is kept until exit:
+    // WinForms does not follow a change of the mode while running (SystemColors keep the colors of
+    // the startup mode), but with SystemColorMode.System, IsDarkModeEnabled reads the mode of
+    // Windows each time, so the controls drawn after a change (buttons, check boxes, some number
+    // boxes) took the new mode on the background of the old one. Restarting applies a new mode.
+    // (Application.SystemColorMode is Classic before Windows 11 and with a high contrast theme, as
+    // SystemColorMode.System was.)
+    Application.SetColorMode(
+        if Application.SystemColorMode = SystemColorMode.Dark then SystemColorMode.Dark else SystemColorMode.Classic)
     // Also before any window: the windows of the modules (Ctx.notifyIcon, RawInput.messageWindow)
     // are created when the modules are first used, after this. Without it (no manifest either),
     // the menu and the dialogs are stretched and blurred on a scaled display. Scrolling does not
