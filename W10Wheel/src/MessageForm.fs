@@ -25,6 +25,12 @@ let private setLinkColors (l: LinkLabel) =
     l.LinkColor <- linkColor ()
     l.ActiveLinkColor <- linkColor ()
 
+// Whether a click on a link opens it: LinkLabel raises LinkClicked for any button, and W10Wheel
+// is used with the right or the middle button as a trigger (a right click on a link opened the
+// browser). Enter on a focused link comes as the left button.
+let private isLinkOpen (e: LinkLabelLinkClickedEventArgs) =
+    e.Button = MouseButtons.Left
+
 // A dialog. Sizes at 96 DPI.
 type private Spec =
     { title: string
@@ -218,7 +224,7 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
     // What the restart does: the note of the command link of the task dialog before, a tip as in the
     // Java version
     use tips = new ToolTip()
-    link.LinkClicked.Add(fun _ -> openLink AppDef.WIKI_URL)
+    link.LinkClicked.Add(fun e -> if isLinkOpen e then openLink AppDef.WIKI_URL)
     let setShield = shieldSetter restart
 
     let res =
@@ -262,7 +268,7 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
     let text = new Label(AutoSize = true, Margin = Padding.Empty)
     let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
     let ok = new DialogButton(DialogResult = DialogResult.OK)
-    links.LinkClicked.Add(fun e -> openLink (string e.Link.LinkData))
+    links.LinkClicked.Add(fun e -> if isLinkOpen e && not (isNull e.Link) then openLink (string e.Link.LinkData))
 
     let arch = Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
     show { title = conv "About"
