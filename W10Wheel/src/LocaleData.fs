@@ -163,8 +163,8 @@ let private JapaneseMessage =
         "Excluded Programs", "除外するプログラム";
         "Add...", "追加...";
         "Remove", "削除";
-        "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed",
-            "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます";
+        "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed\n(UWP / Store apps are not supported)",
+            "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます\n(UWP/ストアアプリは非対応)";
         "In the windows of these programs, scrolling is disabled",
             "登録したプログラムのウィンドウ上ではスクロール機能が無効になります";
         "Select programs to exclude", "除外するプログラムの選択";

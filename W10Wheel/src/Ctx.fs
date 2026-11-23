@@ -2062,7 +2062,7 @@ let private createSettingsDialog () =
 
     let excluded = dialog.AddPage "Excluded Programs"
     excluded.AddList(getExcludedPrograms, setExcludedPrograms, askExcludedPrograms dialog.Owner, "Add...", "Remove",
-                     tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed")
+                     tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed\n(UWP / Store apps are not supported)")
     excluded.AddNote "In the windows of these programs, scrolling is disabled"
 
     refreshSettingsDialog <- dialog.RefreshAllLater

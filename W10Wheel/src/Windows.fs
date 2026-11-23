@@ -841,9 +841,11 @@ let private GA_ROOT = 2u
 // Whether the window at pt (of the hook: physical coordinates, as WindowFromPoint takes them,
 // W10Wheel being per-monitor DPI aware) is of an excluded program (Ctx.isExcludedProgram), the one
 // the input goes to. The program of its top-level window too, if it is another: a child window can
-// be of another process, e.g. the content of WebView2 (msedgewebview2.exe) in the window of an app,
-// or a UWP app (its own process) in the frame of ApplicationFrameHost.exe. It runs in the hook, at
-// a down of a trigger only: with no program excluded (the default), nothing is looked up.
+// be of another process, e.g. the content of WebView2 (msedgewebview2.exe) in the window of an app.
+// Not the UWP (Store) apps: the window found is often of ApplicationFrameHost.exe, not of the app
+// (said as not supported; their .exe cannot be chosen in the file dialog either, nor kept: its
+// path changes at each update). It runs in the hook, at a down of a trigger only: with no program
+// excluded (the default), nothing is looked up.
 let isExcludedWindowAt (pt: WinAPI.POINT): bool =
     if not (Ctx.hasExcludedPrograms()) then
         false
