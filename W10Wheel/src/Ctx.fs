@@ -191,10 +191,12 @@ type private Exclusion() =
 
     // A full path is written as Windows gives the path of a process (e.g. "/" as "\", "..", the
     // spaces at its ends): a relative one (e.g. written in the file by hand) is kept as it is, it
-    // would be taken from the current folder. The empty ones and those already in are dropped.
+    // would be taken from the current folder. The empty ones and those already in are dropped. The
+    // quotes around a path are dropped (e.g. pasted from Copy as path of Explorer): no path can
+    // have one.
     static member SetPrograms (paths: string[]) =
         let normalize (path: string) =
-            let p = path.Trim()
+            let p = path.Trim().Trim('"').Trim()
             if Path.IsPathFullyQualified(p) then (try Path.GetFullPath(p) with _ -> p) else p
         let set = HashSet<string>(StringComparer.OrdinalIgnoreCase)
         let ps = paths |> Array.map normalize |> Array.filter (fun p -> p <> "" && set.Add p)
