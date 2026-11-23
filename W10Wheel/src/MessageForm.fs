@@ -201,7 +201,8 @@ let private show (spec: Spec): DialogResult =
         form.Location <- Point(max wa.Left (wa.Left + (wa.Width - form.Width) / 2),
                                max wa.Top (wa.Top + (wa.Height - form.Height) / 2)))
     // Later: the event is raised before the controls are scaled to the new DPI
-    form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(fit)) |> ignore)
+    // Not if the dialog has been closed meanwhile
+    form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(fun () -> if not form.IsDisposed then fit ())) |> ignore)
 
     spec.prepare form
     form.ShowDialog()
