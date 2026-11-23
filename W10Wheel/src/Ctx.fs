@@ -1912,6 +1912,11 @@ let private createSettingsDialog () =
         elif loadError.IsSome then
             // Reload: the settings are those before, still stored
             Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
+        // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults)
+        elif not exclusionsLoaded then
+            Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
+        elif exclusionsStoreError.IsSome then
+            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
         else
             None)
 
@@ -2051,14 +2056,6 @@ let private createSettingsDialog () =
     let excluded = dialog.AddPage "Excluded Programs"
     excluded.AddList(getExcludedPrograms, setExcludedPrograms, askExcludedPrograms dialog.Owner, "Add...", "Remove",
                      tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed")
-    // Their file (not the properties file: its errors are told at the bottom of the dialog)
-    excluded.AddStatus(fun () ->
-        if loaded && not exclusionsLoaded then
-            Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
-        elif exclusionsStoreError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
-        else
-            None)
     excluded.AddNote "In the windows of these programs, scrolling is disabled"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
