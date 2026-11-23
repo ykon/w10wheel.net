@@ -772,6 +772,12 @@ type LastFlags() =
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
         res
 
+    // The downs resent alone whose up has not come yet (left, right); resets them
+    static member TakeResentDowns (): bool[] =
+        let res = [| ldR; rdR |]
+        ldR <- false; rdR <- false
+        res
+
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
         match up with
         | LeftUp(_) -> getAndReset(&ldS)
