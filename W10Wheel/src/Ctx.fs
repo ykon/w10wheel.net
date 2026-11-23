@@ -1453,6 +1453,9 @@ let private storeExclusions (name: string) =
             | e ->
                 exclusionsStoreError <- Some e
                 Debug.WriteLine("storeExclusions: " + (e.ToString()))
+    elif exclusionsLoaded then
+        // As stored (e.g. a change that could not be stored, undone): nothing is left not stored
+        exclusionsStoreError <- None
 
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
 // storeProperties), the errors cleared. The excluded programs of the properties read too.
