@@ -169,6 +169,17 @@ let getPath (name:string): string =
 let exists (name:string): bool =
     File.Exists(getPath name)
 
+// The name of existing properties as in their file name (None if they do not exist): name may
+// differ in case (e.g. typed as an argument), which the file system ignores but not the list of
+// the settings dialog (the selected properties would not be shown). The same case first (a
+// case-sensitive folder may have both).
+let findName (name:string): string option =
+    let names = try getPropFiles() |> Array.map getUserDefName with _ -> [||]
+    let same (comparison: StringComparison) = names |> Array.tryFind (fun n -> String.Equals(n, name, comparison))
+    match same StringComparison.Ordinal |> Option.orElse (same StringComparison.OrdinalIgnoreCase) with
+    | Some n -> Some n
+    | None -> if exists name then Some name else None
+
 let copy (srcName:string) (destName:string): unit =
     let srcPath = getPath(srcName)
     let destPath = getPath(destName)

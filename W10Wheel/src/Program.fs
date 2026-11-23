@@ -131,10 +131,11 @@ let private getBool (sl: string list): bool =
 // is selected then)
 let private setSelectedProperties name =
     // Default is always valid (its file is not written until a setting is changed or W10Wheel
-    // exits)
-    if name = Properties.DEFAULT_DEF || Properties.exists(name) then
-        Ctx.setSelectedProperties name
-    else
+    // exits). Other properties are selected by the name of their file (the case may differ).
+    let found = if name = Properties.DEFAULT_DEF then Some name else Properties.findName name
+    match found with
+    | Some n -> Ctx.setSelectedProperties n
+    | None ->
         Ctx.loadPropertiesFileOnly ()
         Dialog.errorMessage (sprintf "%s: %s" (convLangP "Properties does not exist") name) (convLangP "Error")
 
