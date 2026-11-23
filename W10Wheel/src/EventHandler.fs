@@ -608,10 +608,26 @@ let private noneUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
-let private __procDownLR: (MouseEvent -> nativeint) ref = ref lrDown
-let private __procUpLR: (MouseEvent -> nativeint) ref = ref lrUp
-let private __procDownS: (MouseEvent -> nativeint) ref = ref noneDown
-let private __procUpS: (MouseEvent -> nativeint) ref = ref noneUp
+// The handlers of the trigger: of the left and right buttons, of the other buttons
+let private handlersOfTrigger () =
+    if Ctx.isDoubleTrigger() then
+        Debug.WriteLine("set double down/up")
+        lrDown, lrUp, noneDown, noneUp
+    elif Ctx.isSingleTrigger() then
+        Debug.WriteLine("set single down/up")
+        noneDown, noneUp, singleDown, singleUp
+    elif Ctx.isDragTrigger() then
+        Debug.WriteLine("set drag down/up")
+        dragDown, dragUp, dragDown, dragUp
+    else
+        Debug.WriteLine("set none down/up")
+        noneDown, noneUp, noneDown, noneUp
+
+// Those of the default trigger at first: also used if the properties cannot be read at startup
+// (nothing is applied then, see Ctx.loadProperties), then set by changeTrigger
+let private __procDownLR, __procUpLR, __procDownS, __procUpS =
+    let downLR, upLR, downS, upS = handlersOfTrigger ()
+    ref downLR, ref upLR, ref downS, ref upS
 
 // Before the handlers of the trigger (see canceledDowns)
 let private procDown (proc: (MouseEvent -> nativeint) ref) (d: MouseEvent): nativeint =
@@ -731,19 +747,7 @@ let move (info: HookInfo) =
 let private changeTrigger (changed: bool): unit =
     Debug.WriteLine("changeTrigger: EventHandler")
 
-    let downLR, upLR, downS, upS =
-        if Ctx.isDoubleTrigger() then
-            Debug.WriteLine("set double down/up")
-            lrDown, lrUp, noneDown, noneUp
-        elif Ctx.isSingleTrigger() then
-            Debug.WriteLine("set single down/up")
-            noneDown, noneUp, singleDown, singleUp
-        elif Ctx.isDragTrigger() then
-            Debug.WriteLine("set drag down/up")
-            dragDown, dragUp, dragDown, dragUp
-        else
-            Debug.WriteLine("set none down/up")
-            noneDown, noneUp, noneDown, noneUp
+    let downLR, upLR, downS, upS = handlersOfTrigger ()
 
     Volatile.Write(__procDownLR, downLR)
     Volatile.Write(__procUpLR, upLR)

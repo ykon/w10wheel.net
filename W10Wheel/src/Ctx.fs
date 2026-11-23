@@ -27,7 +27,9 @@ let setSelectedProperties name =
 let getSelectedProperties () =
     Volatile.Read(&selectedProperties.contents)
 
-let private firstTrigger: Trigger ref = ref LRTrigger
+// The default mouse trigger: RightDrag (easy to tell, and the left button is left as it is). LR
+// until 2.9.1: a trigger stored in the properties file is kept.
+let private firstTrigger: Trigger ref = ref RightDragTrigger
 let private pollTimeout = ref 200
 let private processPriority = ref ProcessPriority.AboveNormal
 let private sendMiddleClick = ref false
@@ -944,9 +946,9 @@ let mutable private changeTrigger: (bool -> unit) = (fun _ -> ())
 let setChangeTrigger (f: bool -> unit) =
     changeTrigger <- f
 
-// The last mouse trigger other than None (in this session, or LR): the settings dialog shows it
-// while the trigger is None (Mouse unchecked) and sets it again when Mouse is checked
-let mutable private lastMouseTrigger = LRTrigger
+// The last mouse trigger other than None (in this session, or the default): the settings dialog
+// shows it while the trigger is None (Mouse unchecked) and sets it again when Mouse is checked
+let mutable private lastMouseTrigger = getFirstTrigger()
 
 let private setTrigger (text: string) =
     let res = Mouse.getTriggerOfStr text
