@@ -1916,14 +1916,15 @@ let private createSettingsDialog () =
         // Before a Reload that failed: the changes made after it are not stored
         elif storeError.IsSome then
             Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
-        elif loadError.IsSome then
-            // Reload: the settings are those before, still stored
-            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
-        // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults)
+        // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
+        // Before a Reload that failed too: their changes are not stored.
         elif not exclusionsLoaded then
             Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
         elif exclusionsStoreError.IsSome then
             Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
+        elif loadError.IsSome then
+            // Reload: the settings are those before, still stored
+            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
         else
             None)
 
