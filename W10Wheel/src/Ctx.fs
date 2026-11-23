@@ -1670,20 +1670,27 @@ let private addProperties (owner: IWin32Window) =
                 // a switch: the same settings, and the other keys of the file (e.g. the custom table)
                 // applied.
                 let path = Properties.getPath name
-                let existed = File.Exists(path)
+                // Set once this Add has made the properties file (the copy, or the first store): not
+                // one made by another program meanwhile (the copy fails then, it is not replaced)
+                let mutable made = false
                 try
                     if File.Exists(getSelectedPropertiesPath()) then
                         Properties.copy (getSelectedProperties()) name
+                        made <- true
                     let current = currentSettings ()
-                    if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
+                    if made || File.Exists(path) then
+                        current.Update(path, current.Keys)
+                    else
+                        current.Store(path)
+                        made <- true
                     // The excluded programs running too (none: the file of earlier properties of
                     // this name, deleted outside W10Wheel, is deleted)
                     Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
                 with
                     | _ ->
                         // Not left half made (e.g. their excluded programs could not be written):
-                        // the properties file made here is deleted, they can be added again
-                        if not existed then
+                        // the properties file made by this Add is deleted, they can be added again
+                        if made then
                             try File.Delete(path) with e -> Debug.WriteLine("addProperties: " + e.Message)
                         reraise ()
                 match readProperties path false with
