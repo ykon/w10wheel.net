@@ -60,6 +60,22 @@ let private imageSetter (owner: Control) (get: unit -> Image) (set: Image -> uni
         set (make())
         if not (isNull old) then old.Dispose()
 
+// A button of the dialogs. The default button (the focused one, else the AcceptButton) is drawn in
+// the accent color (blue), with the text in black in the visual styles of .NET 11 (Program.main):
+// hard to read, more in dark mode. Its text white then, as the default buttons of the Java version
+// (FlatLaf); that of the others in the color of the dialog (Empty: not set).
+type private DialogButton() as this =
+    inherit Button()
+
+    // GrowAndShrink: GrowOnly kept a size scaled twice with an image (see SettingsPage.AddButton)
+    do
+        this.AutoSize <- true
+        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
+
+    override this.NotifyDefault (value: bool) =
+        base.NotifyDefault(value)
+        this.ForeColor <- if value then Color.White else Color.Empty
+
 // The image of an icon at size pixels (null if none)
 let private iconImage (makeIcon: int -> Icon) (size: int): Image =
     match (try makeIcon size with _ -> null) with
@@ -167,11 +183,9 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
     let text = new Label(AutoSize = true, Margin = Padding(0, 0, 0, 8))
     let link = new LinkLabel(AutoSize = true, Margin = Padding(0, 0, 0, 8))
     let dontAsk = new CheckBox(AutoSize = true, Margin = Padding(0, 0, 0, 8))
-    // GrowAndShrink: GrowOnly kept a size scaled twice with an image (see SettingsPage.AddButton)
-    let restart = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, DialogResult = DialogResult.Yes,
-                             TextImageRelation = TextImageRelation.ImageBeforeText, Padding = Padding(8, 2, 8, 2))
-    let continueWithout = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                     DialogResult = DialogResult.No, Padding = Padding(8, 2, 8, 2))
+    let restart = new DialogButton(DialogResult = DialogResult.Yes, TextImageRelation = TextImageRelation.ImageBeforeText,
+                                   Padding = Padding(8, 2, 8, 2))
+    let continueWithout = new DialogButton(DialogResult = DialogResult.No, Padding = Padding(8, 2, 8, 2))
     // What the restart does: the note of the command link of the task dialog before, a tip as in the
     // Java version
     use tips = new ToolTip()
@@ -188,7 +202,7 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                textWidth = 400
                minWidth = 0
                body = [text; link; dontAsk]
-               buttons = [restart; continueWithout]
+               buttons = [restart :> Button; continueWithout]
                texts = (fun () ->
                    text.Text <- conv LocaleData.AdminMessage
                    link.Text <- conv "More info (Wiki)"
@@ -216,7 +230,7 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
 let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
     let text = new Label(AutoSize = true, Margin = Padding(0, 0, 0, 8))
     let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
-    let ok = new Button(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, DialogResult = DialogResult.OK)
+    let ok = new DialogButton(DialogResult = DialogResult.OK)
     links.LinkClicked.Add(fun e -> openLink (string e.Link.LinkData))
 
     let arch = Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
@@ -230,7 +244,7 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
            // Not as narrow as its short lines
            minWidth = 280
            body = [text; links]
-           buttons = [ok]
+           buttons = [ok :> Button]
            texts = (fun () ->
                text.Text <- sprintf "%s: %s\n%s: %s\n.NET: %s (%s)" (conv "Version") AppDef.PROGRAM_VERSION
                                     (conv "Running as administrator") (conv (if isAdmin then "Yes" else "No"))
