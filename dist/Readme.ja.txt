@@ -264,6 +264,9 @@ URL:
         「加速テーブル」ページ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
         「リアルホイールモード」ページ: 実際のホイールに近いスクロール (設定項目を参照)
         「垂直/水平スクロール調整」ページ: 垂直、水平の方向固定、切り替え機能
+        「除外するプログラム」ページ: トリガーで何もしないプログラム (excludedPrograms を参照)
+                Add...: プログラム (.exe) を選んで追加
+                Remove: 選んだプログラムを一覧から削除
         
 設定項目:
         firstTrigger: string (default: RightDragTrigger)
@@ -388,8 +391,13 @@ URL:
         uiLanguage: string (default: by system) # Language
                 UIの表示に使う言語設定
                 
-        excludeAvast: bool (default: false) # LRTrigger, LeftTrigger, RightTrigger
-                \\AvastUI.exeがフォアグラウンドの場合は処理を行わない
+        excludedPrograms: string (default: empty) # Excluded Programs
+                登録したプログラムのウィンドウでは、すべてのトリガーで何もしない
+                (ボタンやキーは通常どおりプログラムに送られる)
+                .exe のフルパスを | で区切って指定します (大文字と小文字は区別しません)。
+                トリガーを押したときのカーソルの下のウィンドウで判定します。
+                # を含むパスは使えません (設定ファイルでは # 以降がコメントになるため)。
+                以前の excludeAvast は使われません。Avast を除外する場合は AvastUI.exe を登録してください。
 
         adminCheck: bool (default: true) # General
                 管理者として実行されていないとき、起動時に管理者として再起動するか確認する
