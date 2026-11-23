@@ -37,6 +37,7 @@
     <Compile Include="src\WinHook.fs" />
     <Compile Include="src\LocaleData.fs" />
     <Compile Include="src\Locale.fs" />
+    <Compile Include="src\MessageForm.fs" />
     <Compile Include="src\SettingsForm.fs" />
     <Compile Include="src\MenuStyle.fs" />
     <Compile Include="src\Ctx.fs" />

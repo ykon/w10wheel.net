@@ -36,30 +36,12 @@ let private checkDoubleLaunch () =
         // Read before the old instance had stored them at its exit
         Ctx.loadPropertiesFileOnly ()
 
-// Whether to restart as administrator. A task dialog, not a message box: its buttons say what they
-// do, and the restart has the shield of UAC. The link opens the wiki (startup as administrator,
-// etc.) and leaves the dialog open. Closed (Esc): continue.
+// Whether to restart as administrator (see MessageForm.askRestartAsAdmin: a dialog of its own, dark
+// as the settings dialog)
 let private askRestartAsAdmin (): bool =
-    let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Information,
-                              Heading = convLangP "W10Wheel is not running as administrator",
-                              Text = convLangP LocaleData.AdminMessage, AllowCancel = true, EnableLinks = true)
-    let restart = TaskDialogCommandLinkButton(convLangP "Restart as administrator",
-                                              convLangP "Windows asks for permission (User Account Control)",
-                                              ShowShieldIcon = true)
-    let continueWithout = TaskDialogCommandLinkButton(convLangP "Continue without administrator rights")
-    page.Buttons.Add(restart)
-    page.Buttons.Add(continueWithout)
-    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">%s</a>" AppDef.WIKI_URL (convLangP "More info (Wiki)"))
-    page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
-    // For those who run it without administrator rights on purpose: asked again by checking the
-    // setting in the settings dialog (General)
-    page.Verification <- TaskDialogVerificationCheckBox(convLangP "Do not ask again")
-
-    let res = TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen)
-    // Only with Continue without administrator rights: the choice to run without them. Not if
-    // closed (Esc) or restarted.
-    if page.Verification.Checked && res = continueWithout then Ctx.storeNoAdminCheck ()
-    res = restart
+    let restart, dontAsk = MessageForm.askRestartAsAdmin convLangP Dialog.shellOpen
+    if dontAsk then Ctx.storeNoAdminCheck ()
+    restart
 
 // Starts this program as administrator (UAC) with the selected properties (procArgv has checked
 // the argument: Default if it does not exist, and the commands have exited). Before the hooks and
