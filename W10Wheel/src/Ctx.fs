@@ -1691,12 +1691,17 @@ let private shownPropertiesName name =
 // loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
 // of the action; modal to owner (the settings dialog).
 let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (actionText: string) =
-    if (changedSettings (currentSettings ())).IsEmpty && not (exclusionsUnstored ()) then
+    let settingsUnstored = not (changedSettings (currentSettings ())).IsEmpty
+    if not settingsUnstored && not (exclusionsUnstored ()) then
         true
     else
+        // Why the changes left are not stored: of the settings first if some are left, else of the
+        // excluded programs (an error of the properties file may be older, e.g. a Reload that failed)
+        let ofSettings = storeError |> Option.orElse loadError
+        let ofExclusions = exclusionsStoreError |> Option.orElse exclusionsLoadError
         let why =
-            storeError |> Option.orElse exclusionsStoreError |> Option.orElse loadError
-            |> Option.orElse exclusionsLoadError |> Option.map (fun e -> e.Message + "\n")
+            (if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings)
+            |> Option.map (fun e -> e.Message + "\n")
         confirm owner (convLang "The changes could not be saved")
                 ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
 
