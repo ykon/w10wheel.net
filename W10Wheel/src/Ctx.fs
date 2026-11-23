@@ -1472,15 +1472,16 @@ let private changedSettings (current: Properties.Properties) =
 // store). Other properties exist when they are loaded (see tryLoadProperties): their file not
 // found has been renamed or deleted outside W10Wheel since. It is not written again (it would
 // come back under the old name, without the comments and the custom table): if settings have
-// changed, they are not stored, which is told (switching asks). Not stored if the properties
-// could not be loaded (the settings would be those of other properties, or defaults).
+// changed, they are not stored, which is told (switching and restarting as administrator ask). Not
+// stored if the properties could not be loaded (the settings would be those of other properties, or
+// defaults).
 let storeProperties () =
     try
         if not loaded then
             Debug.WriteLine("Not loaded properties")
         else
             let name = getSelectedProperties()
-            let path = getSelectedPropertiesPath()
+            let path = Properties.getPath name
             let current = currentSettings ()
             let exists = File.Exists(path)
             if not exists && name <> Properties.DEFAULT_DEF then
