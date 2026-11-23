@@ -3,7 +3,8 @@ name: Build
 # - push / pull request: build and upload the two zips as workflow artifacts
 #   (W10Wheel.NET-<version>.zip: self-contained; W10Wheel.NET-<version>-no-runtime.zip:
 #   framework-dependent, the .NET 11 Desktop Runtime required)
-# - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with both zips
+# - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with both zips, its notes
+#   from dist/release-notes/<tag>.md
 on:
   push:
     branches: [master]
@@ -97,10 +98,17 @@ jobs:
           }
           zip=$(find_zip "W10Wheel.NET-${VERSION}.zip") || exit 1
           zip_no_runtime=$(find_zip "W10Wheel.NET-${VERSION}-no-runtime.zip") || exit 1
-          # Use the history line for this version in dist/Readme.ja.txt as the release notes
-          notes=$(grep -m1 -F ": v${VERSION}:" dist/Readme.ja.txt | tr -d '\r' | sed 's/^[[:space:]]*//' || true)
+          # The release notes written for this version (dist/release-notes/<tag>.md, as in the
+          # Java version), else the history line for this version in dist/Readme.ja.txt
+          notes_file="dist/release-notes/${TAG}.md"
+          if [ -f "$notes_file" ]; then
+            notes_args=(--notes-file "$notes_file")
+          else
+            notes=$(grep -m1 -F ": v${VERSION}:" dist/Readme.ja.txt | tr -d '\r' | sed 's/^[[:space:]]*//' || true)
+            notes_args=(--notes "${notes:-W10Wheel.NET v${VERSION}}")
+          fi
           gh release create "$TAG" "$zip" "$zip_no_runtime" \
             --draft \
             --verify-tag \
             --title "${VERSION}" \
-            --notes "${notes:-W10Wheel.NET v${VERSION}}"
+            "${notes_args[@]}"
