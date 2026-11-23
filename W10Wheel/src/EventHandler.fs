@@ -188,9 +188,10 @@ let private passPressedScrollMode (down: MouseEvent): nativeint option =
 // The trigger pressed on the window of an excluded program (under the cursor, see
 // Windows.isExcludedWindowAt): its down passes, and its up (checkPassedDown), as when it is not
 // the trigger. Only where a wait would start: a scroll mode (and a wait) in progress gets the down
-// as before (e.g. the locked scroll mode ends).
+// as before (e.g. the locked scroll mode ends). Not looked up for the other button of the Left and
+// Right triggers, which passes anyway (endNotTrigger).
 let private passExcludedWindowLR (down: MouseEvent): nativeint option =
-    if Windows.isExcludedWindowAt down.Info.pt then
+    if (Ctx.isLRTrigger() || Ctx.isTriggerEvent down) && Windows.isExcludedWindowAt down.Info.pt then
         debug "pass (excluded program)" down
         Ctx.LastFlags.SetPassed(down)
         callNextHook()
