@@ -1103,24 +1103,9 @@ let isAdmin () =
     use identity = System.Security.Principal.WindowsIdentity.GetCurrent()
     System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)
 
-// The version, whether W10Wheel runs as administrator (it does not work in the windows of the
-// programs that do, if not), and the links to GitHub and the wiki
+// See MessageForm.showAbout: a dialog of its own, dark as the settings dialog
 let private showAbout () =
-    let rights = convLang (if isAdmin() then "Yes" else "No")
-    let page = TaskDialogPage(Caption = convLang "About", Heading = AppDef.PROGRAM_NAME_NET,
-                              Text = sprintf "%s: %s\n%s: %s" (convLang "Version") AppDef.PROGRAM_VERSION
-                                                              (convLang "Running as administrator") rights,
-                              AllowCancel = true, EnableLinks = true)
-    // The icon of the program (released after the dialog)
-    use appIcon = try Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> null
-    // Released too: it holds a copy of the icon handle, which TaskDialog does not release
-    use taskIcon = if isNull appIcon then null else new TaskDialogIcon(appIcon)
-    page.Icon <- if isNull taskIcon then TaskDialogIcon.Information else taskIcon
-    page.Footnote <- TaskDialogFootnote(sprintf "<a href=\"%s\">GitHub</a>    <a href=\"%s\">Wiki</a>"
-                                                AppDef.PROJECT_URL AppDef.WIKI_URL)
-    page.LinkClicked.Add(fun e -> Dialog.shellOpen e.LinkHref)
-    page.Buttons.Add(TaskDialogButton(convLang "OK"))
-    TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen) |> ignore
+    MessageForm.showAbout convLang (isAdmin()) Dialog.shellOpen
 
 let private createInfoMenuItem () =
     let item = createMenuItem_NonID "About"
