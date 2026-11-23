@@ -1468,16 +1468,26 @@ let private changedSettings (current: Properties.Properties) =
 // Only the settings changed since they were loaded (or stored) are written, in the file as it is
 // now: what was edited in it meanwhile (other settings too), its other keys (e.g.
 // customAccelThreshold), its comments and the order of its lines are kept. A setting changed in
-// both is written. A file not found is written with all the settings. Not stored if the
-// properties could not be loaded (the settings would be those of other properties, or defaults).
+// both is written. The file of Default not found is written with all the settings (the first
+// store). Other properties exist when they are loaded (see tryLoadProperties): their file not
+// found has been renamed or deleted outside W10Wheel since. It is not written again (it would
+// come back under the old name, without the comments and the custom table): if settings have
+// changed, they are not stored, which is told (switching asks). Not stored if the properties
+// could not be loaded (the settings would be those of other properties, or defaults).
 let storeProperties () =
     try
         if not loaded then
             Debug.WriteLine("Not loaded properties")
         else
+            let name = getSelectedProperties()
             let path = getSelectedPropertiesPath()
             let current = currentSettings ()
-            if not (File.Exists(path)) then
+            let exists = File.Exists(path)
+            if not exists && name <> Properties.DEFAULT_DEF then
+                if not (changedSettings current).IsEmpty then
+                    raise (FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
+                Debug.WriteLine("Properties file not found, not changed")
+            elif not exists then
                 Debug.WriteLine("First write properties")
                 current.Store(path)
             else
