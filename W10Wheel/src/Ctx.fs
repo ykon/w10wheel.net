@@ -1419,10 +1419,15 @@ let mutable private exclusionsLoaded = false
 let mutable private storedExclusions: string[] = [||]
 let mutable private exclusionsLoadError: exn option = None
 let mutable private exclusionsStoreError: exn option = None
+// Set by Reset to defaults: the file is written (deleted) even if the list is as it was read, as the
+// properties file is: it may have been edited or made outside W10Wheel since. Reset when it has
+// been, or when other properties are loaded.
+let mutable private exclusionsRewrite = false
 
 // With the properties of name (applyLoaded: they are loaded)
 let private loadExclusions (name: string) =
     exclusionsStoreError <- None
+    exclusionsRewrite <- false
     try
         setExcludedPrograms (Properties.readExclusions (Properties.getExclusionsPath name))
         exclusionsLoaded <- true
@@ -1438,16 +1443,17 @@ let private loadExclusions (name: string) =
 
 // The changes of the excluded programs are not stored yet (or could not be)
 let private exclusionsUnstored () =
-    getExcludedPrograms() <> storedExclusions
+    exclusionsRewrite || getExcludedPrograms() <> storedExclusions
 
 // With the settings (storeProperties), for the properties of name: only if they have been loaded and
 // have changed. The whole file written, or deleted if there is none.
 let private storeExclusions (name: string) =
     let current = getExcludedPrograms()
-    if exclusionsLoaded && current <> storedExclusions then
+    if exclusionsLoaded && exclusionsUnstored () then
         try
             Properties.writeExclusions (Properties.getExclusionsPath name) current
             storedExclusions <- current
+            exclusionsRewrite <- false
             exclusionsStoreError <- None
         with
             | e ->
@@ -1771,8 +1777,10 @@ let private resetSettings (owner: IWin32Window) =
             | e -> Debug.WriteLine("reset: " + (e.ToString()))
         // All the settings written (not only those changed in W10Wheel: one edited in the file and
         // not reloaded would stay), the other lines of the file kept
-        // No program excluded, the default: their file deleted
+        // No program excluded, the default: their file deleted, also if the list was empty (the
+        // file may have been made since it was read)
         setExcludedPrograms [||]
+        exclusionsRewrite <- true
         storedSettings <- Properties.Properties()
         storeProperties()
         refreshSettingsDialog()
