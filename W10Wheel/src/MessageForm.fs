@@ -34,6 +34,10 @@ type private Spec =
       heading: string
       // Under the heading
       headingGap: int
+      // The width at which the texts wrap, and the least width of the heading and the contents
+      // (the dialog not narrower than it)
+      textWidth: int
+      minWidth: int
       // Under the heading, from the top (their margins set)
       body: Control list
       // From the left
@@ -119,12 +123,12 @@ let private show (spec: Spec): DialogResult =
             headingFont <- new Font(form.Font, FontStyle.Bold)
             heading.Font <- headingFont
             if not (isNull old) then old.Dispose()
-            // The texts wrapped at the width of those of the Java version
-            let wrap = form.LogicalToDeviceUnits(320)
+            let wrap = form.LogicalToDeviceUnits(spec.textWidth)
             for c in content.Controls do
                 match c with
                 | :? Label as l -> l.MaximumSize <- Size(wrap, 0)
                 | _ -> ()
+            content.MinimumSize <- Size(form.LogicalToDeviceUnits(spec.minWidth), 0)
             setIcon (fun () -> iconImage spec.makeIcon (form.LogicalToDeviceUnits(spec.iconSize)))
             spec.fit ()
             // All the buttons as large as the largest (measured at their own size first), at least
@@ -180,6 +184,9 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                makeIcon = (fun size -> SystemIcons.GetStockIcon(StockIconId.Info, size))
                heading = conv "W10Wheel is not running as administrator"
                headingGap = 8
+               // Wider than in the Java version: the text in two lines, not a word on a third
+               textWidth = 400
+               minWidth = 0
                body = [text; link; dontAsk]
                buttons = [restart; continueWithout]
                texts = (fun () ->
@@ -219,6 +226,8 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
            heading = AppDef.PROGRAM_NAME_NET
            // A line between the name and the version, as in the Java version
            headingGap = 16
+           textWidth = 320
+           minWidth = 0
            body = [text; links]
            buttons = [ok]
            texts = (fun () ->
