@@ -10,11 +10,58 @@ open System.IO
 open System.Collections.Generic
 open System.Diagnostics
 open System.Globalization
+open System.Text
 open System.Text.RegularExpressions
+open System.Threading
 
 // key=value: the value can have spaces (e.g. "1, 2, 3" as in AccelTable.txt), the key cannot
 // be empty or have "="
 let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
+
+// The file of path written with lines (UTF-8 without a BOM, CRLF: as File.WriteAllLines) through a
+// temporary file in its folder, flushed to the disk, which then replaces it: a write that fails
+// (e.g. a full disk, W10Wheel or Windows ended meanwhile) leaves the file as it was, not half
+// written or empty. File.Replace keeps the attributes of the file (e.g. hidden, which the direct
+// write cannot open) and its permissions. Written directly as before:
+// - a read-only file: not opened, the error says so with its path (nothing written), as before
+// - a symbolic link (a reparse point): it stays a link, its target is written
+// - the replacement failed (e.g. the file open in another program that does not share its
+//   deletion, the temporary file being scanned): tried a few times first. The temporary file has
+//   been written, so the disk had room.
+let private writeLines (path: string) (lines: string[]): unit =
+    let attrs = if File.Exists(path) then Some(File.GetAttributes(path)) else None
+    let direct () = File.WriteAllLines(path, lines)
+    match attrs with
+    | Some a when a.HasFlag(FileAttributes.ReadOnly) || a.HasFlag(FileAttributes.ReparsePoint) ->
+        direct ()
+    | _ ->
+        // A name of its own (as the Java version, which shares the file): not another's being written
+        let dir = Path.GetDirectoryName(Path.GetFullPath(path))
+        let tmp = Path.Combine(dir, sprintf "%s-%s.tmp" (Path.GetFileName(path)) (Guid.NewGuid().ToString("N").Substring(0, 8)))
+        try
+            do
+                use fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None)
+                use w = new StreamWriter(fs, UTF8Encoding(false))
+                lines |> Array.iter w.WriteLine
+                w.Flush()
+                fs.Flush(true)
+            let replace () =
+                if attrs.IsSome then File.Replace(tmp, path, null) else File.Move(tmp, path)
+            let rec tryReplace n =
+                try
+                    replace ()
+                    true
+                with
+                    | :? IOException | :? UnauthorizedAccessException when n > 1 ->
+                        Thread.Sleep(20)
+                        tryReplace (n - 1)
+                    | :? IOException | :? UnauthorizedAccessException -> false
+            if not (tryReplace 5) then
+                Debug.WriteLine("writeLines: not replaced, written directly: " + path)
+                direct ()
+        finally
+            // Not over the error of the write
+            try File.Delete(tmp) with _ -> ()
 
 type Properties() =
     let sdict = SortedDictionary<string, string>()
@@ -49,8 +96,8 @@ type Properties() =
 
     member self.Store (path:string): unit =
         let makePropLine k = (sprintf "%s=%s" k sdict.[k])
-        let lines = Seq.map makePropLine sdict.Keys
-        File.WriteAllLines(path, lines)
+        let lines = Seq.map makePropLine sdict.Keys |> Array.ofSeq
+        writeLines path lines
 
     // Writes the values of keys to the file (path) as it is now: the lines of these keys get their
     // values (a comment after a value is kept), the other lines stay as they are (the other keys,
@@ -75,7 +122,7 @@ type Properties() =
         let added =
             keys |> List.filter (fun k -> not (written.Contains k)) |>
             List.map (fun k -> sprintf "%s=%s" k sdict.[k])
-        File.WriteAllLines(path, Array.append lines (Array.ofList added))
+        writeLines path (Array.append lines (Array.ofList added))
 
     member self.Keys: string list =
         List.ofSeq sdict.Keys
