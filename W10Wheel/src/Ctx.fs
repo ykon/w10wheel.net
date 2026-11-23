@@ -1670,13 +1670,22 @@ let private addProperties (owner: IWin32Window) =
                 // a switch: the same settings, and the other keys of the file (e.g. the custom table)
                 // applied.
                 let path = Properties.getPath name
-                if File.Exists(getSelectedPropertiesPath()) then
-                    Properties.copy (getSelectedProperties()) name
-                let current = currentSettings ()
-                if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
-                // The excluded programs running too (none: the file of earlier properties of this
-                // name, deleted outside W10Wheel, is deleted)
-                Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
+                let existed = File.Exists(path)
+                try
+                    if File.Exists(getSelectedPropertiesPath()) then
+                        Properties.copy (getSelectedProperties()) name
+                    let current = currentSettings ()
+                    if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
+                    // The excluded programs running too (none: the file of earlier properties of
+                    // this name, deleted outside W10Wheel, is deleted)
+                    Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
+                with
+                    | _ ->
+                        // Not left half made (e.g. their excluded programs could not be written):
+                        // the properties file made here is deleted, they can be added again
+                        if not existed then
+                            try File.Delete(path) with e -> Debug.WriteLine("addProperties: " + e.Message)
+                        reraise ()
                 match readProperties path false with
                 | Ok p -> loadRead name p
                 | Error e -> showError owner (convLang "The properties file could not be read") e
