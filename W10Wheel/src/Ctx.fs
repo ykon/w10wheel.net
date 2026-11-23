@@ -177,15 +177,39 @@ type private Pass() =
     static member toggleMode () =
         Pass.Mode <- not mode
 
+// The programs in whose windows the triggers do nothing (excludedPrograms): the full paths of their
+// .exe in the order they were added (as the settings dialog shows them), and the same paths looked
+// up without case (as the file system compares them). Both replaced as a whole, never changed: the
+// hooks read the lookup as it is when they read it.
 type private Exclusion() =
-    [<VolatileField>] static let mutable avast = false
+    [<VolatileField>] static let mutable programs: string[] = [||]
+    [<VolatileField>] static let mutable lookup = HashSet<string>(StringComparer.OrdinalIgnoreCase)
 
-    static member Avast
-        with get() = avast
-        and set b =
-            avast <- b
+    static member Programs = programs
+    static member Lookup = lookup
 
-let isExcludeAvast () = Exclusion.Avast
+    // A full path is written as Windows gives the path of a process (e.g. "/" as "\", "..", the
+    // spaces at its ends): a relative one (e.g. written in the file by hand) is kept as it is, it
+    // would be taken from the current folder. The empty ones and those already in are dropped.
+    static member SetPrograms (paths: string[]) =
+        let normalize (path: string) =
+            let p = path.Trim()
+            if Path.IsPathFullyQualified(p) then (try Path.GetFullPath(p) with _ -> p) else p
+        let set = HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        let ps = paths |> Array.map normalize |> Array.filter (fun p -> p <> "" && set.Add p)
+        programs <- ps
+        lookup <- set
+
+let getExcludedPrograms () = Exclusion.Programs
+
+let setExcludedPrograms (paths: string[]) =
+    Debug.WriteLine(sprintf "setExcludedPrograms: %A" paths)
+    Exclusion.SetPrograms paths
+
+// No program excluded (the default): nothing is looked up, the triggers work as before
+let hasExcludedPrograms () = Exclusion.Lookup.Count > 0
+
+let isExcludedProgram (path: string) = Exclusion.Lookup.Contains path
 
 // MouseWorks by Kensington (DefaultAccelThreshold, M5, M6, M7, M8, M9)
 // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
@@ -890,7 +914,6 @@ let private getBooleanOfName (name: string): bool =
     | DataID.vhAdjusterMode -> VHAdjuster.Mode
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical
     | DataID.passMode -> Pass.Mode
-    | DataID.excludeAvast -> Exclusion.Avast
     | DataID.adminCheck -> Volatile.Read(&adminCheck.contents)
     | e -> raise (ArgumentException(e))
 
@@ -912,7 +935,6 @@ let private setBooleanOfName (name:string) (b:bool) =
     | DataID.vhAdjusterMode -> VHAdjuster.Mode <- b
     | DataID.firstPreferVertical -> VHAdjuster.FirstPreferVertical <- b
     | DataID.passMode -> Pass.Mode <- b
-    | DataID.excludeAvast -> Exclusion.Avast <- b
     | DataID.adminCheck -> Volatile.Write(adminCheck, b)
     | e -> raise (ArgumentException(e))
 
@@ -1138,7 +1160,7 @@ let private BooleanNames: string[] =
      DataID.draggedLock; DataID.swapScroll;
      DataID.sendMiddleClick; DataID.keyboardHook;
      DataID.vhAdjusterMode; DataID.firstPreferVertical;
-     DataID.excludeAvast; DataID.adminCheck|]
+     DataID.adminCheck|]
 
 let private isCreatedMenuItems (): bool =
     notifyIcon.ContextMenuStrip <> null
@@ -1158,6 +1180,11 @@ let private prop = Properties.Properties()
 // The settings before the first load (the default values), written as in a properties file
 let private defaultProp = Properties.Properties()
 
+// Between the paths of excludedPrograms: a character that no path can have (a comma can). Empty
+// (no program): "excludedPrograms=" is read as missing, the default (none).
+[<Literal>]
+let private EXCLUDED_SEPARATOR = "|"
+
 // Write the settings to p (the custom accel table is not written: it is only read)
 let private setSettings (p: Properties.Properties) =
     let set = fun key value -> p.[key] <- value
@@ -1168,6 +1195,7 @@ let private setSettings (p: Properties.Properties) =
     set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
     set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
     set DataID.uiLanguage (getUILanguage())
+    set DataID.excludedPrograms (String.Join(EXCLUDED_SEPARATOR, getExcludedPrograms()))
 
     BooleanNames |> Array.iter (fun n -> p.SetBool(n, (getBooleanOfName n)))
     NumberNames |> Array.iter (fun n -> p.SetInt(n, (getNumberOfName n)))
@@ -1268,6 +1296,10 @@ let private setUILanguageOfProperty (): unit =
 
         setUILanguage lang)
 
+let private setExcludedProgramsOfProperty (): unit =
+    setStringOfProperty DataID.excludedPrograms (fun s ->
+        setExcludedPrograms (s.Split(EXCLUDED_SEPARATOR)))
+
 let private setBooleanOfProperty (name: string): unit =
     setOrDefault name (fun p -> setBooleanOfName name (p.GetBool name))
 
@@ -1357,6 +1389,7 @@ let private applyProperties () =
     setVKCodeOfProperty()
     setVhAdjusterMethodOfProperty()
     setUILanguageOfProperty()
+    setExcludedProgramsOfProperty()
 
     BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
     setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
@@ -1675,7 +1708,7 @@ let private resetSettings (owner: IWin32Window) =
         setSettings prop
         let keys =
             [DataID.firstTrigger; DataID.accelMultiplier; DataID.processPriority;
-             DataID.targetVKCode; DataID.vhAdjusterMethod]
+             DataID.targetVKCode; DataID.vhAdjusterMethod; DataID.excludedPrograms]
             @ List.ofArray BooleanNames @ List.ofArray NumberNames
         keys |> List.iter (fun key -> prop.[key] <- defaultProp.GetProperty key)
 

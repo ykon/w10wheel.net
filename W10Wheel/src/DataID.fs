@@ -51,8 +51,6 @@
     [<Literal>]
     let passMode = "passMode"
     [<Literal>]
-    let excludeAvast = "excludeAvast"
-    [<Literal>]
     let adminCheck = "adminCheck"
     
     // String
@@ -68,6 +66,8 @@
     let vhAdjusterMethod = "vhAdjusterMethod"
     [<Literal>]
     let uiLanguage = "uiLanguage"
+    [<Literal>]
+    let excludedPrograms = "excludedPrograms"
     
     // Trigger
     [<Literal>]

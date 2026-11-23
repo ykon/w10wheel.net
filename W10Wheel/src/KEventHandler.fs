@@ -131,11 +131,25 @@ let private checkExitOtherScroll (ke: KeyboardEvent): nativeint option =
     else
         None
 
+// The trigger key pressed with the cursor on the window of an excluded program (Windows.
+// isExcludedWindowAtCursor): its down passes, and its repeats and its up (keyDown, keyUp), as a key
+// that is not the trigger. Not the last event: its next down would be taken for a repeat
+// (checkSameLastEvent), and suppressed.
+let private passExcludedWindow (ke: KeyboardEvent): nativeint option =
+    if Windows.isExcludedWindowAtCursor () then
+        debug "pass (excluded program)" ke
+        lastEvent <- NonEvent
+        Ctx.LastFlags.SetPassedKey ke.VKCode
+        callNextHook()
+    else
+        None
+
 let private singleDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkSameLastEvent
         checkExitScrollDown
         checkExitOtherScroll
+        passExcludedWindow
         checkTriggerScrollStart
         endIllegalState
     ]

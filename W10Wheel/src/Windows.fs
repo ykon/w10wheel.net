@@ -814,28 +814,56 @@ let initScroll () =
 let setInitScroll () =
     Ctx.setInitScroll initScroll
 
-let private getFullPathFromWindow (hWnd: nativeint): string option =
-    if hWnd = IntPtr.Zero then
+let private processIdOfWindow (hWnd: nativeint): uint32 =
+    let mutable processId = 0u
+    WinAPI.GetWindowThreadProcessId(hWnd, &processId) |> ignore
+    processId
+
+let private getFullPathOfProcess (processId: uint32): string option =
+    let hProcess = WinAPI.OpenProcess(0x1000u, false, processId)  // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName
+    if hProcess = IntPtr.Zero then
         None
     else
-        let mutable processId = 0u
-        let _ = WinAPI.GetWindowThreadProcessId(hWnd, &processId)
-        let hProcess = WinAPI.OpenProcess(0x1000u, false, processId)  // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName
-        if hProcess = IntPtr.Zero then
-            None
+        let buffer = System.Text.StringBuilder(1024);
+        let mutable bufferSize = buffer.Capacity;
+        let success = WinAPI.QueryFullProcessImageName(hProcess, 0, buffer, &bufferSize)
+        WinAPI.CloseHandle(hProcess) |> ignore
+        if success then Some(buffer.ToString()) else None
+
+let private isExcludedProcess (processId: uint32): bool =
+    match getFullPathOfProcess processId with
+    | Some path -> Ctx.isExcludedProgram path
+    | None -> false
+
+[<Literal>]
+let private GA_ROOT = 2u
+
+// Whether the window at pt (of the hook: physical coordinates, as WindowFromPoint takes them,
+// W10Wheel being per-monitor DPI aware) is of an excluded program (Ctx.isExcludedProgram), the one
+// the input goes to. The program of its top-level window too, if it is another: a child window can
+// be of another process, e.g. the content of WebView2 (msedgewebview2.exe) in the window of an app,
+// or a UWP app (its own process) in the frame of ApplicationFrameHost.exe. It runs in the hook, at
+// a down of a trigger only: with no program excluded (the default), nothing is looked up.
+let isExcludedWindowAt (pt: WinAPI.POINT): bool =
+    if not (Ctx.hasExcludedPrograms()) then
+        false
+    else
+        let hWnd = WinAPI.WindowFromPoint(pt)
+        if hWnd = IntPtr.Zero then
+            false
         else
-            let buffer = System.Text.StringBuilder(1024);
-            let mutable bufferSize = buffer.Capacity;
-            let success = WinAPI.QueryFullProcessImageName(hProcess, 0, buffer, &bufferSize)
-            WinAPI.CloseHandle(hProcess) |> ignore
-            if success then Some(buffer.ToString()) else None
+            let pid = processIdOfWindow hWnd
+            if pid <> 0u && isExcludedProcess pid then
+                true
+            else
+                let root = WinAPI.GetAncestor(hWnd, GA_ROOT)
+                let rootPid = if root = IntPtr.Zero || root = hWnd then pid else processIdOfWindow root
+                rootPid <> pid && rootPid <> 0u && isExcludedProcess rootPid
 
-let getFullPathFromForegroundWindow (): string option =
-    getFullPathFromWindow (WinAPI.GetForegroundWindow())
-
-let getFullPathFromPoint (pt: WinAPI.POINT): string option =
-    getFullPathFromWindow (WinAPI.WindowFromPoint(pt))
-
-let getFullPathFromCursorPos (): string option =
-    let mutable pt = WinAPI.POINT()
-    if WinAPI.GetCursorPos(&pt) then getFullPathFromPoint(pt) else None
+// For the keyboard trigger: the window under the cursor, where it scrolls
+let isExcludedWindowAtCursor (): bool =
+    if not (Ctx.hasExcludedPrograms()) then
+        false
+    else
+        let mutable pt = WinAPI.POINT()
+        WinAPI.GetCursorPos(&pt) && isExcludedWindowAt pt
