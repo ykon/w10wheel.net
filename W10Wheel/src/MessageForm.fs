@@ -25,6 +25,12 @@ let private setLinkColors (l: LinkLabel) =
     l.LinkColor <- linkColor ()
     l.ActiveLinkColor <- linkColor ()
 
+// Whether a click on a link opens it: LinkLabel raises LinkClicked for any button, and W10Wheel
+// is used with the right or the middle button as a trigger (a right click on a link opened the
+// browser). Enter on a focused link comes as the left button.
+let private isLinkOpen (e: LinkLabelLinkClickedEventArgs) =
+    e.Button = MouseButtons.Left
+
 // A dialog. Sizes at 96 DPI.
 type private Spec =
     { title: string
@@ -64,10 +70,22 @@ let private imageSetter (owner: Control) (get: unit -> Image) (set: Image -> uni
         set (make())
         if not (isNull old) then old.Dispose()
 
-// A button of the dialogs. The default button (the focused one, else the AcceptButton) is drawn in
-// the accent color (blue), with the text in black in the visual styles of .NET 11 (Program.main):
-// hard to read, more in dark mode. Its text white then, as the default buttons of the Java version
-// (FlatLaf); that of the others in the color of the dialog (Empty: not set).
+// The text of the default button. In the visual styles of .NET 11 (Program.main) it is drawn in the
+// accent color of Windows, with a text that .NET picks by contrast: black on the default blue
+// (#0078D4), hard to read, more in dark mode. White then on a dark accent (perceived brightness),
+// as the default buttons of the Java version (FlatLaf); left to .NET (Empty) on a light one (e.g.
+// yellow: black), and in high contrast, where the buttons are drawn in the classic style, not in
+// the accent color (white would be lost on a light theme).
+let private defaultButtonText () =
+    let modern =
+        Application.DefaultVisualStylesMode <> VisualStylesMode.Classic &&
+        Application.DefaultVisualStylesMode <> VisualStylesMode.Disabled
+    let accent = Application.SystemVisualSettings.AccentColor
+    let brightness = (299 * int accent.R + 587 * int accent.G + 114 * int accent.B) / 1000
+    if modern && not SystemInformation.HighContrast && brightness < 128 then Color.White else Color.Empty
+
+// A button of the dialogs: the text of the default button (the focused one, else the
+// AcceptButton) as defaultButtonText, that of the others in the color of the dialog (Empty: not set)
 type private DialogButton() as this =
     inherit Button()
 
@@ -78,7 +96,7 @@ type private DialogButton() as this =
 
     override this.NotifyDefault (value: bool) =
         base.NotifyDefault(value)
-        this.ForeColor <- if value then Color.White else Color.Empty
+        this.ForeColor <- if value then defaultButtonText () else Color.Empty
 
 // The image of an icon at size pixels (null if none)
 let private iconImage (makeIcon: int -> Icon) (size: int): Image =
@@ -103,9 +121,10 @@ let private show (spec: Spec): DialogResult =
     form.AutoScaleMode <- AutoScaleMode.Dpi
     if not (isNull appIcon) then form.Icon <- appIcon
 
-    // The margins and the gaps as those of the Java version
+    // The margins and the gaps as those of the Java version. No margin of its own (3 by default):
+    // the right and the bottom of the dialog were wider than the left and the top.
     let table = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                                     ColumnCount = 2, RowCount = 2, Padding = Padding(12))
+                                     ColumnCount = 2, RowCount = 2, Padding = Padding(12), Margin = Padding.Empty)
     // At the top of the heading, as the icons of the message boxes
     let icon = new PictureBox(SizeMode = PictureBoxSizeMode.AutoSize, Anchor = (AnchorStyles.Top ||| AnchorStyles.Left),
                               Margin = Padding(0, 0, 16, 0))
@@ -134,6 +153,8 @@ let private show (spec: Spec): DialogResult =
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100.0f)) |> ignore
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         footer.Anchor <- AnchorStyles.Left
+        // Not touching the buttons if it is long (as far from them as the buttons from each other)
+        footer.Margin <- Padding(0, 0, 6, 0)
         buttons.Margin <- Padding.Empty
         bottom.Controls.Add(footer, 0, 0)
         bottom.Controls.Add(buttons, 1, 0)
@@ -163,6 +184,8 @@ let private show (spec: Spec): DialogResult =
                 | _ -> ()
             content.MinimumSize <- Size(form.LogicalToDeviceUnits(spec.minWidth), 0)
             setIcon (fun () -> iconImage spec.makeIcon (form.LogicalToDeviceUnits(spec.iconSize)))
+            // Without an icon, the box (100 x 50 without an image) hidden and the texts on the left
+            icon.Visible <- not (isNull icon.Image)
             spec.fit ()
             // All the buttons as large as the largest (measured at their own size first), at least
             // as wide as the buttons of the message boxes
@@ -181,7 +204,8 @@ let private show (spec: Spec): DialogResult =
         form.Location <- Point(max wa.Left (wa.Left + (wa.Width - form.Width) / 2),
                                max wa.Top (wa.Top + (wa.Height - form.Height) / 2)))
     // Later: the event is raised before the controls are scaled to the new DPI
-    form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(fit)) |> ignore)
+    // Not if the dialog has been closed meanwhile
+    form.DpiChanged.Add(fun _ -> form.BeginInvoke(Action(fun () -> if not form.IsDisposed then fit ())) |> ignore)
 
     spec.prepare form
     form.ShowDialog()
@@ -206,7 +230,10 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
     // What the restart does: the note of the command link of the task dialog before, a tip as in the
     // Java version
     use tips = new ToolTip()
-    link.LinkClicked.Add(fun _ -> openLink AppDef.WIKI_URL)
+    // Kept as it is checked: the check box is disposed with the dialog when show returns
+    let dontAskChecked = ref false
+    dontAsk.CheckedChanged.Add(fun _ -> dontAskChecked.Value <- dontAsk.Checked)
+    link.LinkClicked.Add(fun e -> if isLinkOpen e then openLink AppDef.WIKI_URL)
     let setShield = shieldSetter restart
 
     let res =
@@ -238,19 +265,20 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                    // "Do not ask again")
                    form.KeyPreview <- true
                    form.KeyDown.Add(fun e ->
-                       if e.KeyCode = Keys.Escape then
+                       // Esc alone (not with Shift, etc.), as CancelButton
+                       if e.KeyData = Keys.Escape then
                            e.Handled <- true
                            form.DialogResult <- DialogResult.Cancel)) }
-    res = DialogResult.Yes, (res = DialogResult.No && dontAsk.Checked)
+    res = DialogResult.Yes, (res = DialogResult.No && dontAskChecked.Value)
 
-// The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
-// windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
-// open)
-let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
+// About while it is shown (see showAbout)
+let mutable private shownAbout: Form = null
+
+let private showAboutDialog (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
     let text = new Label(AutoSize = true, Margin = Padding.Empty)
     let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
     let ok = new DialogButton(DialogResult = DialogResult.OK)
-    links.LinkClicked.Add(fun e -> openLink (string e.Link.LinkData))
+    links.LinkClicked.Add(fun e -> if isLinkOpen e && not (isNull e.Link) then openLink (string e.Link.LinkData))
 
     let arch = Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
     show { title = conv "About"
@@ -279,7 +307,21 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
                ok.Text <- conv "OK")
            fit = ignore
            prepare = (fun form ->
+               shownAbout <- form
                form.AcceptButton <- ok
                form.CancelButton <- ok
                form.ActiveControl <- ok) }
     |> ignore
+
+// The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
+// windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
+// open). One at a time: chosen again from the tray menu while it is shown (it does not disable the
+// menu), the one shown is brought to the front.
+let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
+    if not (isNull shownAbout) then
+        shownAbout.Activate()
+    else
+        try
+            showAboutDialog conv isAdmin openLink
+        finally
+            shownAbout <- null
