@@ -177,7 +177,8 @@ type private Pass() =
     static member toggleMode () =
         Pass.Mode <- not mode
 
-// The programs in whose windows the triggers do nothing (excludedPrograms): the full paths of their
+// The programs in whose windows the triggers do nothing (in a file of their own, see
+// loadExclusions): the full paths of their
 // .exe in the order they were added (as the settings dialog shows them), and the same paths looked
 // up without case (as the file system compares them). Both replaced as a whole, never changed: the
 // hooks read the lookup as it is when they read it.
@@ -1180,11 +1181,6 @@ let private prop = Properties.Properties()
 // The settings before the first load (the default values), written as in a properties file
 let private defaultProp = Properties.Properties()
 
-// Between the paths of excludedPrograms: a character that no path can have (a comma can). Empty
-// (no program): "excludedPrograms=" is read as missing, the default (none).
-[<Literal>]
-let private EXCLUDED_SEPARATOR = "|"
-
 // Write the settings to p (the custom accel table is not written: it is only read)
 let private setSettings (p: Properties.Properties) =
     let set = fun key value -> p.[key] <- value
@@ -1195,7 +1191,6 @@ let private setSettings (p: Properties.Properties) =
     set DataID.targetVKCode (Keyboard.getName (getTargetVKCode()))
     set DataID.vhAdjusterMethod (getVhAdjusterMethod().Name)
     set DataID.uiLanguage (getUILanguage())
-    set DataID.excludedPrograms (String.Join(EXCLUDED_SEPARATOR, getExcludedPrograms()))
 
     BooleanNames |> Array.iter (fun n -> p.SetBool(n, (getBooleanOfName n)))
     NumberNames |> Array.iter (fun n -> p.SetInt(n, (getNumberOfName n)))
@@ -1296,10 +1291,6 @@ let private setUILanguageOfProperty (): unit =
 
         setUILanguage lang)
 
-let private setExcludedProgramsOfProperty (): unit =
-    setStringOfProperty DataID.excludedPrograms (fun s ->
-        setExcludedPrograms (s.Split(EXCLUDED_SEPARATOR)))
-
 let private setBooleanOfProperty (name: string): unit =
     setOrDefault name (fun p -> setBooleanOfName name (p.GetBool name))
 
@@ -1389,7 +1380,6 @@ let private applyProperties () =
     setVKCodeOfProperty()
     setVhAdjusterMethodOfProperty()
     setUILanguageOfProperty()
-    setExcludedProgramsOfProperty()
 
     BooleanNames |> Array.iter (fun n -> setBooleanOfProperty n)
     setKeyboardHookOf (Volatile.Read(&keyboardHook.contents))
@@ -1421,8 +1411,51 @@ let private saveDefaults () =
         setSettings defaultProp
         defaultSaved <- true
 
+// The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
+// from it, or last stored: written when they differ (storeExclusions). If the file could not be
+// read (exclusionsLoaded false, e.g. locked by another program): none, and their changes are not
+// stored (they would replace the file), which the settings dialog tells.
+let mutable private exclusionsLoaded = false
+let mutable private storedExclusions: string[] = [||]
+let mutable private exclusionsLoadError: exn option = None
+let mutable private exclusionsStoreError: exn option = None
+
+// With the properties of name (applyLoaded: they are loaded)
+let private loadExclusions (name: string) =
+    exclusionsStoreError <- None
+    try
+        setExcludedPrograms (Properties.readExclusions (Properties.getExclusionsPath name))
+        exclusionsLoaded <- true
+        exclusionsLoadError <- None
+    with
+        | e ->
+            Debug.WriteLine("loadExclusions: " + e.Message)
+            setExcludedPrograms [||]
+            exclusionsLoaded <- false
+            exclusionsLoadError <- Some e
+    // As they run (setExcludedPrograms drops the duplicates): not written again until changed
+    storedExclusions <- getExcludedPrograms()
+
+// The changes of the excluded programs are not stored yet (or could not be)
+let private exclusionsUnstored () =
+    getExcludedPrograms() <> storedExclusions
+
+// With the settings (storeProperties), for the properties of name: only if they have been loaded and
+// have changed. The whole file written, or deleted if there is none.
+let private storeExclusions (name: string) =
+    let current = getExcludedPrograms()
+    if exclusionsLoaded && current <> storedExclusions then
+        try
+            Properties.writeExclusions (Properties.getExclusionsPath name) current
+            storedExclusions <- current
+            exclusionsStoreError <- None
+        with
+            | e ->
+                exclusionsStoreError <- Some e
+                Debug.WriteLine("storeExclusions: " + (e.ToString()))
+
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
-// storeProperties), the errors cleared
+// storeProperties), the errors cleared. The excluded programs of the properties read too.
 let private applyLoaded () =
     loaded <- true
     loadError <- None
@@ -1430,6 +1463,7 @@ let private applyLoaded () =
     Debug.WriteLine("Start load")
     applyProperties ()
     storedSettings <- currentSettings ()
+    loadExclusions (getSelectedProperties())
 
 // At startup (and before, Program.checkDoubleLaunch): the file of the selected properties read in
 // prop (update false: not again if loadPropertiesFileOnly has read it) and applied. Not loaded if
@@ -1506,7 +1540,9 @@ let private changedSettings (current: Properties.Properties) =
 // come back under the old name, without the comments and the custom table): if settings have
 // changed, they are not stored, which is told (switching and restarting as administrator ask). Not
 // stored if the properties could not be loaded (the settings would be those of other properties, or
-// defaults).
+// defaults). The excluded programs are stored too, in their file (storeExclusions), whether the
+// settings could be written or not; not for other properties whose file is not found (their list
+// would remain without them).
 let storeProperties () =
     try
         if not loaded then
@@ -1516,6 +1552,8 @@ let storeProperties () =
             let path = Properties.getPath name
             let current = currentSettings ()
             let exists = File.Exists(path)
+            if exists || name = Properties.DEFAULT_DEF then
+                storeExclusions name
             if not exists && name <> Properties.DEFAULT_DEF then
                 if not (changedSettings current).IsEmpty then
                     raise (FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
@@ -1607,6 +1645,9 @@ let private addProperties (owner: IWin32Window) =
                     Properties.copy (getSelectedProperties()) name
                 let current = currentSettings ()
                 if File.Exists(path) then current.Update(path, current.Keys) else current.Store(path)
+                // The excluded programs running too (none: the file of earlier properties of this
+                // name, deleted outside W10Wheel, is deleted)
+                Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
                 match readProperties path false with
                 | Ok p -> loadRead name p
                 | Error e -> showError owner (convLang "The properties file could not be read") e
@@ -1637,10 +1678,12 @@ let private shownPropertiesName name =
 // loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
 // of the action; modal to owner (the settings dialog).
 let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (actionText: string) =
-    if (changedSettings (currentSettings ())).IsEmpty then
+    if (changedSettings (currentSettings ())).IsEmpty && not (exclusionsUnstored ()) then
         true
     else
-        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
+        let why =
+            storeError |> Option.orElse exclusionsStoreError |> Option.orElse loadError
+            |> Option.orElse exclusionsLoadError |> Option.map (fun e -> e.Message + "\n")
         confirm owner (convLang "The changes could not be saved")
                 ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
 
@@ -1692,13 +1735,16 @@ let private deleteProperties (owner: IWin32Window) =
             | Error e -> showError owner (convLang "The properties file could not be read") e
             | Ok p ->
                 Properties.delete name
+                // Not an error if it cannot be: a list left without its properties is replaced if
+                // properties of this name are added again (addProperties)
+                try File.Delete(Properties.getExclusionsPath name) with e -> Debug.WriteLine("delete exclusions: " + e.Message)
                 loadRead DEFAULT_DEF p
     with
         | e -> Dialog.errorMessageE e
 
 // The settings of the selected properties back to their default values (defaultProp), except the
 // language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
-// applied as a load does, and stored
+// applied as a load does, and stored. No program is excluded any more.
 let private resetSettings (owner: IWin32Window) =
     let text = sprintf "%s\n%s: %s" (convLang "The language is kept.") (convLang "Properties")
                                     (shownPropertiesName (getSelectedProperties()))
@@ -1708,7 +1754,7 @@ let private resetSettings (owner: IWin32Window) =
         setSettings prop
         let keys =
             [DataID.firstTrigger; DataID.accelMultiplier; DataID.processPriority;
-             DataID.targetVKCode; DataID.vhAdjusterMethod; DataID.excludedPrograms]
+             DataID.targetVKCode; DataID.vhAdjusterMethod]
             @ List.ofArray BooleanNames @ List.ofArray NumberNames
         keys |> List.iter (fun key -> prop.[key] <- defaultProp.GetProperty key)
 
@@ -1718,29 +1764,19 @@ let private resetSettings (owner: IWin32Window) =
             | e -> Debug.WriteLine("reset: " + (e.ToString()))
         // All the settings written (not only those changed in W10Wheel: one edited in the file and
         // not reloaded would stay), the other lines of the file kept
+        // No program excluded, the default: their file deleted
+        setExcludedPrograms [||]
         storedSettings <- Properties.Properties()
         storeProperties()
         refreshSettingsDialog()
 
-// The programs to exclude (excludedPrograms) chosen in a file dialog modal to owner (the settings
-// dialog): their paths, none if canceled. A shortcut is taken for its target (DereferenceLinks). A
-// path with "#" cannot be written in the properties file, where it starts a comment: not added,
-// which is said.
+// The programs to exclude chosen in a file dialog modal to owner (the settings
+// dialog): their paths, none if canceled. A shortcut is taken for its target (DereferenceLinks).
 let private askExcludedPrograms (owner: IWin32Window) (): string[] =
     use d = new OpenFileDialog(Title = convLang "Select programs to exclude",
                                Filter = sprintf "%s (*.exe)|*.exe" (convLang "Programs"),
                                Multiselect = true, DereferenceLinks = true, CheckFileExists = true)
-    if d.ShowDialog(owner) <> DialogResult.OK then
-        [||]
-    else
-        let paths, withHash = d.FileNames |> Array.partition (fun p -> not (p.Contains('#')))
-        if withHash.Length > 0 then
-            let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Warning,
-                                      Heading = convLang "A program whose path has # cannot be added",
-                                      Text = String.Join("\n", withHash) + "\n" + convLang "In the properties file, # starts a comment.")
-            page.Buttons.Add(TaskDialogButton.OK)
-            TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
-        paths
+    if d.ShowDialog(owner) = DialogResult.OK then d.FileNames else [||]
 
 // From the settings dialog (owner). The settings of the selected properties are stored first: if
 // some could not be (e.g. a read-only file, or properties not loaded: then none), switching loses
@@ -1999,8 +2035,15 @@ let private createSettingsDialog () =
 
     let excluded = dialog.AddPage "Excluded Programs"
     excluded.AddList(getExcludedPrograms, setExcludedPrograms, askExcludedPrograms dialog.Owner, "Add...", "Remove",
-                     tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed",
-                     key = DataID.excludedPrograms)
+                     tip = "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed")
+    // Their file (not the properties file: its errors are told at the bottom of the dialog)
+    excluded.AddStatus(fun () ->
+        if loaded && not exclusionsLoaded then
+            Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
+        elif exclusionsStoreError.IsSome then
+            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
+        else
+            None)
     excluded.AddNote "In the windows of these programs, scrolling is disabled: the buttons and the key do what they usually do"
 
     refreshSettingsDialog <- dialog.RefreshAllLater

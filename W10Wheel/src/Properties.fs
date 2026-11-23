@@ -260,3 +260,30 @@ let copy (srcName:string) (destName:string): unit =
 let delete (name:string): unit =
     File.Delete(getPath name)
 
+// The excluded programs of the properties of name are in a file of their own, beside theirs:
+// .W10Wheel.exclusions (Default), .W10Wheel.<name>.exclusions. Not a key of the properties: a path
+// can have "#", which starts a comment there. Not a .txt file, which could be edited by mistake.
+let private EXCLUSIONS_EXT = "exclusions"
+
+let getExclusionsPath (name:string): string =
+    if name = DEFAULT_DEF then
+        Path.Combine(USER_DIR, (sprintf "%s.%s" PROP_NAME EXCLUSIONS_EXT))
+    else
+        Path.Combine(USER_DIR, (sprintf "%s.%s.%s" PROP_NAME name EXCLUSIONS_EXT))
+
+// A path on each line (no comments), the spaces at the ends and the empty lines ignored. Not found:
+// none. Another error (e.g. locked) is thrown.
+let readExclusions (path:string): string[] =
+    try
+        File.ReadAllLines(path) |> Array.map (fun l -> l.Trim()) |> Array.filter (fun l -> l <> "")
+    with
+        | :? FileNotFoundException -> [||]
+
+// Written whole (as writeLines writes the properties: a write that fails leaves the file as it
+// was), or deleted when there is none (not found: the default, none)
+let writeExclusions (path:string) (paths:string[]): unit =
+    if paths.Length = 0 then
+        File.Delete(path)
+    else
+        writeLines path paths
+

@@ -66,8 +66,6 @@
     let vhAdjusterMethod = "vhAdjusterMethod"
     [<Literal>]
     let uiLanguage = "uiLanguage"
-    [<Literal>]
-    let excludedPrograms = "excludedPrograms"
     
     // Trigger
     [<Literal>]

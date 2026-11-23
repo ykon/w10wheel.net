@@ -169,8 +169,8 @@ let private JapaneseMessage =
             "登録したプログラムのウィンドウ上ではスクロール機能が無効になり、ボタンやキーは本来の動作を行います";
         "Select programs to exclude", "除外するプログラムの選択";
         "Programs", "プログラム";
-        "A program whose path has # cannot be added", "パスに # を含むプログラムは追加できません";
-        "In the properties file, # starts a comment.", "設定ファイルでは # 以降がコメントになるためです。";
+        "The exclusions file could not be read: changes are not saved", "除外リストのファイルを読み込めませんでした (変更は保存されません)";
+        "The changes could not be saved to the exclusions file", "除外リストのファイルに保存できませんでした";
 
         "Properties", "設定ファイル";
         "Reload", "再読み込み";
