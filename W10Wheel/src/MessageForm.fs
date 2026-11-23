@@ -64,10 +64,22 @@ let private imageSetter (owner: Control) (get: unit -> Image) (set: Image -> uni
         set (make())
         if not (isNull old) then old.Dispose()
 
-// A button of the dialogs. The default button (the focused one, else the AcceptButton) is drawn in
-// the accent color (blue), with the text in black in the visual styles of .NET 11 (Program.main):
-// hard to read, more in dark mode. Its text white then, as the default buttons of the Java version
-// (FlatLaf); that of the others in the color of the dialog (Empty: not set).
+// The text of the default button. In the visual styles of .NET 11 (Program.main) it is drawn in the
+// accent color of Windows, with a text that .NET picks by contrast: black on the default blue
+// (#0078D4), hard to read, more in dark mode. White then on a dark accent (perceived brightness),
+// as the default buttons of the Java version (FlatLaf); left to .NET (Empty) on a light one (e.g.
+// yellow: black), and in high contrast, where the buttons are drawn in the classic style, not in
+// the accent color (white would be lost on a light theme).
+let private defaultButtonText () =
+    let modern =
+        Application.DefaultVisualStylesMode <> VisualStylesMode.Classic &&
+        Application.DefaultVisualStylesMode <> VisualStylesMode.Disabled
+    let accent = Application.SystemVisualSettings.AccentColor
+    let brightness = (299 * int accent.R + 587 * int accent.G + 114 * int accent.B) / 1000
+    if modern && not SystemInformation.HighContrast && brightness < 128 then Color.White else Color.Empty
+
+// A button of the dialogs: the text of the default button (the focused one, else the
+// AcceptButton) as defaultButtonText, that of the others in the color of the dialog (Empty: not set)
 type private DialogButton() as this =
     inherit Button()
 
@@ -78,7 +90,7 @@ type private DialogButton() as this =
 
     override this.NotifyDefault (value: bool) =
         base.NotifyDefault(value)
-        this.ForeColor <- if value then Color.White else Color.Empty
+        this.ForeColor <- if value then defaultButtonText () else Color.Empty
 
 // The image of an icon at size pixels (null if none)
 let private iconImage (makeIcon: int -> Icon) (size: int): Image =
