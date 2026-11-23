@@ -399,11 +399,12 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
             flushChanged ()
             let added = ask ()
             if added.Length > 0 then
-                let before = Collections.Generic.HashSet<string>(shown, StringComparer.OrdinalIgnoreCase)
+                let chosen = Collections.Generic.HashSet<string>(added, StringComparer.OrdinalIgnoreCase)
                 setItems (Array.append shown added)
-                // The new items selected (those already in the list stay where they were)
+                // The items chosen selected: the new ones, and those already in the list (where they
+                // were), which shows them
                 lb.ClearSelected()
-                shown |> Array.iteri (fun i item -> if not (before.Contains item) then lb.SetSelected(i, true))
+                shown |> Array.iteri (fun i item -> if chosen.Contains item then lb.SetSelected(i, true))
                 lb.Focus() |> ignore)
         remove.Click.Add(fun _ ->
             flushChanged ()
