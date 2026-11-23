@@ -1415,8 +1415,9 @@ let private saveDefaults () =
 
 // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
 // from it, or last stored: written when they differ (storeExclusions). If the file could not be
-// read (exclusionsLoaded false, e.g. locked by another program): none, and their changes are not
-// stored (they would replace the file), which the settings dialog tells.
+// read (exclusionsLoaded false, e.g. locked by another program): none (kept at a Reload, see
+// loadExclusions), and their changes are not stored (they would replace the file), which the
+// settings dialog tells.
 let mutable private exclusionsLoaded = false
 let mutable private storedExclusions: string[] = [||]
 let mutable private exclusionsLoadError: exn option = None
@@ -1426,22 +1427,35 @@ let mutable private exclusionsStoreError: exn option = None
 // been, or when other properties are loaded.
 let mutable private exclusionsRewrite = false
 
-// With the properties of name (applyLoaded: they are loaded)
+// The properties whose excluded programs run (loadExclusions), None before the first load
+let mutable private exclusionsName: string option = None
+
+// With the properties of name (applyLoaded: they are loaded). If the file cannot be read (e.g.
+// being written by an editor, or scanned), at a Reload (the same properties): the list running is
+// kept, as Reload keeps the settings when the properties file cannot be read (they were excluded
+// until then), and its changes are not stored until the file is read again (as stored: the same).
+// Else none (startup, a switch: those running are of other properties).
 let private loadExclusions (name: string) =
-    exclusionsStoreError <- None
-    exclusionsRewrite <- false
     try
-        setExcludedPrograms (Properties.readExclusions (Properties.getExclusionsPath name))
+        let paths = Properties.readExclusions (Properties.getExclusionsPath name)
+        exclusionsStoreError <- None
+        exclusionsRewrite <- false
+        setExcludedPrograms paths
         exclusionsLoaded <- true
         exclusionsLoadError <- None
+        // As they run (setExcludedPrograms drops the duplicates): not written again until changed
+        storedExclusions <- getExcludedPrograms()
     with
         | e ->
             Debug.WriteLine("loadExclusions: " + e.Message)
-            setExcludedPrograms [||]
             exclusionsLoaded <- false
             exclusionsLoadError <- Some e
-    // As they run (setExcludedPrograms drops the duplicates): not written again until changed
-    storedExclusions <- getExcludedPrograms()
+            if exclusionsName <> Some name then
+                exclusionsStoreError <- None
+                exclusionsRewrite <- false
+                setExcludedPrograms [||]
+                storedExclusions <- [||]
+    exclusionsName <- Some name
 
 // The changes of the excluded programs are not stored yet (or could not be)
 let private exclusionsUnstored () =
