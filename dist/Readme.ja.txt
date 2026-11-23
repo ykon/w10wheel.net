@@ -149,7 +149,7 @@ URL:
         UAC の確認のあと、管理者として起動し直します。
         「次回から表示しない」(Do not ask again) にチェックして「このまま実行」を選ぶと、
         以後は確認しません。
-        (設定ダイアログの General ページで元に戻せます)
+        (設定ダイアログの「全般」ページで元に戻せます)
         なお、別のアカウント (管理者) のパスワードを入力して管理者として実行した場合は、
         そのアカウントのユーザーディレクトリの設定ファイルが使われます。
         タスクトレイにアイコンが表示されます。
@@ -241,25 +241,25 @@ URL:
         Reset to defaults: 選んでいる設定ファイルの設定を既定値に戻す (言語は除く)
         Properties: 設定ファイルの切り替え、Add (追加)、Delete (削除)、
                 Open Dir (フォルダを開く)、Reload (再読み込み)
-        General ページ:
+        「全般」ページ:
                 Language: 言語設定
                 Priority: プロセスの優先度を変更
                 Restart as administrator: 管理者として起動し直す (管理者として実行されていないとき)
                 Ask to restart as administrator at startup: 起動時の管理者の確認 (設定項目を参照)
-        Trigger ページ:
+        「トリガー」ページ:
                 Mouse: マウスのトリガーを変更 (設定項目を参照)
                         チェックを外すとマウスのトリガーなし (NoneTrigger)
                 Keyboard: キーボードトリガー
                 pollTimeout, scrollLocktime: 数値をセット (設定項目を参照)
-        Scroll ページ:
+        「スクロール」ページ:
                 Cursor Change: スクロールモードのカーソル変更
                 Horizontal Scroll: 水平スクロール
                 Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
                 Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
                 verticalThreshold, horizontalThreshold: 数値をセット (設定項目を参照)
-        Accel Table ページ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
-        Real Wheel Mode ページ: 実際のホイールに近いスクロール (設定項目を参照)
-        VH Adjuster ページ: 垂直、水平の方向固定、切り替え機能
+        「加速テーブル」ページ: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
+        「リアルホイールモード」ページ: 実際のホイールに近いスクロール (設定項目を参照)
+        「垂直/水平スクロール調整」ページ: 垂直、水平の方向固定、切り替え機能
         
 設定項目:
         firstTrigger: string (default: RightDragTrigger)
