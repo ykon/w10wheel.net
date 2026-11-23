@@ -153,6 +153,8 @@ let private show (spec: Spec): DialogResult =
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100.0f)) |> ignore
         bottom.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         footer.Anchor <- AnchorStyles.Left
+        // Not touching the buttons if it is long (as far from them as the buttons from each other)
+        footer.Margin <- Padding(0, 0, 6, 0)
         buttons.Margin <- Padding.Empty
         bottom.Controls.Add(footer, 0, 0)
         bottom.Controls.Add(buttons, 1, 0)
