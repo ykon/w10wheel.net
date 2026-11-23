@@ -365,7 +365,8 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         // The items shown (set by refresh)
         let mutable shown: string[] = [||]
         let add = new Button(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(0, 0, 6, 0))
-        let remove = new Button(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(0))
+        let remove = new Button(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(0),
+                                Enabled = false)  // Nothing selected: also when there is no item (never shown)
         let buttons = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                                           WrapContents = false, Anchor = AnchorStyles.Left, Margin = Padding(3, 3, 3, 3))
         buttons.Controls.Add(add)
