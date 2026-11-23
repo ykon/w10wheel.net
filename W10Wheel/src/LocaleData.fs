@@ -160,6 +160,18 @@ let private JapaneseMessage =
         "First direction threshold", "初回判定閾値";
         "Switching threshold", "切り替え閾値";
         
+        "Excluded Programs", "除外するプログラム";
+        "Add...", "追加...";
+        "Remove", "削除";
+        "The programs (.exe) in whose windows the triggers do nothing\nThe window under the cursor when a trigger is pressed",
+            "トリガーで何もしないプログラム (.exe) です\nトリガーを押したときのカーソルの下のウィンドウで判定します";
+        "In the windows of these programs, the triggers do not scroll: the buttons and the key work as usual",
+            "これらのプログラムのウィンドウでは、トリガーでスクロールせず、ボタンやキーは通常どおり動作します";
+        "Select programs to exclude", "除外するプログラムの選択";
+        "Programs", "プログラム";
+        "A program whose path has # cannot be added", "パスに # を含むプログラムは追加できません";
+        "In the properties file, # starts a comment.", "設定ファイルでは # 以降がコメントになるためです。";
+
         "Properties", "設定ファイル";
         "Reload", "再読み込み";
         "Open Dir", "フォルダを開く";

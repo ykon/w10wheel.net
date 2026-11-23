@@ -353,6 +353,76 @@ type SettingsPage internal (conv: string -> string, table: TableLayoutPanel, reg
         tipOn [l; cb] tip key
         addRow [l :> Control, 1; cb :> Control, 2]
 
+    // A list of items (e.g. the paths of the excluded programs) with Add and Remove under it. get:
+    // the items; set: the items as they are to be (a change by the user). ask: the items to add
+    // (e.g. chosen in a file dialog), none if canceled; they are selected once added. Remove (or
+    // the Delete key) removes the selected items. A long item scrolls horizontally: the list keeps
+    // its width.
+    member _.AddList (get: unit -> string[], set: string[] -> unit, ask: unit -> string[],
+                      addText: string, removeText: string, ?tip: string, ?key: string) =
+        let lb = new ListBox(Width = 380, Height = 150, IntegralHeight = false, HorizontalScrollbar = true,
+                             SelectionMode = SelectionMode.MultiExtended, Anchor = AnchorStyles.Left)
+        // The items shown (set by refresh)
+        let mutable shown: string[] = [||]
+        let add = new Button(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(0, 0, 6, 0))
+        let remove = new Button(AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding(0))
+        let buttons = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                                          WrapContents = false, Anchor = AnchorStyles.Left, Margin = Padding(3, 3, 3, 3))
+        buttons.Controls.Add(add)
+        buttons.Controls.Add(remove)
+
+        let updateRemove () = remove.Enabled <- lb.SelectedIndices.Count > 0
+        let show (items: string[]) =
+            lb.BeginUpdate()
+            try
+                lb.Items.Clear()
+                lb.Items.AddRange(items |> Array.map box)
+            finally
+                lb.EndUpdate()
+            shown <- items
+            updateRemove ()
+
+        lb.SelectedIndexChanged.Add(fun _ -> updateRemove ())
+        // The change shows the items again (changed refreshes the dialog)
+        let setItems (items: string[]) = onChange (fun () -> set items)
+        let removeSelected () =
+            let selected = Collections.Generic.HashSet<int>(lb.SelectedIndices |> Seq.cast<int>)
+            if selected.Count > 0 then
+                let index = Seq.min selected
+                setItems (shown |> Array.indexed |> Array.filter (fun (i, _) -> not (selected.Contains i)) |> Array.map snd)
+                // The item after the removed ones selected, as Explorer does: Delete again goes on
+                if lb.Items.Count > 0 then lb.SelectedIndex <- min index (lb.Items.Count - 1)
+
+        add.Click.Add(fun _ ->
+            // A number waiting to be stored first, as the buttons of the dialog do
+            flushChanged ()
+            let added = ask ()
+            if added.Length > 0 then
+                let before = Collections.Generic.HashSet<string>(shown, StringComparer.OrdinalIgnoreCase)
+                setItems (Array.append shown added)
+                // The new items selected (those already in the list stay where they were)
+                lb.ClearSelected()
+                shown |> Array.iteri (fun i item -> if not (before.Contains item) then lb.SetSelected(i, true))
+                lb.Focus() |> ignore)
+        remove.Click.Add(fun _ ->
+            flushChanged ()
+            removeSelected ()
+            lb.Focus() |> ignore)
+        lb.KeyDown.Add(fun e ->
+            if e.KeyCode = Keys.Delete then
+                flushChanged ()
+                removeSelected ()
+                e.Handled <- true)
+        register {
+            // Only if they have changed: the selection is kept
+            refresh = (fun () -> let items = get() in if items <> shown then show items)
+            retext = (fun () ->
+                add.Text <- conv addText
+                remove.Text <- conv removeText) }
+        tipOn [lb] tip key
+        addRow [lb :> Control, 3]
+        addRow [buttons :> Control, 3]
+
     // A group of its own (one panel): the other radio buttons of the page are not unchecked.
     // enabled: as AddCheck.
     member _.AddRadioButtons (items: (string * string) list, isCurrent: string -> bool, set: string -> unit,

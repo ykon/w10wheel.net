@@ -1722,6 +1722,26 @@ let private resetSettings (owner: IWin32Window) =
         storeProperties()
         refreshSettingsDialog()
 
+// The programs to exclude (excludedPrograms) chosen in a file dialog modal to owner (the settings
+// dialog): their paths, none if canceled. A shortcut is taken for its target (DereferenceLinks). A
+// path with "#" cannot be written in the properties file, where it starts a comment: not added,
+// which is said.
+let private askExcludedPrograms (owner: IWin32Window) (): string[] =
+    use d = new OpenFileDialog(Title = convLang "Select programs to exclude",
+                               Filter = sprintf "%s (*.exe)|*.exe" (convLang "Programs"),
+                               Multiselect = true, DereferenceLinks = true, CheckFileExists = true)
+    if d.ShowDialog(owner) <> DialogResult.OK then
+        [||]
+    else
+        let paths, withHash = d.FileNames |> Array.partition (fun p -> not (p.Contains('#')))
+        if withHash.Length > 0 then
+            let page = TaskDialogPage(Caption = AppDef.PROGRAM_NAME_NET, Icon = TaskDialogIcon.Warning,
+                                      Heading = convLang "A program whose path has # cannot be added",
+                                      Text = String.Join("\n", withHash) + "\n" + convLang "In the properties file, # starts a comment.")
+            page.Buttons.Add(TaskDialogButton.OK)
+            TaskDialog.ShowDialog(owner, page, TaskDialogStartupLocation.CenterOwner) |> ignore
+        paths
+
 // From the settings dialog (owner). The settings of the selected properties are stored first: if
 // some could not be (e.g. a read-only file, or properties not loaded: then none), switching loses
 // them, which is asked. The properties switched to are loaded only if they can be read (also if
@@ -1976,6 +1996,12 @@ let private createSettingsDialog () =
         (fun () -> isVhAdjusterMode() && isVhAdjusterSwitching())
         "A move above this switches the direction (Switching)"
     vhAdjuster.AddNote "Used when Horizontal Scroll is enabled"
+
+    let excluded = dialog.AddPage "Excluded Programs"
+    excluded.AddList(getExcludedPrograms, setExcludedPrograms, askExcludedPrograms dialog.Owner, "Add...", "Remove",
+                     tip = "The programs (.exe) in whose windows the triggers do nothing\nThe window under the cursor when a trigger is pressed",
+                     key = DataID.excludedPrograms)
+    excluded.AddNote "In the windows of these programs, the triggers do not scroll: the buttons and the key work as usual"
 
     refreshSettingsDialog <- dialog.RefreshAllLater
     refreshSettingsLater <- dialog.RefreshLater
