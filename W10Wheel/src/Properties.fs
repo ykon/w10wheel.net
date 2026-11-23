@@ -27,16 +27,21 @@ let private propLineRegex = new Regex("^\s*[^\s=]+\s*=\s*\S.*$")
 // Written directly as before:
 // - a read-only file: not opened, the error says so with its path (nothing written), as before
 // - a symbolic link (a reparse point): it stays a link, its target is written
+// - a folder of its name: the same error as before
 // - the replacement failed (e.g. the file open in another program that does not share its
 //   deletion, the temporary file being scanned): tried 3 times first, 10 ms apart (about 16 ms
 //   each with the timer of Windows: about 31 ms in all), not longer as this thread also runs the
 //   low-level hooks (the mouse stops meanwhile). The temporary file has been written, so the disk
 //   had room, which its deletion gives back first (the new lines may need more than the old).
 let private writeLines (path: string) (lines: string[]): unit =
-    let attrs = if File.Exists(path) then Some(File.GetAttributes(path)) else None
+    // Read once (None if not found): not an error if the file is deleted meanwhile
+    let attrs =
+        try Some(File.GetAttributes(path))
+        with :? FileNotFoundException | :? DirectoryNotFoundException -> None
     let direct () = File.WriteAllLines(path, lines)
     match attrs with
-    | Some a when a.HasFlag(FileAttributes.ReadOnly) || a.HasFlag(FileAttributes.ReparsePoint) ->
+    | Some a when a.HasFlag(FileAttributes.ReadOnly) || a.HasFlag(FileAttributes.ReparsePoint)
+                  || a.HasFlag(FileAttributes.Directory) ->
         direct ()
     | _ ->
         // A name of its own (as the Java version, which shares the file): not another's being written
