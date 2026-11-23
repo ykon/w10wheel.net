@@ -44,7 +44,9 @@ function New-Package([string]$publishProfile, [string]$name) {
     New-Item $staging -ItemType Directory -Force | Out-Null
 
     Copy-Item (Join-Path $root "W10Wheel/bin/publish/$publishProfile/W10Wheel.exe") $staging
-    Copy-Item (Join-Path $root 'dist/*') $staging
+    # By name, as the Java version: dist also holds what is not distributed (release-notes, which
+    # dist/* copied as an empty folder)
+    Copy-Item (Join-Path $root 'dist/Readme.ja.txt') $staging
     Copy-Item (Join-Path $root 'License.txt') $staging
     Copy-Item (Join-Path $root 'Library.txt') $staging
     Copy-Item (Join-Path $root 'AccelTable.txt') $staging
