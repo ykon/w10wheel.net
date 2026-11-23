@@ -181,6 +181,8 @@ let private show (spec: Spec): DialogResult =
                 | _ -> ()
             content.MinimumSize <- Size(form.LogicalToDeviceUnits(spec.minWidth), 0)
             setIcon (fun () -> iconImage spec.makeIcon (form.LogicalToDeviceUnits(spec.iconSize)))
+            // Without an icon, the box (100 x 50 without an image) hidden and the texts on the left
+            icon.Visible <- not (isNull icon.Image)
             spec.fit ()
             // All the buttons as large as the largest (measured at their own size first), at least
             // as wide as the buttons of the message boxes
