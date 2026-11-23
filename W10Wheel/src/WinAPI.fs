@@ -320,5 +320,9 @@ extern bool QueryFullProcessImageName([<In>]nativeint hProcess, [<In>]int32 dwFl
 [<DllImport("user32.dll")>]
 extern nativeint GetForegroundWindow()
 
+// GA_ROOT (2): the top-level window of a child window
+[<DllImport("user32.dll")>]
+extern nativeint GetAncestor(nativeint hWnd, uint32 gaFlags)
+
 [<DllImport("user32.dll", SetLastError = true)>]
 extern [<MarshalAs(UnmanagedType.Bool)>] bool GetCursorPos(POINT& lpPoint);

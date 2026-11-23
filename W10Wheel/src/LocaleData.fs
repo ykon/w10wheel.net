@@ -160,6 +160,18 @@ let private JapaneseMessage =
         "First direction threshold", "初回判定閾値";
         "Switching threshold", "切り替え閾値";
         
+        "Excluded Programs", "除外するプログラム";
+        "Add...", "追加...";
+        "Remove", "削除";
+        "The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed\n(UWP / Store apps are not supported)",
+            "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます\n(UWP/ストアアプリは非対応)";
+        "Scrolling is disabled in these programs",
+            "登録したプログラムではスクロール機能が無効になります";
+        "Select programs to exclude", "除外するプログラムの選択";
+        "Programs", "プログラム";
+        "The exclusions file could not be read: changes are not saved", "除外リストのファイルを読み込めませんでした (変更は保存されません)";
+        "The changes could not be saved to the exclusions file", "除外リストのファイルに保存できませんでした";
+
         "Properties", "設定ファイル";
         "Reload", "再読み込み";
         "Open Dir", "フォルダを開く";

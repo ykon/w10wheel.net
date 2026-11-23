@@ -185,22 +185,28 @@ let private passPressedScrollMode (down: MouseEvent): nativeint option =
     else
         None
 
-let private matchAvastUI (pathOpt: string option): bool =
-    match pathOpt with
-    | Some (path) -> path.EndsWith("\\AvastUI.exe", StringComparison.OrdinalIgnoreCase)
-    //| Some (path) -> path.EndsWith("\\chrome.exe") // for Debug
-    | None -> false
+// The trigger pressed on the window of an excluded program (under the cursor, see
+// Windows.isExcludedWindowAt): its down passes, and its up (checkPassedDown), as when it is not
+// the trigger. Only where a wait would start: a scroll mode (and a wait) in progress gets the down
+// as before (e.g. the locked scroll mode ends). Not looked up for the other button of the Left and
+// Right triggers, which passes anyway (endNotTrigger). Nor while the keyboard trigger holds scroll
+// mode: its wait ends it (passPressedScrollMode), as the other triggers end it on an excluded
+// window (checkExitOtherScroll before passExcludedWindow).
+let private passExcludedWindowLR (down: MouseEvent): nativeint option =
+    if (Ctx.isLRTrigger() || Ctx.isTriggerEvent down) && not (Ctx.isPressedKeyboardScrollMode())
+       && Windows.isExcludedWindowAt down.Info.pt then
+        debug "pass (excluded program)" down
+        Ctx.LastFlags.SetPassed(down)
+        callNextHook()
+    else
+        None
 
-let private skipExcludeWindow (down: MouseEvent): nativeint option =
-    if Ctx.isExcludeAvast() then
-        //let pt_match = matchAvastUI(Windows.getFullPathFromCursorPos()) // for DPI scaling
-        let fw_match = matchAvastUI(Windows.getFullPathFromForegroundWindow())
-        if fw_match then
-            debug "pass avast" down
-            Ctx.LastFlags.SetPassed(down)
-            callNextHook()
-        else
-            None
+// As passExcludedWindowLR for the single and drag triggers, where scroll mode would start: their up
+// passes as the up of a down that did not start it (passNotStartedTrigger)
+let private passExcludedWindow (down: MouseEvent): nativeint option =
+    if Windows.isExcludedWindowAt down.Info.pt then
+        debug "pass (excluded program)" down
+        callNextHook()
     else
         None
 
@@ -491,7 +497,7 @@ let private lrDown (me: MouseEvent): nativeint =
         //passSingleEvent
         // Only to start a wait: scroll mode is left, and a wait in progress gets the down,
         // also on the excluded window (or the wait would resend its down after this one)
-        skipExcludeWindow
+        passExcludedWindowLR
         checkTriggerWaitStart
         endNotTrigger
     ]
@@ -530,6 +536,8 @@ let private singleDown (me: MouseEvent): nativeint =
         checkExitScrollDown
         passNotTrigger
         checkExitOtherScroll
+        // Also before the middle click it would send (Send MiddleClick): the button as it is
+        passExcludedWindow
         checkKeySendMiddle
         checkTriggerScrollStart
         endIllegalState
@@ -562,6 +570,7 @@ let private dragDown (me: MouseEvent): nativeint =
         checkExitScrollDown
         passNotDragTrigger
         checkExitOtherScroll
+        passExcludedWindow
         startScrollDrag
     ]
 
