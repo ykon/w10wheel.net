@@ -224,6 +224,9 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
     // What the restart does: the note of the command link of the task dialog before, a tip as in the
     // Java version
     use tips = new ToolTip()
+    // Kept as it is checked: the check box is disposed with the dialog when show returns
+    let dontAskChecked = ref false
+    dontAsk.CheckedChanged.Add(fun _ -> dontAskChecked.Value <- dontAsk.Checked)
     link.LinkClicked.Add(fun e -> if isLinkOpen e then openLink AppDef.WIKI_URL)
     let setShield = shieldSetter restart
 
@@ -259,7 +262,7 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                        if e.KeyCode = Keys.Escape then
                            e.Handled <- true
                            form.DialogResult <- DialogResult.Cancel)) }
-    res = DialogResult.Yes, (res = DialogResult.No && dontAsk.Checked)
+    res = DialogResult.Yes, (res = DialogResult.No && dontAskChecked.Value)
 
 // The version of W10Wheel and of .NET, whether it runs as administrator (it does not work in the
 // windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
