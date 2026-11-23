@@ -38,6 +38,10 @@ type private Spec =
       // (the dialog not narrower than it)
       textWidth: int
       minWidth: int
+      // Between the contents and the buttons
+      buttonsGap: int
+      // On the left of the buttons, under the contents (e.g. links)
+      footer: Control option
       // Under the heading, from the top (their margins set)
       body: Control list
       // From the left
@@ -113,14 +117,27 @@ let private show (spec: Spec): DialogResult =
     for c in spec.body do content.Controls.Add(c)
     // Added from the left, so that Tab goes from the left to the right (see SettingsForm.askText)
     let buttons = new FlowLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false,
-                                      Anchor = AnchorStyles.Right, Margin = Padding(0, 12, 0, 0))
+                                      Anchor = AnchorStyles.Right, Margin = Padding(0, spec.buttonsGap, 0, 0))
     spec.buttons |> List.iteri (fun i b ->
         b.Margin <- Padding((if i = 0 then 0 else 6), 0, 0, 0)
         buttons.Controls.Add(b))
     table.Controls.Add(icon, 0, 0)
     table.Controls.Add(content, 1, 0)
-    table.Controls.Add(buttons, 0, 1)
-    table.SetColumnSpan(buttons, 2)
+    match spec.footer with
+    | None ->
+        table.Controls.Add(buttons, 0, 1)
+        table.SetColumnSpan(buttons, 2)
+    | Some footer ->
+        // Under the contents, the buttons on the right of the column
+        let bottom = new TableLayoutPanel(AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
+                                          RowCount = 1, Dock = DockStyle.Fill, Margin = Padding(0, spec.buttonsGap, 0, 0))
+        bottom.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100.0f)) |> ignore
+        bottom.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        footer.Anchor <- AnchorStyles.Left
+        buttons.Margin <- Padding.Empty
+        bottom.Controls.Add(footer, 0, 0)
+        bottom.Controls.Add(buttons, 1, 0)
+        table.Controls.Add(bottom, 1, 1)
     form.Controls.Add(table)
     form.ResumeLayout(false)
     heading.Text <- spec.heading
@@ -201,6 +218,8 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
                // Wider than in the Java version: the text in two lines, not a word on a third
                textWidth = 400
                minWidth = 0
+               buttonsGap = 12
+               footer = None
                body = [text; link; dontAsk]
                buttons = [restart :> Button; continueWithout]
                texts = (fun () ->
@@ -228,7 +247,7 @@ let askRestartAsAdmin (conv: string -> string) (openLink: string -> unit): bool 
 // windows of the programs that do, if not), and the links to GitHub and the wiki (the dialog stays
 // open)
 let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit) =
-    let text = new Label(AutoSize = true, Margin = Padding(0, 0, 0, 8))
+    let text = new Label(AutoSize = true, Margin = Padding.Empty)
     let links = new LinkLabel(AutoSize = true, Margin = Padding.Empty)
     let ok = new DialogButton(DialogResult = DialogResult.OK)
     links.LinkClicked.Add(fun e -> openLink (string e.Link.LinkData))
@@ -242,8 +261,10 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
            headingGap = 16
            textWidth = 320
            // Not as narrow as its short lines
-           minWidth = 280
-           body = [text; links]
+           minWidth = 200
+           buttonsGap = 8
+           footer = Some(links)
+           body = [text]
            buttons = [ok :> Button]
            texts = (fun () ->
                text.Text <- sprintf "%s: %s\n%s: %s\n.NET: %s (%s)" (conv "Version") AppDef.PROGRAM_VERSION
