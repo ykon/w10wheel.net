@@ -52,6 +52,7 @@ let private JapaneseMessage =
         "The changes could not be saved", "変更を保存できませんでした";
         "Switching loses the settings changed in these properties.", "切り替えると、この設定ファイルで変更した設定は失われます。";
         "Switch", "切り替える";
+        "Restarting loses the settings changed in these properties.", "再起動すると、この設定ファイルで変更した設定は失われます。";
         "The properties file could not be read", "設定ファイルを読み込めませんでした";
         "Close", "閉じる";
         "Reset to defaults", "既定値に戻す";

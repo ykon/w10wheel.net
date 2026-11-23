@@ -1599,34 +1599,53 @@ let private confirm (owner: IWin32Window) (heading: string) (text: string) (acti
 let private shownPropertiesName name =
     if name = DEFAULT_DEF then convLang name else name
 
-// From the settings dialog: W10Wheel started as administrator, then this one exits as by Exit
-// (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
+// After storeProperties, before leaving the selected properties: true if no setting changed in them
+// is left not stored, else whether to go on and lose them (e.g. a read-only file, or properties not
+// loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
+// of the action; modal to owner (the settings dialog).
+let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (actionText: string) =
+    if (changedSettings (currentSettings ())).IsEmpty then
+        true
+    else
+        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
+        confirm owner (convLang "The changes could not be saved")
+                ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
+
+// From the settings dialog (owner): W10Wheel started as administrator, then this one exits as by
+// Exit (the hooks removed, the properties stored, the lock released: the new one waits for it). UAC
 // is waited for on another thread: the hooks run on this one, and would time out (Windows removes
 // them) while the user answers, if the input is not on the secure desktop.
 // Set while UAC is answered (on the UI thread): pressed again meanwhile, the button would start a
 // second instance as administrator, which would wait for the lock and then fail (double launch)
 let mutable private restarting = false
 
-let private restartAsAdmin () =
+let private restartAsAdmin (owner: IWin32Window) =
     if not restarting then
         restarting <- true
         // The button grayed until the answer
         refreshSettingsDialog()
-        // Stored first: the new instance may read them before this one stores them again at its exit
+        // Stored first: the new instance may read them before this one stores them again at its exit.
+        // If some could not be (e.g. a read-only file), the new one would load the file without
+        // them, and this one could not store them at its exit either: asked as when switching.
         storeProperties()
-        let ui = SynchronizationContext.Current
-        Tasks.Task.Run(fun () ->
-            let res = startAsAdmin true
-            ui.Post((fun _ ->
-                match res with
-                | AdminStarted -> exitAction ()
-                | AdminCanceled
-                | AdminFailed _ ->
-                    restarting <- false
-                    refreshSettingsDialog()
+        if not (confirmUnstoredLoss owner "Restarting loses the settings changed in these properties."
+                                    "Restart as administrator") then
+            restarting <- false
+            refreshSettingsDialog()
+        else
+            let ui = SynchronizationContext.Current
+            Tasks.Task.Run(fun () ->
+                let res = startAsAdmin true
+                ui.Post((fun _ ->
                     match res with
-                    | AdminFailed e -> Dialog.errorMessageE e
-                    | _ -> ()), null)) |> ignore
+                    | AdminStarted -> exitAction ()
+                    | AdminCanceled
+                    | AdminFailed _ ->
+                        restarting <- false
+                        refreshSettingsDialog()
+                        match res with
+                        | AdminFailed e -> Dialog.errorMessageE e
+                        | _ -> ()), null)) |> ignore
 
 // The selected properties (not Default), then Default is selected
 let private deleteProperties (owner: IWin32Window) =
@@ -1677,12 +1696,7 @@ let private resetSettings (owner: IWin32Window) =
 // settings, their changes not stored), and why is shown.
 let private switchProperties (owner: IWin32Window) name =
     storeProperties()
-    let lose () =
-        let why = storeError |> Option.orElse loadError |> Option.map (fun e -> e.Message + "\n")
-        confirm owner (convLang "The changes could not be saved")
-                ((Option.defaultValue "" why) + convLang "Switching loses the settings changed in these properties.")
-                (convLang "Switch")
-    if not (changedSettings (currentSettings ())).IsEmpty && not (lose ()) then
+    if not (confirmUnstoredLoss owner "Switching loses the settings changed in these properties." "Switch") then
         // The current properties selected again in the list
         refreshSettingsDialog()
     else
@@ -1808,8 +1822,8 @@ let private createSettingsDialog () =
     // Not as administrator: said, and the restart offered (as at startup)
     if not (isAdmin()) then
         general.AddNote("W10Wheel is not running as administrator", SettingsForm.NoteKind.Warning)
-        general.AddButton("Restart as administrator", restartAsAdmin, icon = Drawing.StockIconId.Shield,
-                          enabled = (fun () -> not restarting),
+        general.AddButton("Restart as administrator", (fun () -> restartAsAdmin dialog.Owner),
+                          icon = Drawing.StockIconId.Shield, enabled = (fun () -> not restarting),
                           tip = "Windows asks for permission (User Account Control)")
     addBool general "Ask to restart as administrator at startup" DataID.adminCheck
         "Asked when W10Wheel is not running as administrator"
