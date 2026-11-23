@@ -227,7 +227,8 @@ let showAbout (conv: string -> string) (isAdmin: bool) (openLink: string -> unit
            // A line between the name and the version, as in the Java version
            headingGap = 16
            textWidth = 320
-           minWidth = 0
+           // Not as narrow as its short lines
+           minWidth = 280
            body = [text; links]
            buttons = [ok]
            texts = (fun () ->
