@@ -1555,8 +1555,12 @@ let storeProperties () =
             if exists || name = Properties.DEFAULT_DEF then
                 storeExclusions name
             if not exists && name <> Properties.DEFAULT_DEF then
+                let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
+                // The excluded programs changed are not stored either (not for these properties):
+                // told as their error, also if only they have changed (none if they are as stored)
+                exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
                 if not (changedSettings current).IsEmpty then
-                    raise (FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path))
+                    raise (notFound ())
                 Debug.WriteLine("Properties file not found, not changed")
             elif not exists then
                 Debug.WriteLine("First write properties")
