@@ -1103,6 +1103,10 @@ let reinstallHooks () =
             mouseHookLost ()
         if Volatile.Read(&keyboardHook.contents) then
             setKeyboardHookOf true
+            // Not installed where there was none (at the end of a pause): turned off, as the
+            // settings dialog shows then (a load refreshes it after)
+            if not (Volatile.Read(&keyboardHook.contents)) then
+                refreshSettingsDialog()
 
 onPassModeSet <- (fun b ->
     if b then setKeyboardHookOf false else reinstallHooks ())
