@@ -257,44 +257,29 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
         Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
         Ctx.exitScrollMode()
 
-// The keyboard hook is installed again (on every load): ups may have been missed while it was
-// removed (e.g. by Windows for a timeout). The scroll mode the trigger key started would not
-// end, and its next down would be taken for a repeat: end it and forget the last event. The
-// passed keys are kept until their up (they pass, whatever happened meanwhile).
-// - The old hook was still installed (removed just before, no key missed): the keys whose down
-//   was suppressed, the trigger key pressed included, are suppressed for their up alone (as after
-//   initState), and those already are kept: the up of a key still pressed would pass alone after
-//   a second Reload. Whether a key is still pressed cannot be told for sure: the next press of a
-//   key whose up was missed works.
-// - Windows had removed it (oldHookLost, e.g. for a timeout): what was recorded of the presses
-//   before (the last event, the suppressed keys, those suppressed for their up alone) is
-//   forgotten. A key may have been released and pressed again meanwhile, its down reaching the
-//   application: its up must pass, or the key is left pressed there. (A key held all along has
-//   its up passed alone: not as bad.) Only the old records are forgotten: a repeat cannot be told
-//   from a new press, so the trigger key pressed again meanwhile and still held starts scroll
-//   mode with its next repeat, and its up is suppressed then.
-// (They are all forgotten too when the hook is turned off: changeTrigger, LastFlags.ResetKeys.)
-let private hookInstalled (oldHookLost: bool) =
-    if oldHookLost then
-        Ctx.LastFlags.ForgetSuppressedKeys()
-    else
-        // The trigger key pressed (its down suppressed, as the scroll it started): suppress its up
-        // alone, or it would pass. Its next down is taken for a new press (a repeat cannot be told
-        // from it), the repeats of a key still pressed start scroll mode again.
-        match lastEvent with
-        | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
-        | _ -> ()
-
-        Ctx.LastFlags.SuppressedKeysToLoneUp()
-
+// The keyboard hook has been replaced (on every load, after a resume or an unlock), and Windows had
+// removed the old one (e.g. for a timeout): ups may have been missed meanwhile. The scroll mode the
+// trigger key started would not end, and its next down would be taken for a repeat: end it and
+// forget the last event. What was recorded of the presses before (the suppressed keys, those
+// suppressed for their up alone) is forgotten: a key may have been released and pressed again
+// meanwhile, its down reaching the application: its up must pass, or the key is left pressed there.
+// (A key held all along has its up passed alone: not as bad.) The passed keys are kept until their
+// up (they pass, whatever happened meanwhile). Only the old records are forgotten: a repeat cannot
+// be told from a new press, so the trigger key pressed again meanwhile and still held starts scroll
+// mode with its next repeat, and its up is suppressed then.
+// A hook replaced while the old one was still installed missed nothing: this is not called then
+// (Ctx.setKeyboardHookOf). (The records are all forgotten when the hook is removed: changeTrigger,
+// LastFlags.ResetKeys.)
+let private hookLost () =
+    Ctx.LastFlags.ForgetSuppressedKeys()
     lastEvent <- NonEvent
 
     if Ctx.isKeyboardScrollMode() then
-        Debug.WriteLine("hookInstalled: exit keyboard scroll mode")
+        Debug.WriteLine("hookLost: exit keyboard scroll mode")
         Ctx.exitScrollMode()
 
 let setChangeTrigger () =
     Ctx.setChangeKeyboardTrigger changeTrigger
-    Ctx.setKeyboardHookInstalled hookInstalled
+    Ctx.setKeyboardHookLost hookLost
 
 

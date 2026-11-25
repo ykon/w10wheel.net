@@ -682,10 +682,9 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) or the keyboard
-    // hook installed again (KEventHandler.hookInstalled) and whose up has not come yet: their up
-    // alone is suppressed (the application did not get the down). Their next down resets them (a
-    // repeat cannot be told from a new press, it is taken for one).
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up
+    // has not come yet: their up alone is suppressed (the application did not get the down). Their
+    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
     static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
@@ -711,7 +710,7 @@ type LastFlags() =
         LastFlags.SuppressedKeysToLoneUp()
 
     // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-    // missed is not suppressed again (see Init, and KEventHandler.hookInstalled)
+    // missed is not suppressed again (see Init)
     static member SuppressedKeysToLoneUp () =
         for vk in 0 .. kdS.Length - 1 do
             if kdS.[vk] then kdL.[vk] <- true
@@ -793,7 +792,7 @@ type LastFlags() =
     // been released and pressed again meanwhile, its down reaching the application (no hook). The
     // records that would suppress its repeats or its up are forgotten (the passed keys, kdP, are
     // kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a repeat,
-    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookInstalled).
+    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookLost).
     static member ForgetSuppressedKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdL 0 kdL.Length false
@@ -1049,12 +1048,12 @@ let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
 let setChangeKeyboardTrigger f =
     changeKeyboardTrigger <- f
 
-// Called when the keyboard hook is installed (again), with whether Windows had removed the old one:
-// see KEventHandler.hookInstalled
-let mutable private keyboardHookInstalled: bool -> unit = (fun _ -> ())
+// Called when the keyboard hook has been replaced and Windows had removed the old one: see
+// KEventHandler.hookLost
+let mutable private keyboardHookLost: unit -> unit = (fun () -> ())
 
-let setKeyboardHookInstalled f =
-    keyboardHookInstalled <- f
+let setKeyboardHookLost f =
+    keyboardHookLost <- f
 
 let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
@@ -1072,20 +1071,24 @@ let private setTargetVKCode name =
 let private setKeyboardHookOf (b: bool) =
     let b = b && not Pass.Mode
     match WinHook.setOrUnsetKeyboardHook b with
-    | Some(err) ->
-        // Not installed (the previous hook removed): off, as the settings dialog shows (refreshed
-        // after the change or the load)
+    | WinHook.Failed err ->
+        // Not installed (there was none): off, as the settings dialog shows (refreshed after the
+        // change or the load)
         Volatile.Write(keyboardHook, false)
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
-    | None ->
-        if b then
-            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
-            // been missed
-            keyboardHookInstalled (WinHook.isOldKeyboardHookLost ())
-        else
-            changeKeyboardTrigger (getTargetVKCode()) false
+    // Replaced on every load (e.g. Reload after Windows removed it): keys may have been missed
+    // only if Windows had removed the old one
+    | WinHook.Replaced true -> keyboardHookLost ()
+    | _ when b ->
+        // Replaced seamlessly, the old one still installed: nothing was missed, nothing is changed
+        // (a keyboard scroll goes on, unless a load ends it: applyProperties). Installed where there
+        // was none: the records of the keys were reset when it was removed or could not be
+        // installed. Not replaced (it could not be): the old one stays.
+        ()
+    | _ ->
+        changeKeyboardTrigger (getTargetVKCode()) false
 
 // Installs the hooks again, to be first in the chain again (the newest hook is called first): after
 // a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
@@ -1428,8 +1431,9 @@ let private applyProperties () =
     // progress (Reload, switching properties) ends once they are set, so that the new ones
     // apply from the next (also one started meanwhile, e.g. during the error dialog of the
     // keyboard hook). Not if the file could not be read: the settings have not changed. The
-    // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-    // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+    // mouse triggers' has ended already if the trigger changed (changeTrigger), and the keyboard
+    // trigger's if its key changed or its hook was turned off or lost (setKeyboardHookOf). Their
+    // trigger's up (and the trigger key's repeats) are still suppressed.
     exitScrollMode()
 
 let private saveDefaults () =
