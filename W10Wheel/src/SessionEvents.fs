@@ -10,13 +10,17 @@ open System.Diagnostics
 open System.Windows.Forms
 
 let private WM_POWERBROADCAST = 0x0218
+let private PBT_APMSUSPEND = 0x0004
 let private PBT_APMRESUMESUSPEND = 0x0007
 let private PBT_APMRESUMEAUTOMATIC = 0x0012
 let private WM_WTSSESSION_CHANGE = 0x02B1
+let private WTS_SESSION_LOCK = 0x7
 let private WTS_SESSION_UNLOCK = 0x8
 
-// Posted by the window to itself for an event (see EventWindow)
-let private WM_APP_RESUMED = 0x8000 + 1
+// Posted by the window to itself for an event (see EventWindow): a lock or a suspend, and an unlock
+// or a resume
+let private WM_APP_LOCKED = 0x8000 + 1
+let private WM_APP_RESUMED = 0x8000 + 2
 
 // After a resume or an unlock, the hooks are installed again (Ctx.reinstallHooks): some time after
 // the event, after the other software's, and once more later in case that software was late (2 s
@@ -43,22 +47,36 @@ reinstallTimer.Tick.Add (fun _ ->
 let private isWParam (m: Message) (n: int) =
     m.WParam = nativeint n
 
-// A hidden top-level window: the resume (WM_POWERBROADCAST) and the unlock (WM_WTSSESSION_CHANGE)
-// are not sent to a message-only window (as RawInput's). They are sent messages, which this thread
-// also handles while it waits for a lock in a hook call (an STA thread pumps them): what they do is
-// posted, and done from the message loop, not in the middle of an event being handled.
+// A hidden top-level window: the suspend and resume (WM_POWERBROADCAST) and the lock and unlock
+// (WM_WTSSESSION_CHANGE) are not sent to a message-only window (as RawInput's). They are sent
+// messages, which this thread also handles while it waits for a lock in a hook call (an STA thread
+// pumps them): what they do is posted, and done from the message loop, not in the middle of an
+// event being handled.
+// The hooks see none of the input while the session is locked (it goes to the secure desktop) or
+// the system asleep: the state is reset at each of them (Ctx.inputLost). After an unlock or a
+// resume, the hooks are installed again (scheduleReinstall).
 type private EventWindow() =
     inherit NativeWindow()
 
     member self.Create () =
         self.CreateHandle(CreateParams())
 
+    member private self.Post (msg: int) =
+        WinAPI.PostMessage(self.Handle, uint32 msg, IntPtr.Zero, IntPtr.Zero) |> ignore
+
     override self.WndProc(m: Message byref): unit =
-        if (m.Msg = WM_POWERBROADCAST && (isWParam m PBT_APMRESUMEAUTOMATIC || isWParam m PBT_APMRESUMESUSPEND))
-           || (m.Msg = WM_WTSSESSION_CHANGE && isWParam m WTS_SESSION_UNLOCK) then
+        if (m.Msg = WM_POWERBROADCAST && isWParam m PBT_APMSUSPEND)
+           || (m.Msg = WM_WTSSESSION_CHANGE && isWParam m WTS_SESSION_LOCK) then
+            Debug.WriteLine(sprintf "SessionEvents: locked (0x%X, %d)" m.Msg m.WParam)
+            self.Post WM_APP_LOCKED
+        elif (m.Msg = WM_POWERBROADCAST && (isWParam m PBT_APMRESUMEAUTOMATIC || isWParam m PBT_APMRESUMESUSPEND))
+             || (m.Msg = WM_WTSSESSION_CHANGE && isWParam m WTS_SESSION_UNLOCK) then
             Debug.WriteLine(sprintf "SessionEvents: resumed (0x%X, %d)" m.Msg m.WParam)
-            WinAPI.PostMessage(self.Handle, uint32 WM_APP_RESUMED, IntPtr.Zero, IntPtr.Zero) |> ignore
+            self.Post WM_APP_RESUMED
+        elif m.Msg = WM_APP_LOCKED then
+            Ctx.inputLost ()
         elif m.Msg = WM_APP_RESUMED then
+            Ctx.inputLost ()
             scheduleReinstall ()
 
         base.WndProc(&m)

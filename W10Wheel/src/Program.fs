@@ -166,6 +166,7 @@ let private initSetFunctions () =
     Windows.setSendWheelRaw ()
     Windows.setInitScroll ()
     EventWaiter.setOfferEW ()
+    Windows.setForgetPresses ()
     EventHandler.setInitStateMEH ()
     KEventHandler.setInitStateKEH ()
     KEventHandler.setChangeTrigger ()

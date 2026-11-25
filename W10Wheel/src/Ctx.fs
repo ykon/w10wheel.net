@@ -797,7 +797,8 @@ type LastFlags() =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdL 0 kdL.Length false
 
-    // The keyboard hook is removed: the ups will not be seen
+    // The keyboard hook is removed, or keys were not seen (the session locked): the ups will not be
+    // seen, or were missed
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdP 0 kdP.Length false
@@ -2194,6 +2195,24 @@ let initState () =
     initStateKEH()
     LastFlags.Init()
     exitScrollMode()
+
+let mutable private forgetPresses: unit -> unit = (fun () -> ())
+let setForgetPresses f = forgetPresses <- f
+
+// The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the hooks
+// saw none of the input meanwhile (it went to the secure desktop, or was lost), so a trigger
+// released then would keep its scroll mode (the moves suppressed), and a key or a button released
+// then would keep its records. As initState, and the records of all keys and buttons are forgotten
+// (Windows.forgetPresses): none is still held from before (e.g. a key passed over an excluded
+// program and released while locked would pass its next press). Done at the event, not when the
+// hooks are installed again later (a scroll started after it goes on). Not after the hooks have
+// been removed for the exit.
+let inputLost () =
+    Debug.WriteLine("inputLost")
+    if not (WinHook.isClosed ()) then
+        initState ()
+        forgetPresses ()
+        LastFlags.ResetKeys()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
