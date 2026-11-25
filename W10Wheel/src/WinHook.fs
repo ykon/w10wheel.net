@@ -52,32 +52,64 @@ let callNextKeyboardHook nCode wParam info =
 let private getHookError (hhk: nativeint): string option =
     if hhk = IntPtr.Zero then Some(WinError.getLastErrorMessage()) else None
 
-// None if installed, else the error message
+// The hooks have been removed for the exit (unhook): not installed again after it (e.g. by a
+// timer of Ctx.reinstallHooks, still running if the session ends on another thread)
+let private closed: bool ref = ref false
+let isClosed () = Volatile.Read(&closed.contents)
+
+// The hooks are installed and removed under this lock: the exit (unhook) may run on another thread
+// (the session ended) while the hooks are installed again on the thread of the message loop. Not
+// under it, a hook installed after unhook read the handles would stay installed after the exit.
+let private hookLock = new Object()
+
+// None if installed, else the error message. At startup, after the end of the session is subscribed
+// (Program.main): under the lock, and not after the exit (None then, W10Wheel is exiting).
 let setMouseHook (): string option =
-    let hhk = __setMouseHook()
-    let err = getHookError hhk
-    Volatile.Write(mouseHhk, hhk)
-    err
+    lock hookLock (fun () ->
+        if Volatile.Read(&closed.contents) then
+            None
+        else
+            let hhk = __setMouseHook()
+            let err = getHookError hhk
+            Volatile.Write(mouseHhk, hhk)
+            err)
 
-// Whether the keyboard hook removed by the last install had been removed by Windows already
-// (UnhookWindowsHookEx failed): the keys may have been pressed and released meanwhile, with no
-// hook to see them (see KEventHandler.hookInstalled). Set by setKeyboardHook, on the UI thread.
-let mutable private oldKeyboardHookLost = false
-let isOldKeyboardHookLost () = oldKeyboardHookLost
+// Installs the mouse hook again, to be first in the chain again (the newest hook is called first):
+// before the hooks installed after it (e.g. mouse software that installs its hook again after a
+// resume, then sees the buttons first and passes on only those it injects, which W10Wheel ignores).
+// The new hook is installed before the old one is removed (kept if that fails, None): no event is
+// handled in between, as the hooks are called on this thread only when it takes its messages.
+// Some(true): Windows had removed the old one already (e.g. for a timeout; UnhookWindowsHookEx
+// failed), so events may have been missed before.
+let reinstallMouseHook (): bool option =
+    lock hookLock (fun () ->
+        let old = Volatile.Read(&mouseHhk.contents)
+        if Volatile.Read(&closed.contents) || old = IntPtr.Zero then
+            None
+        else
+            let hhk = __setMouseHook()
+            if hhk = IntPtr.Zero then
+                Debug.WriteLine("reinstallMouseHook: " + WinError.getLastErrorMessage())
+                None
+            else
+                Volatile.Write(mouseHhk, hhk)
+                Some(not (__unhook old)))
 
-// None if installed, else the error message
-let setKeyboardHook (): string option =
-    // setOrUnsetKeyboardHook true is called on every properties load (Reload, switching properties).
-    // Remove the previous hook first: installing again would leave it installed (unhookKeyboard
-    // only removes the last one). Installing anew also recovers a hook that Windows removed
-    // silently because of a timeout (UnhookWindowsHookEx then just fails).
-    let old = Volatile.Read(&keyboardHhk.contents)
-    oldKeyboardHookLost <- old <> IntPtr.Zero && not (__unhook old)
-
-    let hhk = __setKeyboardHook()
-    let err = getHookError hhk
-    Volatile.Write(keyboardHhk, hhk)
-    err
+// What setOrUnsetKeyboardHook did
+type KeyboardHookResult =
+    // Nothing changed, also when a replacement could not be installed (the old hook stays)
+    | Unchanged
+    // Installed where there was none
+    | Installed
+    // Replaced by a new one, installed before the old one was removed: no event was missed.
+    // oldHookLost: Windows had removed the old one already (e.g. for a timeout; its
+    // UnhookWindowsHookEx failed), so keys may have been pressed and released before with no hook
+    // to see them (see KEventHandler.hookLost).
+    | Replaced of oldHookLost: bool
+    // Removed: no keyboard events are seen any more
+    | Removed
+    // Could not be installed where there was none (the error message, shown by Ctx, translated)
+    | Failed of string
 
 let unhookMouse () =
     let hhk = Volatile.Read(&mouseHhk.contents)
@@ -90,16 +122,36 @@ let unhookKeyboard () =
     if hhk <> IntPtr.Zero then
         __unhook hhk |> ignore
         Volatile.Write(keyboardHhk, IntPtr.Zero)
-        
-// None if done, else the error message of the install (shown by Ctx, translated)
-let setOrUnsetKeyboardHook (b: bool): string option =
-    Debug.WriteLine(sprintf "setOrUnsetKeyboardHook: %b" b)
-    if b then
-        setKeyboardHook()
-    else
-        unhookKeyboard()
-        None
 
-let unhook () =
+// Installs (b) or removes the keyboard hook. Installed, it is replaced by a new one, first in the
+// chain: on every properties load (Reload, switching properties), after a resume or an unlock
+// (Ctx.reinstallHooks). This also recovers a hook that Windows removed silently because of a
+// timeout. As the mouse hook (reinstallMouseHook): the new one is installed before the old one is
+// removed, with no event handled in between, and the old one stays if that fails.
+let setOrUnsetKeyboardHook (b: bool): KeyboardHookResult =
+    Debug.WriteLine(sprintf "setOrUnsetKeyboardHook: %b" b)
+    lock hookLock (fun () ->
+        let old = Volatile.Read(&keyboardHhk.contents)
+        // Not installed again after the hooks have been removed for the exit (as reinstallMouseHook)
+        if b && Volatile.Read(&closed.contents) then
+            Unchanged
+        elif b then
+            let hhk = __setKeyboardHook()
+            match getHookError hhk with
+            | Some err when old <> IntPtr.Zero ->
+                Debug.WriteLine("setOrUnsetKeyboardHook: not replaced: " + err)
+                Unchanged
+            | Some err -> Failed err
+            | None ->
+                Volatile.Write(keyboardHhk, hhk)
+                if old = IntPtr.Zero then Installed else Replaced(not (__unhook old))
+        elif old <> IntPtr.Zero then
+            unhookKeyboard()
+            Removed
+        else
+            Unchanged)
+
+let unhook () = lock hookLock (fun () ->
+    Volatile.Write(closed, true)
     unhookMouse()
-    unhookKeyboard()
+    unhookKeyboard())

@@ -400,6 +400,24 @@ let dropLoneUp (button: int) (info: HookInfo): bool =
     else
         false
 
+// The buttons' ups may have been missed (no hook saw them; the physical up reached the application
+// then): the session was locked or the system suspended (Ctx.inputLost), or Windows had removed the
+// mouse hook. The suppressed downs are forgotten, so that the up of a press made meanwhile (which
+// reached the application too) is not taken for an up without its down (dropLoneUp). A down resent
+// alone still queued for a press whose up has not been resent (releaseQueuedId) is dropped when it
+// comes (as after a passed up, dropResent), or it would reach the application alone and the button
+// stay pressed (e.g. the LR trigger's wait timed out, then the up missed); one whose up is queued
+// passes with it (the click is whole). The press IDs are kept (resent events in flight are still
+// told). On the hook thread (the thread of the message loop).
+let forgetPresses () =
+    for i in 0 .. downSuppressed.Length - 1 do
+        downSuppressed.[i] <- false
+        if releaseQueuedId.[i] <> pressId.[i] then
+            upPassed.[i] <- true
+
+let setForgetPresses () =
+    Ctx.setForgetPresses forgetPresses
+
 // dropLoneUp for a left or right up (on the hook thread)
 let dropLoneUpOf (up: MouseEvent): bool =
     match up with
@@ -760,6 +778,8 @@ let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
 let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
 let checkAltState () = checkAsyncKeyState(VK_MENU)
 let checkEscState () = checkAsyncKeyState(VK_ESCAPE)
+// Whether the key is down now (the state of the keyboard, not of the messages taken so far)
+let checkKeyState (vk: int) = checkAsyncKeyState(vk)
 
 let private initFuncs () =
     addAccelIf <- if Ctx.isAccelTable() then addAccel else passInt

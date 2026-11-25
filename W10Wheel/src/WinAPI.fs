@@ -326,3 +326,42 @@ extern nativeint GetAncestor(nativeint hWnd, uint32 gaFlags)
 
 [<DllImport("user32.dll", SetLastError = true)>]
 extern [<MarshalAs(UnmanagedType.Bool)>] bool GetCursorPos(POINT& lpPoint);
+
+// The file of new properties (Properties.NewFile)
+let GENERIC_WRITE = 0x40000000u
+let DELETE = 0x00010000u
+let CREATE_NEW = 1u
+let FILE_ATTRIBUTE_NORMAL = 0x80u
+let ERROR_FILE_EXISTS = 80
+let ERROR_ALREADY_EXISTS = 183
+let FILE_DISPOSITION_INFO_CLASS = 4
+
+// https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
+[<DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, CharSet = CharSet.Unicode)>]
+extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, uint32 dwDesiredAccess, uint32 dwShareMode, nativeint lpSecurityAttributes, uint32 dwCreationDisposition, uint32 dwFlagsAndAttributes, nativeint hTemplateFile)
+
+// https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+// FILE_DISPOSITION_INFO: a BOOLEAN (DeleteFile)
+[<DllImport("kernel32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool SetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle hFile, int32 FileInformationClass, byte& lpFileInformation, uint32 dwBufferSize)
+
+// The resume and the unlock (SessionEvents)
+let DEVICE_NOTIFY_WINDOW_HANDLE = 0u
+let NOTIFY_FOR_THIS_SESSION = 0u
+
+// https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-registersuspendresumenotification
+[<DllImport("user32.dll", SetLastError = true)>]
+extern nativeint RegisterSuspendResumeNotification(nativeint hRecipient, uint32 flags)
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool UnregisterSuspendResumeNotification(nativeint handle)
+
+// https://learn.microsoft.com/windows/win32/api/wtsapi32/nf-wtsapi32-wtsregistersessionnotification
+[<DllImport("wtsapi32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool WTSRegisterSessionNotification(nativeint hWnd, uint32 dwFlags)
+
+[<DllImport("wtsapi32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool WTSUnRegisterSessionNotification(nativeint hWnd)
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool PostMessage(nativeint hWnd, uint32 Msg, nativeint wParam, nativeint lParam)

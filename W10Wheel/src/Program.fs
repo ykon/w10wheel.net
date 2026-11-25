@@ -166,6 +166,7 @@ let private initSetFunctions () =
     Windows.setSendWheelRaw ()
     Windows.setInitScroll ()
     EventWaiter.setOfferEW ()
+    Windows.setForgetPresses ()
     EventHandler.setInitStateMEH ()
     KEventHandler.setInitStateKEH ()
     KEventHandler.setChangeTrigger ()
@@ -217,11 +218,14 @@ let main argv =
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed mouse hook install") err) (convLang "Error")
         Environment.Exit(1)
     | None -> ()
+    // The hooks are installed again after a resume or an unlock (see Ctx.reinstallHooks)
+    SessionEvents.start ()
 
     // Shown when the message loop runs (after the hooks and the tray icon)
     if openSettings then Ctx.showSettingsDialog ()
 
     Application.Run()
     Debug.WriteLine("Exit message loop")
+    SessionEvents.stop ()
     procExit()
     0

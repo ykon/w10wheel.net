@@ -7,9 +7,12 @@
 
 open System
 open System.IO
+open Microsoft.Win32.SafeHandles
 open System.Collections.Generic
+open System.ComponentModel
 open System.Diagnostics
 open System.Globalization
+open System.Runtime.InteropServices
 open System.Text
 open System.Text.RegularExpressions
 open System.Threading
@@ -109,22 +112,32 @@ type Properties() =
             Array.filter isPropLine |> Array.map getKeyValue |>
             Array.iter setDict
 
-    member self.Store (path:string): unit =
-        let makePropLine k = (sprintf "%s=%s" k sdict.[k])
-        let lines = Seq.map makePropLine sdict.Keys |> Array.ofSeq
-        writeLines path lines
+    // The properties read from lines (as Load reads them from a file)
+    member self.LoadLines (lines:string[]): unit =
+        lines |>
+        Array.map removeComment |> trims |>
+        Array.filter isPropLine |> Array.map getKeyValue |>
+        Array.iter setDict
 
-    // Writes the values of keys to the file (path) as it is now: the lines of these keys get their
-    // values (a comment after a value is kept), the other lines stay as they are (the other keys,
-    // the comments, the empty lines, their order), and the keys not in it are added at the end
-    member self.Update (path:string, keys:string list): unit =
+    // The lines of a file of these properties alone (all the keys, in order)
+    member self.StoreLines (): string[] =
+        let makePropLine k = (sprintf "%s=%s" k sdict.[k])
+        Seq.map makePropLine sdict.Keys |> Array.ofSeq
+
+    member self.Store (path:string): unit =
+        writeLines path (self.StoreLines())
+
+    // The lines of a file (lines) with the values of keys: the lines of these keys get their values
+    // (a comment after a value is kept), the other lines stay as they are (the other keys, the
+    // comments, the empty lines, their order), and the keys not in it are added at the end
+    member self.UpdatedLines (lines:string[], keys:string list): string[] =
         let toWrite = HashSet<string>(keys)
         let written = HashSet<string>()
         let keyOf (l:string) =
             let p = (removeComment l).Trim()
             if isPropLine p then Some(fst (getKeyValue p)) else None
-        let lines =
-            File.ReadAllLines(path) |> Array.map (fun l ->
+        let updated =
+            lines |> Array.map (fun l ->
                 match keyOf l with
                 | Some k when toWrite.Contains k ->
                     written.Add k |> ignore
@@ -137,7 +150,11 @@ type Properties() =
         let added =
             keys |> List.filter (fun k -> not (written.Contains k)) |>
             List.map (fun k -> sprintf "%s=%s" k sdict.[k])
-        writeLines path (Array.append lines (Array.ofList added))
+        Array.append updated (Array.ofList added)
+
+    // Writes the values of keys to the file (path) as it is now (see UpdatedLines)
+    member self.Update (path:string, keys:string list): unit =
+        writeLines path (self.UpdatedLines(File.ReadAllLines(path), keys))
 
     member self.Keys: string list =
         List.ofSeq sdict.Keys
@@ -246,19 +263,84 @@ let findName (name:string): string option =
         |> Option.defaultValue name
         |> Some
 
-let copy (srcName:string) (destName:string): unit =
-    let srcPath = getPath(srcName)
-    let destPath = getPath(destName)
-
-    File.Copy(srcPath, destPath)
-    // Not read-only as the source may be (File.Copy copies its attributes): the new properties are
-    // written when a setting is changed
-    let attrs = File.GetAttributes(destPath)
-    if attrs.HasFlag(FileAttributes.ReadOnly) then
-        File.SetAttributes(destPath, attrs &&& ~~~FileAttributes.ReadOnly)
-
 let delete (name:string): unit =
     File.Delete(getPath name)
+
+// The file of path exists already (NewFile.Create): made by another program since its name was checked
+exception FileExists of string
+
+// The properties file of new properties (Ctx.addProperties), held open from its creation until the
+// Add is done. Created only if there is none (CREATE_NEW): a file made there by another program
+// since the name was checked is not replaced (FileExists). Written whole at once with its final
+// lines (UTF-8 without a BOM, CRLF: as writeLines), through this handle, which shares nothing: while
+// it is held, no other program can open the file at all, so none can write, replace, rename or
+// delete it, and the file written, and the one deleted if the Add fails (Discard), is always this
+// one. Not even reading is shared (nothing needs it: the Add loads what it wrote from memory): a
+// program reading it could map it into memory, and Windows does not delete a file mapped so, which
+// would leave the file of a failed Add behind, its name taken.
+// The handle is kept as CreateFile gave it: FileStream.SafeFileHandle flushes the stream first,
+// which throws again after a write that failed (e.g. a full disk), so the file would not be deleted
+// nor released. The stream has no buffer of its own (bufferSize 0, the StreamWriter has one): its
+// Dispose has nothing left to write either.
+type NewFile private (handle: SafeFileHandle, fs: FileStream) =
+    static member Create (path:string, lines:string[]): NewFile =
+        let handle = WinAPI.CreateFile(NewFile.ExtendedPath path, WinAPI.GENERIC_WRITE ||| WinAPI.DELETE, 0u, IntPtr.Zero,
+                                       WinAPI.CREATE_NEW, WinAPI.FILE_ATTRIBUTE_NORMAL, IntPtr.Zero)
+        if handle.IsInvalid then
+            let err = Marshal.GetLastWin32Error()
+            handle.Dispose()
+            if err = WinAPI.ERROR_FILE_EXISTS || err = WinAPI.ERROR_ALREADY_EXISTS then
+                raise (FileExists path)
+            else
+                raise (IOException(sprintf "%s: %s" (Win32Exception(err).Message) path))
+        let file =
+            try
+                new NewFile(handle, new FileStream(handle, FileAccess.Write, 0))
+            with
+                | _ ->
+                    // Not made a stream (not expected): deleted and released all the same
+                    NewFile.DeleteOnClose handle
+                    handle.Dispose()
+                    reraise ()
+        try
+            use w = new StreamWriter(file.Stream, UTF8Encoding(false), -1, true)
+            lines |> Array.iter w.WriteLine
+            w.Flush()
+            file.Stream.Flush(true)
+        with
+            | _ ->
+                file.Discard()
+                reraise ()
+        file
+
+    member private self.Stream: FileStream = fs
+
+    // The path given to CreateFile: W10Wheel is not long path aware (no longPathAware in a
+    // manifest), so a full path of MAX_PATH (260) characters or more fails there, which .NET opens
+    // (it adds the prefix of an extended-length path itself). The same prefix here: \\?\ (\\?\UNC\
+    // for a network path), on the full path (an extended-length path is not normalized).
+    static member private ExtendedPath (path: string): string =
+        let full = Path.GetFullPath(path)
+        if full.Length < 260 || full.StartsWith(@"\\?\") || full.StartsWith(@"\\.\") then full
+        elif full.StartsWith(@"\\") then @"\\?\UNC\" + full.Substring(2)
+        else @"\\?\" + full
+
+    static member private DeleteOnClose (handle: SafeFileHandle) =
+        let mutable delete = 1uy
+        if not (WinAPI.SetFileInformationByHandle(handle, WinAPI.FILE_DISPOSITION_INFO_CLASS, &delete, 1u)) then
+            Debug.WriteLine(sprintf "NewFile.Discard: %s" (Win32Exception(Marshal.GetLastWin32Error()).Message))
+
+    // The Add failed: this file (not whatever is at its path) is deleted when the handle closes,
+    // which it is now (also if the stream throws: the handle is closed then too). An error is not
+    // thrown (over the error of the Add): there is none to expect, nothing else can have the file
+    // open.
+    member self.Discard (): unit =
+        NewFile.DeleteOnClose handle
+        try fs.Dispose() with e -> Debug.WriteLine("NewFile.Discard: " + e.Message)
+        handle.Dispose()
+
+    // The Add is done: the file is released
+    member self.Dispose () = fs.Dispose()
 
 // The excluded programs of the properties of name are in a file of their own, beside theirs:
 // .W10Wheel.exclusions (Default), .W10Wheel.<name>.exclusions. Not a key of the properties: a path

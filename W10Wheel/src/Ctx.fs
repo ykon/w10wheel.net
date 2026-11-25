@@ -138,6 +138,9 @@ let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 
+// Set after reinstallHooks: the hooks follow Pass Mode, as it is now (see onPassModeSet below)
+let mutable private onPassModeSet: bool -> unit = (fun _ -> ())
+
 // Pass Mode is switched under this lock, and the LR trigger checks Pass Mode and queues its
 // resent down under it (see EventWaiter.fromTimeout). Held only briefly: SendInput must not
 // be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
@@ -173,6 +176,7 @@ type private Pass() =
             // the other call has shown it already
             changeNotifyIcon mode
             passModeMenuItem.Checked <- mode
+            onPassModeSet mode
 
     static member toggleMode () =
         Pass.Mode <- not mode
@@ -678,10 +682,9 @@ type LastFlags() =
     static let kdS = Array.create 256 false
     // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
     static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) or the keyboard
-    // hook installed again (KEventHandler.hookInstalled) and whose up has not come yet: their up
-    // alone is suppressed (the application did not get the down). Their next down resets them (a
-    // repeat cannot be told from a new press, it is taken for one).
+    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up
+    // has not come yet: their up alone is suppressed (the application did not get the down). Their
+    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
     static let kdL = Array.create 256 false
 
     static let getAndReset (flag: bool byref) =
@@ -692,22 +695,26 @@ type LastFlags() =
     static let isKey (vk: int) =
         vk >= 0 && vk < kdS.Length
 
-    // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Dispatcher) and reset
-    // them; reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats
-    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
+    // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed would
+    // lose it (e.g. pressed over an excluded program: its repeats would start scroll mode if it
+    // is the trigger, and its up would be suppressed). Whether a
     // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
     // suppressed is not pressed for it. A key whose up was missed passes its next down once.
     // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
     // suppressed again: only their up alone is (kdL), as the hook does for the buttons
     // (Windows.dropLoneUp).
     static member Init () =
+        LastFlags.InitButtons()
+        LastFlags.SuppressedKeysToLoneUp()
+
+    // The flags of the buttons (resent, passed, suppressed): see Init, and Ctx.mouseHookLost
+    static member InitButtons () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
-        LastFlags.SuppressedKeysToLoneUp()
 
     // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-    // missed is not suppressed again (see Init, and KEventHandler.hookInstalled)
+    // missed is not suppressed again (see Init)
     static member SuppressedKeysToLoneUp () =
         for vk in 0 .. kdS.Length - 1 do
             if kdS.[vk] then kdL.[vk] <- true
@@ -785,16 +792,8 @@ type LastFlags() =
     static member GetAndReset_LoneUpKey (vk: int): bool =
         isKey vk && getAndReset(&kdL.[vk])
 
-    // The keyboard hook is installed again after Windows had removed the old one: a key may have
-    // been released and pressed again meanwhile, its down reaching the application (no hook). The
-    // records that would suppress its repeats or its up are forgotten (the passed keys, kdP, are
-    // kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a repeat,
-    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookInstalled).
-    static member ForgetSuppressedKeys () =
-        Array.fill kdS 0 kdS.Length false
-        Array.fill kdL 0 kdL.Length false
-
-    // The keyboard hook is removed: the ups will not be seen
+    // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
+    // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdP 0 kdP.Length false
@@ -1045,9 +1044,16 @@ let mutable private changeKeyboardTrigger: int -> bool -> unit = (fun _ _ -> ())
 let setChangeKeyboardTrigger f =
     changeKeyboardTrigger <- f
 
-// Called when the keyboard hook is installed (again), with whether Windows had removed the old one:
-// see KEventHandler.hookInstalled
-let mutable private keyboardHookInstalled: bool -> unit = (fun _ -> ())
+// Called when the keyboard hook has been replaced and Windows had removed the old one: see
+// KEventHandler.hookLost
+let mutable private keyboardHookLost: unit -> unit = (fun () -> ())
+
+let setKeyboardHookLost f =
+    keyboardHookLost <- f
+
+// Called when the keyboard hook has been installed where there was none: see
+// KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
 
 let setKeyboardHookInstalled f =
     keyboardHookInstalled <- f
@@ -1061,24 +1067,51 @@ let private setTargetVKCode name =
     if code <> old then
         changeKeyboardTrigger old true
 
+// The settings as they were loaded, or last stored: only those changed since are stored
+// (storeProperties)
+let mutable private storedSettings = Properties.Properties()
+
+// The settings are stored under this lock (storeProperties): at the exit, maybe on another thread
+// (the session ended, see Program.procExit). A setting changed together with its stored value (the
+// keyboard trigger turned off but not stored, setKeyboardHookOf) is changed under it too, so that a
+// store sees both or neither (it would write the one without the other).
+let private storeLock = new Object()
+
+// The keyboard hook installed (again) if the keyboard trigger is on (b), else removed. Also removed
+// while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held when the pause
+// starts passes alone; the trigger key held when it ends passes until its up, keyboardHookInstalled,
+// the other keys pass anyway). Installed again when the pause ends
+// (reinstallHooks). The mouse hook stays: it receives the commands (W10Message), and passes all.
 let private setKeyboardHookOf (b: bool) =
+    let b = b && not Pass.Mode
     match WinHook.setOrUnsetKeyboardHook b with
-    | Some(err) ->
-        // Not installed (the previous hook removed): off, as the settings dialog shows (refreshed
-        // after the change or the load)
-        Volatile.Write(keyboardHook, false)
+    | WinHook.Failed err ->
+        // Not installed (there was none): off, as the settings dialog shows (refreshed after the
+        // change or the load). Not stored (as stored too: the file keeps it, it is tried again at
+        // the next start or load), as at a load: also before the dialog, during which the settings
+        // can be stored (e.g. at the exit).
+        lock storeLock (fun () ->
+            Volatile.Write(keyboardHook, false)
+            storedSettings.SetBool(DataID.keyboardHook, false))
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
-    | None ->
-        if b then
-            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
-            // been missed
-            keyboardHookInstalled (WinHook.isOldKeyboardHookLost ())
-        else
-            changeKeyboardTrigger (getTargetVKCode()) false
+    // Replaced on every load (e.g. Reload after Windows removed it): keys may have been missed
+    // only if Windows had removed the old one
+    | WinHook.Replaced true -> keyboardHookLost ()
+    // Installed where there was none (e.g. at the end of a pause): the records of the keys were
+    // reset when it was removed or could not be installed; a trigger key held now passes
+    | WinHook.Installed -> keyboardHookInstalled ()
+    | _ when b ->
+        // Replaced seamlessly, the old one still installed: nothing was missed, nothing is changed
+        // (a keyboard scroll goes on, unless a load ends it: applyProperties). Not replaced (it
+        // could not be): the old one stays.
+        ()
+    | _ ->
+        changeKeyboardTrigger (getTargetVKCode()) false
 
-
+// Set at the end of this file: the mouse hook has been replaced, and Windows had removed the old one
+let mutable private mouseHookLost: unit -> unit = (fun () -> ())
 
 let private createPassModeMenuItem () =
     let id = DataID.passMode
@@ -1309,14 +1342,33 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
-// The settings as they were loaded, or last stored: only those changed since are stored
-// (storeProperties)
-let mutable private storedSettings = Properties.Properties()
-
 let private currentSettings () =
     let p = Properties.Properties()
     setSettings p
     p
+
+// Installs the hooks again, to be first in the chain again (the newest hook is called first): after
+// a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
+// X-Mouse Button Control). It is then called first, blocks the buttons it remaps and injects others,
+// and W10Wheel ignores injected input: no mouse trigger works any more. Also when Pass Mode is
+// turned off: the way to do it by hand (e.g. after that software was turned off and on). If the
+// mouse hook cannot be installed now, the old one stays. Not after the hooks have been removed for
+// the exit.
+let reinstallHooks () =
+    Debug.WriteLine("reinstallHooks")
+    if not (WinHook.isClosed ()) then
+        if WinHook.reinstallMouseHook () = Some true then
+            mouseHookLost ()
+        if Volatile.Read(&keyboardHook.contents) then
+            setKeyboardHookOf true
+            // Not installed where there was none (at the end of a pause): turned off as at a load,
+            // not stored (setKeyboardHookOf), and shown by the settings dialog (nothing loaded: a
+            // number being typed kept)
+            if not (Volatile.Read(&keyboardHook.contents)) then
+                refreshSettingsLater()
+
+onPassModeSet <- (fun b ->
+    if b then setKeyboardHookOf false else reinstallHooks ())
 
 // Why the properties could not be loaded (loaded is false), or the settings stored (the last
 // time): told in the settings dialog. Cleared by a load that succeeds.
@@ -1404,8 +1456,9 @@ let private applyProperties () =
     // progress (Reload, switching properties) ends once they are set, so that the new ones
     // apply from the next (also one started meanwhile, e.g. during the error dialog of the
     // keyboard hook). Not if the file could not be read: the settings have not changed. The
-    // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-    // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+    // mouse triggers' has ended already if the trigger changed (changeTrigger), and the keyboard
+    // trigger's if its key changed or its hook was turned off or lost (setKeyboardHookOf). Their
+    // trigger's up (and the trigger key's repeats) are still suppressed.
     exitScrollMode()
 
 let private saveDefaults () =
@@ -1435,9 +1488,13 @@ let mutable private exclusionsName: string option = None
 // kept, as Reload keeps the settings when the properties file cannot be read (they were excluded
 // until then), and its changes are not stored until the file is read again (as stored: the same).
 // Else none (startup, a switch: those running are of other properties).
-let private loadExclusions (name: string) =
+// written: the list just written in the file (addProperties), taken as it is, not read again.
+let private loadExclusions (name: string) (written: string[] option) =
     try
-        let paths = Properties.readExclusions (Properties.getExclusionsPath name)
+        let paths =
+            match written with
+            | Some ps -> ps
+            | None -> Properties.readExclusions (Properties.getExclusionsPath name)
         exclusionsStoreError <- None
         exclusionsRewrite <- false
         setExcludedPrograms paths
@@ -1481,14 +1538,14 @@ let private storeExclusions (name: string) =
 
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
 // storeProperties), the errors cleared. The excluded programs of the properties read too.
-let private applyLoaded () =
+let private applyLoaded (writtenExclusions: string[] option) =
     loaded <- true
     loadError <- None
     storeError <- None
     Debug.WriteLine("Start load")
     applyProperties ()
     storedSettings <- currentSettings ()
-    loadExclusions (getSelectedProperties())
+    loadExclusions (getSelectedProperties()) writtenExclusions
 
 // At startup (and before, Program.checkDoubleLaunch): the file of the selected properties read in
 // prop (update false: not again if loadPropertiesFileOnly has read it) and applied. Not loaded if
@@ -1504,7 +1561,7 @@ let loadProperties (update:bool): unit =
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
-        applyLoaded ()
+        applyLoaded None
     with
         | e ->
             if not loaded then
@@ -1526,18 +1583,21 @@ let private readProperties (path: string) (missingIsDefault: bool): Result<Prope
 
 // The properties of name selected and loaded from what has been read of them (p): in prop (the
 // keys of the previous file not kept, they would be stored in this file), applied
-let private loadRead (name: string) (p: Properties.Properties) =
+let private loadReadWith (name: string) (p: Properties.Properties) (writtenExclusions: string[] option) =
     Debug.WriteLine("loadRead: " + name)
     saveDefaults ()
     setSelectedProperties name
     prop.CopyFrom(p)
     try
-        applyLoaded ()
+        applyLoaded writtenExclusions
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
     refreshSettingsDialog()
     // The tip of the tray icon has the name of the properties
     notifyIcon.Text <- getTrayText Pass.Mode
+
+let private loadRead (name: string) (p: Properties.Properties) =
+    loadReadWith name p None
 
 // The properties of name selected and loaded if they can be read. Else nothing changes (the
 // selected properties, their settings, their changes not stored) and why is returned.
@@ -1569,39 +1629,41 @@ let private changedSettings (current: Properties.Properties) =
 // settings could be written or not; not for other properties whose file is not found (their list
 // would remain without them).
 let storeProperties () =
-    try
-        if not loaded then
-            Debug.WriteLine("Not loaded properties")
-        else
-            let name = getSelectedProperties()
-            let path = Properties.getPath name
-            let current = currentSettings ()
-            let exists = File.Exists(path)
-            if exists || name = Properties.DEFAULT_DEF then
-                storeExclusions name
-            if not exists && name <> Properties.DEFAULT_DEF then
-                let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
-                // The excluded programs changed are not stored either (not for these properties):
-                // told as their error, also if only they have changed (none if they are as stored)
-                exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
-                if not (changedSettings current).IsEmpty then
-                    raise (notFound ())
-                Debug.WriteLine("Properties file not found, not changed")
-            elif not exists then
-                Debug.WriteLine("First write properties")
-                current.Store(path)
+    // Under storeLock (see there)
+    lock storeLock (fun () ->
+        try
+            if not loaded then
+                Debug.WriteLine("Not loaded properties")
             else
-                let changed = changedSettings current
-                if changed.IsEmpty then
-                    Debug.WriteLine("Not changed properties")
+                let name = getSelectedProperties()
+                let path = Properties.getPath name
+                let current = currentSettings ()
+                let exists = File.Exists(path)
+                if exists || name = Properties.DEFAULT_DEF then
+                    storeExclusions name
+                if not exists && name <> Properties.DEFAULT_DEF then
+                    let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
+                    // The excluded programs changed are not stored either (not for these properties):
+                    // told as their error, also if only they have changed (none if they are as stored)
+                    exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
+                    if not (changedSettings current).IsEmpty then
+                        raise (notFound ())
+                    Debug.WriteLine("Properties file not found, not changed")
+                elif not exists then
+                    Debug.WriteLine("First write properties")
+                    current.Store(path)
                 else
-                    current.Update(path, changed)
-            storedSettings <- current
-            storeError <- None
-    with
-        | e ->
-            storeError <- Some e
-            Debug.WriteLine("store: " + (e.ToString()))
+                    let changed = changedSettings current
+                    if changed.IsEmpty then
+                        Debug.WriteLine("Not changed properties")
+                    else
+                        current.Update(path, changed)
+                storedSettings <- current
+                storeError <- None
+        with
+            | e ->
+                storeError <- Some e
+                Debug.WriteLine("store: " + (e.ToString())))
 
 // Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
 // If it cannot be (e.g. locked), nothing changes: the settings stay as they are (still stored, if
@@ -1666,36 +1728,45 @@ let private addProperties (owner: IWin32Window) =
                 storeProperties()
                 // A copy of the file (its comments, its other keys) with the settings running, those
                 // shown: also those not stored (e.g. a read-only file, properties not loaded), or
-                // edited in the file and not reloaded (the file's would be copied). Then loaded as by
-                // a switch: the same settings, and the other keys of the file (e.g. the custom table)
-                // applied.
+                // edited in the file and not reloaded (the file's would be copied); all the settings
+                // if the selected properties have no file (e.g. Default not stored yet). Complete
+                // before the new file is made, which is held until the Add is done (see
+                // Properties.NewFile): made by another program since the name was checked, it is not
+                // replaced, and the Add fails as for a name that exists. Then loaded as by a switch:
+                // the same settings, and the other keys of the file (e.g. the custom table) applied.
                 let path = Properties.getPath name
-                // Set once this Add has made the properties file (the copy, or the first store): not
-                // one made by another program meanwhile (the copy fails then, it is not replaced)
-                let mutable made = false
+                let current = currentSettings ()
+                let lines =
+                    let src =
+                        try Some(File.ReadAllLines(getSelectedPropertiesPath()))
+                        with :? FileNotFoundException | :? DirectoryNotFoundException -> None
+                    match src with
+                    | Some l -> current.UpdatedLines(l, current.Keys)
+                    | None -> current.StoreLines()
+                let newFile =
+                    try
+                        Properties.NewFile.Create(path, lines)
+                    with
+                        | Properties.FileExists _ ->
+                            raise (IOException(sprintf "%s: %s" (convLang "Properties of this name already exist") name))
+                let exclusions = getExcludedPrograms()
                 try
-                    if File.Exists(getSelectedPropertiesPath()) then
-                        Properties.copy (getSelectedProperties()) name
-                        made <- true
-                    let current = currentSettings ()
-                    if made || File.Exists(path) then
-                        current.Update(path, current.Keys)
-                    else
-                        current.Store(path)
-                        made <- true
                     // The excluded programs running too (none: the file of earlier properties of
                     // this name, deleted outside W10Wheel, is deleted)
-                    Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
+                    Properties.writeExclusions (Properties.getExclusionsPath name) exclusions
                 with
                     | _ ->
                         // Not left half made (e.g. their excluded programs could not be written):
-                        // the properties file made by this Add is deleted, they can be added again
-                        if made then
-                            try File.Delete(path) with e -> Debug.WriteLine("addProperties: " + e.Message)
+                        // the properties file made by this Add is deleted (that file, held since:
+                        // nothing else can be at its path), they can be added again
+                        newFile.Discard()
                         reraise ()
-                match readProperties path false with
-                | Ok p -> loadRead name p
-                | Error e -> showError owner (convLang "The properties file could not be read") e
+                newFile.Dispose()
+                // Loaded from what was written, not read again from the files (released now: another
+                // program could have them open meanwhile, e.g. scanning the exclusions file)
+                let p = Properties.Properties()
+                p.LoadLines(lines)
+                loadReadWith name p (Some exclusions)
             else
                 Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
         )
@@ -2159,6 +2230,42 @@ let initState () =
     initStateKEH()
     LastFlags.Init()
     exitScrollMode()
+
+let mutable private forgetPresses: unit -> unit = (fun () -> ())
+let setForgetPresses f = forgetPresses <- f
+
+// The mouse hook has been replaced (reinstallHooks), and Windows had removed the old one (e.g. for
+// a timeout): buttons may have been released, and pressed again, with no hook to see it, and a
+// scroll mode they started would not end (the moves suppressed). The mouse triggers' records are
+// reset (also those of the hook: Windows.forgetPresses) and that scroll mode is ended, or a pending
+// LR trigger start canceled. A keyboard scroll goes on, and the keys' records are kept (the keyboard
+// hook was not lost). A hook replaced while the old one was still installed missed nothing: this is
+// not called then.
+mouseHookLost <- (fun () ->
+    Debug.WriteLine("mouseHookLost")
+    // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
+    newPassModeGeneration ()
+    offerEW(Cancel) |> ignore
+    initStateMEH()
+    LastFlags.InitButtons()
+    forgetPresses ()
+    if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then
+        exitScrollMode())
+
+// The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the hooks
+// saw none of the input meanwhile (it went to the secure desktop, or was lost), so a trigger
+// released then would keep its scroll mode (the moves suppressed), and a key or a button released
+// then would keep its records. As initState, and the records of all keys and buttons are forgotten
+// (Windows.forgetPresses): none is still held from before (e.g. a key passed over an excluded
+// program and released while locked would pass its next press). Done at the event, not when the
+// hooks are installed again later (a scroll started after it goes on). Not after the hooks have
+// been removed for the exit.
+let inputLost () =
+    Debug.WriteLine("inputLost")
+    if not (WinHook.isClosed ()) then
+        initState ()
+        forgetPresses ()
+        LastFlags.ResetKeys()
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
