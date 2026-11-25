@@ -7,6 +7,7 @@
 
 open System
 open System.IO
+open Microsoft.Win32.SafeHandles
 open System.Collections.Generic
 open System.ComponentModel
 open System.Diagnostics
@@ -277,7 +278,11 @@ exception FileExists of string
 // one. Not even reading is shared (nothing needs it: the Add loads what it wrote from memory): a
 // program reading it could map it into memory, and Windows does not delete a file mapped so, which
 // would leave the file of a failed Add behind, its name taken.
-type NewFile private (fs: FileStream) =
+// The handle is kept as CreateFile gave it: FileStream.SafeFileHandle flushes the stream first,
+// which throws again after a write that failed (e.g. a full disk), so the file would not be deleted
+// nor released. The stream has no buffer of its own (bufferSize 0, the StreamWriter has one): its
+// Dispose has nothing left to write either.
+type NewFile private (handle: SafeFileHandle, fs: FileStream) =
     static member Create (path:string, lines:string[]): NewFile =
         let handle = WinAPI.CreateFile(path, WinAPI.GENERIC_WRITE ||| WinAPI.DELETE, 0u, IntPtr.Zero,
                                        WinAPI.CREATE_NEW, WinAPI.FILE_ATTRIBUTE_NORMAL, IntPtr.Zero)
@@ -288,7 +293,15 @@ type NewFile private (fs: FileStream) =
                 raise (FileExists path)
             else
                 raise (IOException(sprintf "%s: %s" (Win32Exception(err).Message) path))
-        let file = new NewFile(new FileStream(handle, FileAccess.Write))
+        let file =
+            try
+                new NewFile(handle, new FileStream(handle, FileAccess.Write, 0))
+            with
+                | _ ->
+                    // Not made a stream (not expected): deleted and released all the same
+                    NewFile.DeleteOnClose handle
+                    handle.Dispose()
+                    reraise ()
         try
             use w = new StreamWriter(file.Stream, UTF8Encoding(false), -1, true)
             lines |> Array.iter w.WriteLine
@@ -302,14 +315,19 @@ type NewFile private (fs: FileStream) =
 
     member private self.Stream: FileStream = fs
 
-    // The Add failed: this file (not whatever is at its path) is deleted when the handle closes,
-    // which it is now. An error is not thrown (over the error of the Add): there is none to expect,
-    // nothing else can have the file open.
-    member self.Discard (): unit =
+    static member private DeleteOnClose (handle: SafeFileHandle) =
         let mutable delete = 1uy
-        if not (WinAPI.SetFileInformationByHandle(fs.SafeFileHandle, WinAPI.FILE_DISPOSITION_INFO_CLASS, &delete, 1u)) then
+        if not (WinAPI.SetFileInformationByHandle(handle, WinAPI.FILE_DISPOSITION_INFO_CLASS, &delete, 1u)) then
             Debug.WriteLine(sprintf "NewFile.Discard: %s" (Win32Exception(Marshal.GetLastWin32Error()).Message))
+
+    // The Add failed: this file (not whatever is at its path) is deleted when the handle closes,
+    // which it is now (also if the stream throws: the handle is closed then too). An error is not
+    // thrown (over the error of the Add): there is none to expect, nothing else can have the file
+    // open.
+    member self.Discard (): unit =
+        NewFile.DeleteOnClose handle
         try fs.Dispose() with e -> Debug.WriteLine("NewFile.Discard: " + e.Message)
+        handle.Dispose()
 
     // The Add is done: the file is released
     member self.Dispose () = fs.Dispose()
