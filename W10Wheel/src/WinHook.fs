@@ -120,7 +120,10 @@ let unhookKeyboard () =
 let setOrUnsetKeyboardHook (b: bool): KeyboardHookResult =
     Debug.WriteLine(sprintf "setOrUnsetKeyboardHook: %b" b)
     let old = Volatile.Read(&keyboardHhk.contents)
-    if b then
+    // Not installed again after the hooks have been removed for the exit (as reinstallMouseHook)
+    if b && Volatile.Read(&closed.contents) then
+        Unchanged
+    elif b then
         let hhk = __setKeyboardHook()
         match getHookError hhk with
         | Some err when old <> IntPtr.Zero ->
