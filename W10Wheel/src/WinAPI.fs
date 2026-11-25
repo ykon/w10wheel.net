@@ -326,3 +326,21 @@ extern nativeint GetAncestor(nativeint hWnd, uint32 gaFlags)
 
 [<DllImport("user32.dll", SetLastError = true)>]
 extern [<MarshalAs(UnmanagedType.Bool)>] bool GetCursorPos(POINT& lpPoint);
+
+// The file of new properties (Properties.NewFile)
+let GENERIC_WRITE = 0x40000000u
+let DELETE = 0x00010000u
+let CREATE_NEW = 1u
+let FILE_ATTRIBUTE_NORMAL = 0x80u
+let ERROR_FILE_EXISTS = 80
+let ERROR_ALREADY_EXISTS = 183
+let FILE_DISPOSITION_INFO_CLASS = 4
+
+// https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
+[<DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, CharSet = CharSet.Unicode)>]
+extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, uint32 dwDesiredAccess, uint32 dwShareMode, nativeint lpSecurityAttributes, uint32 dwCreationDisposition, uint32 dwFlagsAndAttributes, nativeint hTemplateFile)
+
+// https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+// FILE_DISPOSITION_INFO: a BOOLEAN (DeleteFile)
+[<DllImport("kernel32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool SetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle hFile, int32 FileInformationClass, byte& lpFileInformation, uint32 dwBufferSize)

@@ -1666,36 +1666,43 @@ let private addProperties (owner: IWin32Window) =
                 storeProperties()
                 // A copy of the file (its comments, its other keys) with the settings running, those
                 // shown: also those not stored (e.g. a read-only file, properties not loaded), or
-                // edited in the file and not reloaded (the file's would be copied). Then loaded as by
-                // a switch: the same settings, and the other keys of the file (e.g. the custom table)
-                // applied.
+                // edited in the file and not reloaded (the file's would be copied); all the settings
+                // if the selected properties have no file (e.g. Default not stored yet). Complete
+                // before the new file is made, which is held until the Add is done (see
+                // Properties.NewFile): made by another program since the name was checked, it is not
+                // replaced, and the Add fails as for a name that exists. Then loaded as by a switch:
+                // the same settings, and the other keys of the file (e.g. the custom table) applied.
                 let path = Properties.getPath name
-                // Set once this Add has made the properties file (the copy, or the first store): not
-                // one made by another program meanwhile (the copy fails then, it is not replaced)
-                let mutable made = false
+                let current = currentSettings ()
+                let lines =
+                    let src =
+                        try Some(File.ReadAllLines(getSelectedPropertiesPath()))
+                        with :? FileNotFoundException | :? DirectoryNotFoundException -> None
+                    match src with
+                    | Some l -> current.UpdatedLines(l, current.Keys)
+                    | None -> current.StoreLines()
+                let newFile =
+                    try
+                        Properties.NewFile.Create(path, lines)
+                    with
+                        | Properties.FileExists _ ->
+                            raise (IOException(sprintf "%s: %s" (convLang "Properties of this name already exist") name))
                 try
-                    if File.Exists(getSelectedPropertiesPath()) then
-                        Properties.copy (getSelectedProperties()) name
-                        made <- true
-                    let current = currentSettings ()
-                    if made || File.Exists(path) then
-                        current.Update(path, current.Keys)
-                    else
-                        current.Store(path)
-                        made <- true
                     // The excluded programs running too (none: the file of earlier properties of
                     // this name, deleted outside W10Wheel, is deleted)
                     Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
                 with
                     | _ ->
                         // Not left half made (e.g. their excluded programs could not be written):
-                        // the properties file made by this Add is deleted, they can be added again
-                        if made then
-                            try File.Delete(path) with e -> Debug.WriteLine("addProperties: " + e.Message)
+                        // the properties file made by this Add is deleted (that file, held since:
+                        // nothing else can be at its path), they can be added again
+                        newFile.Discard()
                         reraise ()
-                match readProperties path false with
-                | Ok p -> loadRead name p
-                | Error e -> showError owner (convLang "The properties file could not be read") e
+                newFile.Dispose()
+                // Loaded from what was written, not read again from the file (released now)
+                let p = Properties.Properties()
+                p.LoadLines(lines)
+                loadRead name p
             else
                 Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
         )
