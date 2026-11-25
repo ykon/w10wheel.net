@@ -1067,6 +1067,10 @@ let private setTargetVKCode name =
     if code <> old then
         changeKeyboardTrigger old true
 
+// The settings as they were loaded, or last stored: only those changed since are stored
+// (storeProperties)
+let mutable private storedSettings = Properties.Properties()
+
 // The keyboard hook installed (again) if the keyboard trigger is on (b), else removed. Also removed
 // while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held when the pause
 // starts passes alone; the trigger key held when it ends passes until its up, keyboardHookInstalled,
@@ -1077,8 +1081,11 @@ let private setKeyboardHookOf (b: bool) =
     match WinHook.setOrUnsetKeyboardHook b with
     | WinHook.Failed err ->
         // Not installed (there was none): off, as the settings dialog shows (refreshed after the
-        // change or the load)
+        // change or the load). Not stored (as stored too: the file keeps it, it is tried again at
+        // the next start or load), as at a load: also before the dialog, during which the settings
+        // can be stored (e.g. at the exit).
         Volatile.Write(keyboardHook, false)
+        storedSettings.SetBool(DataID.keyboardHook, false)
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
@@ -1328,10 +1335,6 @@ let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
 let mutable private loaded = false
-// The settings as they were loaded, or last stored: only those changed since are stored
-// (storeProperties)
-let mutable private storedSettings = Properties.Properties()
-
 let private currentSettings () =
     let p = Properties.Properties()
     setSettings p
@@ -1352,10 +1355,9 @@ let reinstallHooks () =
         if Volatile.Read(&keyboardHook.contents) then
             setKeyboardHookOf true
             // Not installed where there was none (at the end of a pause): turned off as at a load,
-            // not stored (as stored: the file keeps it on, it is tried again at the next start or
-            // load), and shown by the settings dialog (nothing loaded: a number being typed kept)
+            // not stored (setKeyboardHookOf), and shown by the settings dialog (nothing loaded: a
+            // number being typed kept)
             if not (Volatile.Read(&keyboardHook.contents)) then
-                storedSettings.SetBool(DataID.keyboardHook, false)
                 refreshSettingsLater()
 
 onPassModeSet <- (fun b ->
