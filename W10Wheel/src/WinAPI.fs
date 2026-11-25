@@ -344,3 +344,24 @@ extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, 
 // FILE_DISPOSITION_INFO: a BOOLEAN (DeleteFile)
 [<DllImport("kernel32.dll", SetLastError = true)>]
 extern [<MarshalAs(UnmanagedType.Bool)>] bool SetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle hFile, int32 FileInformationClass, byte& lpFileInformation, uint32 dwBufferSize)
+
+// The resume and the unlock (SessionEvents)
+let DEVICE_NOTIFY_WINDOW_HANDLE = 0u
+let NOTIFY_FOR_THIS_SESSION = 0u
+
+// https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-registersuspendresumenotification
+[<DllImport("user32.dll", SetLastError = true)>]
+extern nativeint RegisterSuspendResumeNotification(nativeint hRecipient, uint32 flags)
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool UnregisterSuspendResumeNotification(nativeint handle)
+
+// https://learn.microsoft.com/windows/win32/api/wtsapi32/nf-wtsapi32-wtsregistersessionnotification
+[<DllImport("wtsapi32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool WTSRegisterSessionNotification(nativeint hWnd, uint32 dwFlags)
+
+[<DllImport("wtsapi32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool WTSUnRegisterSessionNotification(nativeint hWnd)
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<MarshalAs(UnmanagedType.Bool)>] bool PostMessage(nativeint hWnd, uint32 Msg, nativeint wParam, nativeint lParam)

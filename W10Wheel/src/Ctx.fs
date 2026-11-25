@@ -138,6 +138,9 @@ let mutable private setScrollPassMode: bool -> unit = (fun _ -> ())
 // Set at the end of this file: resets the event handlers' state when Pass Mode is turned on
 let mutable private onPassModeOn: unit -> unit = (fun () -> ())
 
+// Set after reinstallHooks: the hooks follow Pass Mode, as it is now (see onPassModeSet below)
+let mutable private onPassModeSet: bool -> unit = (fun _ -> ())
+
 // Pass Mode is switched under this lock, and the LR trigger checks Pass Mode and queues its
 // resent down under it (see EventWaiter.fromTimeout). Held only briefly: SendInput must not
 // be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
@@ -173,6 +176,7 @@ type private Pass() =
             // the other call has shown it already
             changeNotifyIcon mode
             passModeMenuItem.Checked <- mode
+            onPassModeSet mode
 
     static member toggleMode () =
         Pass.Mode <- not mode
@@ -1078,7 +1082,21 @@ let private setKeyboardHookOf (b: bool) =
         else
             changeKeyboardTrigger (getTargetVKCode()) false
 
+// Installs the hooks again, to be first in the chain again (the newest hook is called first): after
+// a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
+// X-Mouse Button Control). It is then called first, blocks the buttons it remaps and injects others,
+// and W10Wheel ignores injected input: no mouse trigger works any more. Also when Pass Mode is
+// turned off: the way to do it by hand (e.g. after that software was turned off and on). If the
+// mouse hook cannot be installed now, the old one stays. Not after the hooks have been removed for
+// the exit.
+let reinstallHooks () =
+    Debug.WriteLine("reinstallHooks")
+    if not (WinHook.isClosed ()) then
+        WinHook.reinstallMouseHook () |> ignore
+        if Volatile.Read(&keyboardHook.contents) then
+            setKeyboardHookOf true
 
+onPassModeSet <- (fun b -> if not b then reinstallHooks ())
 
 let private createPassModeMenuItem () =
     let id = DataID.passMode

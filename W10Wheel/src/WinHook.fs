@@ -52,12 +52,37 @@ let callNextKeyboardHook nCode wParam info =
 let private getHookError (hhk: nativeint): string option =
     if hhk = IntPtr.Zero then Some(WinError.getLastErrorMessage()) else None
 
+// The hooks have been removed for the exit (unhook): not installed again after it (e.g. by a
+// timer of Ctx.reinstallHooks, still running if the session ends on another thread)
+let private closed: bool ref = ref false
+let isClosed () = Volatile.Read(&closed.contents)
+
 // None if installed, else the error message
 let setMouseHook (): string option =
     let hhk = __setMouseHook()
     let err = getHookError hhk
     Volatile.Write(mouseHhk, hhk)
     err
+
+// Installs the mouse hook again, to be first in the chain again (the newest hook is called first):
+// before the hooks installed after it (e.g. mouse software that installs its hook again after a
+// resume, then sees the buttons first and passes on only those it injects, which W10Wheel ignores).
+// The new hook is installed before the old one is removed (kept if that fails, None): no event is
+// handled in between, as the hooks are called on this thread only when it takes its messages.
+// Some(true): Windows had removed the old one already (e.g. for a timeout; UnhookWindowsHookEx
+// failed), so events may have been missed before.
+let reinstallMouseHook (): bool option =
+    let old = Volatile.Read(&mouseHhk.contents)
+    if Volatile.Read(&closed.contents) || old = IntPtr.Zero then
+        None
+    else
+        let hhk = __setMouseHook()
+        if hhk = IntPtr.Zero then
+            Debug.WriteLine("reinstallMouseHook: " + WinError.getLastErrorMessage())
+            None
+        else
+            Volatile.Write(mouseHhk, hhk)
+            Some(not (__unhook old))
 
 // Whether the keyboard hook removed by the last install had been removed by Windows already
 // (UnhookWindowsHookEx failed): the keys may have been pressed and released meanwhile, with no
@@ -101,5 +126,6 @@ let setOrUnsetKeyboardHook (b: bool): string option =
         None
 
 let unhook () =
+    Volatile.Write(closed, true)
     unhookMouse()
     unhookKeyboard()

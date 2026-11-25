@@ -47,6 +47,7 @@
     <Compile Include="src\KEventHandler.fs" />
     <Compile Include="src\EventHandler.fs" />
     <Compile Include="src\Dispatcher.fs" />
+    <Compile Include="src\SessionEvents.fs" />
     <Compile Include="src\Program.fs" />
   </ItemGroup>
 
