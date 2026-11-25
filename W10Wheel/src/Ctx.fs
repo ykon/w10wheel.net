@@ -1051,6 +1051,13 @@ let mutable private keyboardHookLost: unit -> unit = (fun () -> ())
 let setKeyboardHookLost f =
     keyboardHookLost <- f
 
+// Called when the keyboard hook has been installed where there was none: see
+// KEventHandler.hookInstalled
+let mutable private keyboardHookInstalled: unit -> unit = (fun () -> ())
+
+let setKeyboardHookInstalled f =
+    keyboardHookInstalled <- f
+
 let private setTargetVKCode name =
     Debug.WriteLine("setTargetVKCode: " + name)
     let old = getTargetVKCode()
@@ -1062,7 +1069,8 @@ let private setTargetVKCode name =
 
 // The keyboard hook installed (again) if the keyboard trigger is on (b), else removed. Also removed
 // while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held when the pause
-// starts passes alone, a key held when it ends is a new press). Installed again when the pause ends
+// starts passes alone; the trigger key held when it ends passes until its up, keyboardHookInstalled,
+// the other keys pass anyway). Installed again when the pause ends
 // (reinstallHooks). The mouse hook stays: it receives the commands (W10Message), and passes all.
 let private setKeyboardHookOf (b: bool) =
     let b = b && not Pass.Mode
@@ -1077,11 +1085,13 @@ let private setKeyboardHookOf (b: bool) =
     // Replaced on every load (e.g. Reload after Windows removed it): keys may have been missed
     // only if Windows had removed the old one
     | WinHook.Replaced true -> keyboardHookLost ()
+    // Installed where there was none (e.g. at the end of a pause): the records of the keys were
+    // reset when it was removed or could not be installed; a trigger key held now passes
+    | WinHook.Installed -> keyboardHookInstalled ()
     | _ when b ->
         // Replaced seamlessly, the old one still installed: nothing was missed, nothing is changed
-        // (a keyboard scroll goes on, unless a load ends it: applyProperties). Installed where there
-        // was none: the records of the keys were reset when it was removed or could not be
-        // installed. Not replaced (it could not be): the old one stays.
+        // (a keyboard scroll goes on, unless a load ends it: applyProperties). Not replaced (it
+        // could not be): the old one stays.
         ()
     | _ ->
         changeKeyboardTrigger (getTargetVKCode()) false

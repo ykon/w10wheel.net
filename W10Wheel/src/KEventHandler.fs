@@ -265,11 +265,20 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
 // pass its next press). (A key held all along whose down was suppressed has its up passed alone:
 // not as bad as a key left pressed in the application.) If the trigger key is down now, it is taken
 // as passed: its repeats and its up pass (they would start scroll mode, or the up of a down that
-// reached the application be suppressed); its next press is the trigger. The other keys pass anyway.
-// GetAsyncKeyState tells only what it can (0 also when it cannot): a key taken as up is a new press.
-// Not the key that does not repeat (Pause): its down is always a new press (LastFlags.NewKeyDown).
+// reached the application be suppressed); its next press is the trigger (passHeldTriggerKey). The
+// other keys pass anyway.
 // A hook replaced while the old one was still installed missed nothing: this is not called then
 // (Ctx.setKeyboardHookOf).
+// The trigger key, if it is down now (GetAsyncKeyState), is taken as passed: its down reached the
+// application with no hook to see it, so its repeats and its up pass, and its next press is the
+// trigger. 0 also when the state cannot be read: a key taken as up is a new press. Not the key that
+// does not repeat (Pause): its down is always a new press (LastFlags.NewKeyDown).
+let private passHeldTriggerKey (caller: string) =
+    let vk = Ctx.getTargetVKCode()
+    if vk <> 0 && not (Keyboard.isNoRepeatKey vk) && Windows.checkKeyState vk then
+        Debug.WriteLine(sprintf "%s: the trigger key down, taken as passed: %d" caller vk)
+        Ctx.LastFlags.SetPassedKey vk
+
 let private hookLost () =
     if Ctx.isKeyboardScrollMode() then
         Debug.WriteLine("hookLost: exit keyboard scroll mode")
@@ -277,14 +286,19 @@ let private hookLost () =
 
     Ctx.LastFlags.ResetKeys()
     lastEvent <- NonEvent
+    passHeldTriggerKey "hookLost"
 
-    let vk = Ctx.getTargetVKCode()
-    if vk <> 0 && not (Keyboard.isNoRepeatKey vk) && Windows.checkKeyState vk then
-        Debug.WriteLine(sprintf "hookLost: the trigger key down, taken as passed: %d" vk)
-        Ctx.LastFlags.SetPassedKey vk
+// The keyboard hook has been installed where there was none (at the end of a pause, at startup, or
+// turned on): the records of the keys were reset when it was removed (changeTrigger), and the keys
+// pressed meanwhile reached the application. The trigger key held now is taken as passed (see
+// passHeldTriggerKey): its repeats would start scroll mode, and its up be suppressed, the key
+// left pressed in the application.
+let private hookInstalled () =
+    passHeldTriggerKey "hookInstalled"
 
 let setChangeTrigger () =
     Ctx.setChangeKeyboardTrigger changeTrigger
     Ctx.setKeyboardHookLost hookLost
+    Ctx.setKeyboardHookInstalled hookInstalled
 
 
