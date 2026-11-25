@@ -62,12 +62,17 @@ let isClosed () = Volatile.Read(&closed.contents)
 // under it, a hook installed after unhook read the handles would stay installed after the exit.
 let private hookLock = new Object()
 
-// None if installed, else the error message
+// None if installed, else the error message. At startup, after the end of the session is subscribed
+// (Program.main): under the lock, and not after the exit (None then, W10Wheel is exiting).
 let setMouseHook (): string option =
-    let hhk = __setMouseHook()
-    let err = getHookError hhk
-    Volatile.Write(mouseHhk, hhk)
-    err
+    lock hookLock (fun () ->
+        if Volatile.Read(&closed.contents) then
+            None
+        else
+            let hhk = __setMouseHook()
+            let err = getHookError hhk
+            Volatile.Write(mouseHhk, hhk)
+            err)
 
 // Installs the mouse hook again, to be first in the chain again (the newest hook is called first):
 // before the hooks installed after it (e.g. mouse software that installs its hook again after a
