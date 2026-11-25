@@ -704,10 +704,14 @@ type LastFlags() =
     // suppressed again: only their up alone is (kdL), as the hook does for the buttons
     // (Windows.dropLoneUp).
     static member Init () =
+        LastFlags.InitButtons()
+        LastFlags.SuppressedKeysToLoneUp()
+
+    // The flags of the buttons (resent, passed, suppressed): see Init, and Ctx.mouseHookLost
+    static member InitButtons () =
         ldR <- false; rdR <- false
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
-        LastFlags.SuppressedKeysToLoneUp()
 
     // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
     // missed is not suppressed again (see Init)
@@ -1091,6 +1095,9 @@ let private setKeyboardHookOf (b: bool) =
     | _ ->
         changeKeyboardTrigger (getTargetVKCode()) false
 
+// Set at the end of this file: the mouse hook has been replaced, and Windows had removed the old one
+let mutable private mouseHookLost: unit -> unit = (fun () -> ())
+
 // Installs the hooks again, to be first in the chain again (the newest hook is called first): after
 // a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
 // X-Mouse Button Control). It is then called first, blocks the buttons it remaps and injects others,
@@ -1101,7 +1108,8 @@ let private setKeyboardHookOf (b: bool) =
 let reinstallHooks () =
     Debug.WriteLine("reinstallHooks")
     if not (WinHook.isClosed ()) then
-        WinHook.reinstallMouseHook () |> ignore
+        if WinHook.reinstallMouseHook () = Some true then
+            mouseHookLost ()
         if Volatile.Read(&keyboardHook.contents) then
             setKeyboardHookOf true
 
@@ -2198,6 +2206,24 @@ let initState () =
 
 let mutable private forgetPresses: unit -> unit = (fun () -> ())
 let setForgetPresses f = forgetPresses <- f
+
+// The mouse hook has been replaced (reinstallHooks), and Windows had removed the old one (e.g. for
+// a timeout): buttons may have been released, and pressed again, with no hook to see it, and a
+// scroll mode they started would not end (the moves suppressed). The mouse triggers' records are
+// reset (also those of the hook: Windows.forgetPresses) and that scroll mode is ended, or a pending
+// LR trigger start canceled. A keyboard scroll goes on, and the keys' records are kept (the keyboard
+// hook was not lost). A hook replaced while the old one was still installed missed nothing: this is
+// not called then.
+mouseHookLost <- (fun () ->
+    Debug.WriteLine("mouseHookLost")
+    // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
+    newPassModeGeneration ()
+    offerEW(Cancel) |> ignore
+    initStateMEH()
+    LastFlags.InitButtons()
+    forgetPresses ()
+    if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then
+        exitScrollMode())
 
 // The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the hooks
 // saw none of the input meanwhile (it went to the secure desktop, or was lost), so a trigger
