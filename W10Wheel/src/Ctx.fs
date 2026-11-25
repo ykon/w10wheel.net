@@ -792,17 +792,8 @@ type LastFlags() =
     static member GetAndReset_LoneUpKey (vk: int): bool =
         isKey vk && getAndReset(&kdL.[vk])
 
-    // The keyboard hook is installed again after Windows had removed the old one: a key may have
-    // been released and pressed again meanwhile, its down reaching the application (no hook). The
-    // records that would suppress its repeats or its up are forgotten (the passed keys, kdP, are
-    // kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a repeat,
-    // so a repeat of the trigger key is taken for a new press (see KEventHandler.hookLost).
-    static member ForgetSuppressedKeys () =
-        Array.fill kdS 0 kdS.Length false
-        Array.fill kdL 0 kdL.Length false
-
-    // The keyboard hook is removed, or keys were not seen (the session locked): the ups will not be
-    // seen, or were missed
+    // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
+    // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
     static member ResetKeys () =
         Array.fill kdS 0 kdS.Length false
         Array.fill kdP 0 kdP.Length false

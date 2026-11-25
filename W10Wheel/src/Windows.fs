@@ -778,6 +778,8 @@ let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
 let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
 let checkAltState () = checkAsyncKeyState(VK_MENU)
 let checkEscState () = checkAsyncKeyState(VK_ESCAPE)
+// Whether the key is down now (the state of the keyboard, not of the messages taken so far)
+let checkKeyState (vk: int) = checkAsyncKeyState(vk)
 
 let private initFuncs () =
     addAccelIf <- if Ctx.isAccelTable() then addAccel else passInt
