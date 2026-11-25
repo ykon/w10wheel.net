@@ -8,6 +8,7 @@ URL:
         Blog: https://ykon0x1.blogspot.jp
         .NET版: https://github.com/ykon/w10wheel.net
         Java版: https://github.com/ykon/w10wheel
+        Rust版: https://github.com/ykon/w10wheel.rs
 
 概要:
         マウスホイールシミュレーター
