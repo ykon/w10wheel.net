@@ -1,6 +1,7 @@
 # W10Wheel.NET
 W10Wheel.NET is the Mouse Wheel Simulator for Windows 10 / 11.  
-[W10Wheel (Java Edition)](https://github.com/ykon/w10wheel) ported to .NET (F#).
+[W10Wheel (Java Edition)](https://github.com/ykon/w10wheel) ported to .NET (F#).  
+It has also been ported to Rust: [W10Wheel.rs](https://github.com/ykon/w10wheel.rs).
 ## Supported
 Windows 10 / Windows 11 (x64), within the Windows versions supported by .NET 11.  
 <https://github.com/dotnet/core/blob/main/release-notes/11.0/supported-os.md>  
