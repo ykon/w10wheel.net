@@ -1089,28 +1089,6 @@ let private setKeyboardHookOf (b: bool) =
 // Set at the end of this file: the mouse hook has been replaced, and Windows had removed the old one
 let mutable private mouseHookLost: unit -> unit = (fun () -> ())
 
-// Installs the hooks again, to be first in the chain again (the newest hook is called first): after
-// a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
-// X-Mouse Button Control). It is then called first, blocks the buttons it remaps and injects others,
-// and W10Wheel ignores injected input: no mouse trigger works any more. Also when Pass Mode is
-// turned off: the way to do it by hand (e.g. after that software was turned off and on). If the
-// mouse hook cannot be installed now, the old one stays. Not after the hooks have been removed for
-// the exit.
-let reinstallHooks () =
-    Debug.WriteLine("reinstallHooks")
-    if not (WinHook.isClosed ()) then
-        if WinHook.reinstallMouseHook () = Some true then
-            mouseHookLost ()
-        if Volatile.Read(&keyboardHook.contents) then
-            setKeyboardHookOf true
-            // Not installed where there was none (at the end of a pause): turned off, as the
-            // settings dialog shows then (a load refreshes it after)
-            if not (Volatile.Read(&keyboardHook.contents)) then
-                refreshSettingsDialog()
-
-onPassModeSet <- (fun b ->
-    if b then setKeyboardHookOf false else reinstallHooks ())
-
 let private createPassModeMenuItem () =
     let id = DataID.passMode
     // Pass Mode (its name in the code and the command --sendPassMode)
@@ -1348,6 +1326,30 @@ let private currentSettings () =
     let p = Properties.Properties()
     setSettings p
     p
+
+// Installs the hooks again, to be first in the chain again (the newest hook is called first): after
+// a resume or an unlock (SessionEvents), when mouse software can install its hook again (e.g.
+// X-Mouse Button Control). It is then called first, blocks the buttons it remaps and injects others,
+// and W10Wheel ignores injected input: no mouse trigger works any more. Also when Pass Mode is
+// turned off: the way to do it by hand (e.g. after that software was turned off and on). If the
+// mouse hook cannot be installed now, the old one stays. Not after the hooks have been removed for
+// the exit.
+let reinstallHooks () =
+    Debug.WriteLine("reinstallHooks")
+    if not (WinHook.isClosed ()) then
+        if WinHook.reinstallMouseHook () = Some true then
+            mouseHookLost ()
+        if Volatile.Read(&keyboardHook.contents) then
+            setKeyboardHookOf true
+            // Not installed where there was none (at the end of a pause): turned off as at a load,
+            // not stored (as stored: the file keeps it on, it is tried again at the next start or
+            // load), and shown by the settings dialog (nothing loaded: a number being typed kept)
+            if not (Volatile.Read(&keyboardHook.contents)) then
+                storedSettings.SetBool(DataID.keyboardHook, false)
+                refreshSettingsLater()
+
+onPassModeSet <- (fun b ->
+    if b then setKeyboardHookOf false else reinstallHooks ())
 
 // Why the properties could not be loaded (loaded is false), or the settings stored (the last
 // time): told in the settings dialog. Cleared by a load that succeeds.
