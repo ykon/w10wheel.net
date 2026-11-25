@@ -1469,9 +1469,13 @@ let mutable private exclusionsName: string option = None
 // kept, as Reload keeps the settings when the properties file cannot be read (they were excluded
 // until then), and its changes are not stored until the file is read again (as stored: the same).
 // Else none (startup, a switch: those running are of other properties).
-let private loadExclusions (name: string) =
+// written: the list just written in the file (addProperties), taken as it is, not read again.
+let private loadExclusions (name: string) (written: string[] option) =
     try
-        let paths = Properties.readExclusions (Properties.getExclusionsPath name)
+        let paths =
+            match written with
+            | Some ps -> ps
+            | None -> Properties.readExclusions (Properties.getExclusionsPath name)
         exclusionsStoreError <- None
         exclusionsRewrite <- false
         setExcludedPrograms paths
@@ -1515,14 +1519,14 @@ let private storeExclusions (name: string) =
 
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
 // storeProperties), the errors cleared. The excluded programs of the properties read too.
-let private applyLoaded () =
+let private applyLoaded (writtenExclusions: string[] option) =
     loaded <- true
     loadError <- None
     storeError <- None
     Debug.WriteLine("Start load")
     applyProperties ()
     storedSettings <- currentSettings ()
-    loadExclusions (getSelectedProperties())
+    loadExclusions (getSelectedProperties()) writtenExclusions
 
 // At startup (and before, Program.checkDoubleLaunch): the file of the selected properties read in
 // prop (update false: not again if loadPropertiesFileOnly has read it) and applied. Not loaded if
@@ -1538,7 +1542,7 @@ let loadProperties (update:bool): unit =
         with
             // All the settings have their default values (see setOrDefault)
             | :? FileNotFoundException -> Debug.WriteLine("Properties file not found")
-        applyLoaded ()
+        applyLoaded None
     with
         | e ->
             if not loaded then
@@ -1560,18 +1564,21 @@ let private readProperties (path: string) (missingIsDefault: bool): Result<Prope
 
 // The properties of name selected and loaded from what has been read of them (p): in prop (the
 // keys of the previous file not kept, they would be stored in this file), applied
-let private loadRead (name: string) (p: Properties.Properties) =
+let private loadReadWith (name: string) (p: Properties.Properties) (writtenExclusions: string[] option) =
     Debug.WriteLine("loadRead: " + name)
     saveDefaults ()
     setSelectedProperties name
     prop.CopyFrom(p)
     try
-        applyLoaded ()
+        applyLoaded writtenExclusions
     with
         | e -> Debug.WriteLine("load: " + (e.ToString()))
     refreshSettingsDialog()
     // The tip of the tray icon has the name of the properties
     notifyIcon.Text <- getTrayText Pass.Mode
+
+let private loadRead (name: string) (p: Properties.Properties) =
+    loadReadWith name p None
 
 // The properties of name selected and loaded if they can be read. Else nothing changes (the
 // selected properties, their settings, their changes not stored) and why is returned.
@@ -1721,10 +1728,11 @@ let private addProperties (owner: IWin32Window) =
                     with
                         | Properties.FileExists _ ->
                             raise (IOException(sprintf "%s: %s" (convLang "Properties of this name already exist") name))
+                let exclusions = getExcludedPrograms()
                 try
                     // The excluded programs running too (none: the file of earlier properties of
                     // this name, deleted outside W10Wheel, is deleted)
-                    Properties.writeExclusions (Properties.getExclusionsPath name) (getExcludedPrograms())
+                    Properties.writeExclusions (Properties.getExclusionsPath name) exclusions
                 with
                     | _ ->
                         // Not left half made (e.g. their excluded programs could not be written):
@@ -1733,10 +1741,11 @@ let private addProperties (owner: IWin32Window) =
                         newFile.Discard()
                         reraise ()
                 newFile.Dispose()
-                // Loaded from what was written, not read again from the file (released now)
+                // Loaded from what was written, not read again from the files (released now: another
+                // program could have them open meanwhile, e.g. scanning the exclusions file)
                 let p = Properties.Properties()
                 p.LoadLines(lines)
-                loadRead name p
+                loadReadWith name p (Some exclusions)
             else
                 Dialog.errorMessage (sprintf "%s: %s" (convLang "Invalid Name") name) (convLang "Name Error")
         )
