@@ -696,9 +696,9 @@ type LastFlags() =
     static let isKey (vk: int) =
         vk >= 0 && vk < kdS.Length
 
-    // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Dispatcher) and reset
-    // them; reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats
-    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a
+    // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed would
+    // lose it (e.g. pressed over an excluded program: its repeats would start scroll mode if it
+    // is the trigger, and its up would be suppressed). Whether a
     // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
     // suppressed is not pressed for it. A key whose up was missed passes its next down once.
     // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
@@ -1065,7 +1065,12 @@ let private setTargetVKCode name =
     if code <> old then
         changeKeyboardTrigger old true
 
+// The keyboard hook installed (again) if the keyboard trigger is on (b), else removed. Also removed
+// while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held when the pause
+// starts passes alone, a key held when it ends is a new press). Installed again when the pause ends
+// (reinstallHooks). The mouse hook stays: it receives the commands (W10Message), and passes all.
 let private setKeyboardHookOf (b: bool) =
+    let b = b && not Pass.Mode
     match WinHook.setOrUnsetKeyboardHook b with
     | Some(err) ->
         // Not installed (the previous hook removed): off, as the settings dialog shows (refreshed
@@ -1096,7 +1101,8 @@ let reinstallHooks () =
         if Volatile.Read(&keyboardHook.contents) then
             setKeyboardHookOf true
 
-onPassModeSet <- (fun b -> if not b then reinstallHooks ())
+onPassModeSet <- (fun b ->
+    if b then setKeyboardHookOf false else reinstallHooks ())
 
 let private createPassModeMenuItem () =
     let id = DataID.passMode
