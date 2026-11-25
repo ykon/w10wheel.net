@@ -1071,6 +1071,12 @@ let private setTargetVKCode name =
 // (storeProperties)
 let mutable private storedSettings = Properties.Properties()
 
+// The settings are stored under this lock (storeProperties): at the exit, maybe on another thread
+// (the session ended, see Program.procExit). A setting changed together with its stored value (the
+// keyboard trigger turned off but not stored, setKeyboardHookOf) is changed under it too, so that a
+// store sees both or neither (it would write the one without the other).
+let private storeLock = new Object()
+
 // The keyboard hook installed (again) if the keyboard trigger is on (b), else removed. Also removed
 // while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held when the pause
 // starts passes alone; the trigger key held when it ends passes until its up, keyboardHookInstalled,
@@ -1084,8 +1090,9 @@ let private setKeyboardHookOf (b: bool) =
         // change or the load). Not stored (as stored too: the file keeps it, it is tried again at
         // the next start or load), as at a load: also before the dialog, during which the settings
         // can be stored (e.g. at the exit).
-        Volatile.Write(keyboardHook, false)
-        storedSettings.SetBool(DataID.keyboardHook, false)
+        lock storeLock (fun () ->
+            Volatile.Write(keyboardHook, false)
+            storedSettings.SetBool(DataID.keyboardHook, false))
 
         changeKeyboardTrigger (getTargetVKCode()) false
         Dialog.errorMessage (sprintf "%s: %s" (convLang "Failed keyboard hook install") err) (convLang "Error")
@@ -1622,39 +1629,41 @@ let private changedSettings (current: Properties.Properties) =
 // settings could be written or not; not for other properties whose file is not found (their list
 // would remain without them).
 let storeProperties () =
-    try
-        if not loaded then
-            Debug.WriteLine("Not loaded properties")
-        else
-            let name = getSelectedProperties()
-            let path = Properties.getPath name
-            let current = currentSettings ()
-            let exists = File.Exists(path)
-            if exists || name = Properties.DEFAULT_DEF then
-                storeExclusions name
-            if not exists && name <> Properties.DEFAULT_DEF then
-                let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
-                // The excluded programs changed are not stored either (not for these properties):
-                // told as their error, also if only they have changed (none if they are as stored)
-                exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
-                if not (changedSettings current).IsEmpty then
-                    raise (notFound ())
-                Debug.WriteLine("Properties file not found, not changed")
-            elif not exists then
-                Debug.WriteLine("First write properties")
-                current.Store(path)
+    // Under storeLock (see there)
+    lock storeLock (fun () ->
+        try
+            if not loaded then
+                Debug.WriteLine("Not loaded properties")
             else
-                let changed = changedSettings current
-                if changed.IsEmpty then
-                    Debug.WriteLine("Not changed properties")
+                let name = getSelectedProperties()
+                let path = Properties.getPath name
+                let current = currentSettings ()
+                let exists = File.Exists(path)
+                if exists || name = Properties.DEFAULT_DEF then
+                    storeExclusions name
+                if not exists && name <> Properties.DEFAULT_DEF then
+                    let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
+                    // The excluded programs changed are not stored either (not for these properties):
+                    // told as their error, also if only they have changed (none if they are as stored)
+                    exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
+                    if not (changedSettings current).IsEmpty then
+                        raise (notFound ())
+                    Debug.WriteLine("Properties file not found, not changed")
+                elif not exists then
+                    Debug.WriteLine("First write properties")
+                    current.Store(path)
                 else
-                    current.Update(path, changed)
-            storedSettings <- current
-            storeError <- None
-    with
-        | e ->
-            storeError <- Some e
-            Debug.WriteLine("store: " + (e.ToString()))
+                    let changed = changedSettings current
+                    if changed.IsEmpty then
+                        Debug.WriteLine("Not changed properties")
+                    else
+                        current.Update(path, changed)
+                storedSettings <- current
+                storeError <- None
+        with
+            | e ->
+                storeError <- Some e
+                Debug.WriteLine("store: " + (e.ToString())))
 
 // Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
 // If it cannot be (e.g. locked), nothing changes: the settings stay as they are (still stored, if
