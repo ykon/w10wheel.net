@@ -284,7 +284,7 @@ exception FileExists of string
 // Dispose has nothing left to write either.
 type NewFile private (handle: SafeFileHandle, fs: FileStream) =
     static member Create (path:string, lines:string[]): NewFile =
-        let handle = WinAPI.CreateFile(path, WinAPI.GENERIC_WRITE ||| WinAPI.DELETE, 0u, IntPtr.Zero,
+        let handle = WinAPI.CreateFile(NewFile.ExtendedPath path, WinAPI.GENERIC_WRITE ||| WinAPI.DELETE, 0u, IntPtr.Zero,
                                        WinAPI.CREATE_NEW, WinAPI.FILE_ATTRIBUTE_NORMAL, IntPtr.Zero)
         if handle.IsInvalid then
             let err = Marshal.GetLastWin32Error()
@@ -314,6 +314,16 @@ type NewFile private (handle: SafeFileHandle, fs: FileStream) =
         file
 
     member private self.Stream: FileStream = fs
+
+    // The path given to CreateFile: W10Wheel is not long path aware (no longPathAware in a
+    // manifest), so a full path of MAX_PATH (260) characters or more fails there, which .NET opens
+    // (it adds the prefix of an extended-length path itself). The same prefix here: \\?\ (\\?\UNC\
+    // for a network path), on the full path (an extended-length path is not normalized).
+    static member private ExtendedPath (path: string): string =
+        let full = Path.GetFullPath(path)
+        if full.Length < 260 || full.StartsWith(@"\\?\") || full.StartsWith(@"\\.\") then full
+        elif full.StartsWith(@"\\") then @"\\?\UNC\" + full.Substring(2)
+        else @"\\?\" + full
 
     static member private DeleteOnClose (handle: SafeFileHandle) =
         let mutable delete = 1uy
