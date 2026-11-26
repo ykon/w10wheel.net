@@ -13,6 +13,7 @@
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
+open System.IO
 open System.Runtime.InteropServices
 open System.Threading
 open Xunit
@@ -61,7 +62,12 @@ let private installHost () =
     Host.processIdOfWindow <- (fun hWnd -> uint32 hWnd)
     Host.fullPathOfProcess <- (fun pid -> Some(if nativeint pid = EXCLUDED_WINDOW then EXCLUDED_PROGRAM else OTHER_PROGRAM))
 
+// The folder of the properties files: one of the tests, not the user's profile
+let USER_DIR = Path.Combine(Path.GetTempPath(), "W10Wheel.Tests")
+
 let private initialized = lazy (
+    Directory.CreateDirectory(USER_DIR) |> ignore
+    Properties.USER_DIR <- USER_DIR
     installHost ()
     Program.initSetFunctions ())
 

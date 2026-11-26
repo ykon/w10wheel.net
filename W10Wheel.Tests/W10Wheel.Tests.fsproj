@@ -10,6 +10,7 @@
     <Compile Include="Harness.fs" />
     <Compile Include="KeyboardTests.fs" />
     <Compile Include="MouseTests.fs" />
+    <Compile Include="StoreTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

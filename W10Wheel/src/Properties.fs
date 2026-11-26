@@ -214,7 +214,8 @@ type Properties() =
         self.SetProperty(key, b.ToString())
 
         
-let USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+// The folder of the properties files: the user's profile (mutable: the tests use a folder of their own)
+let mutable USER_DIR = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
 let PROGRAM_NAME = AppDef.PROGRAM_NAME
 let PROP_NAME = (sprintf ".%s" PROGRAM_NAME)
 let PROP_EXT = "properties"

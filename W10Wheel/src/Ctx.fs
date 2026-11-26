@@ -1786,6 +1786,35 @@ let private confirm (owner: IWin32Window) (heading: string) (text: string) (acti
 let private shownPropertiesName name =
     if name = DEFAULT_DEF then convLang name else name
 
+// Why the changes left are not stored: of the settings first if some are left (settingsUnstored),
+// else of the excluded programs (an error of the properties file may be older, e.g. a Reload that
+// failed). The store's error of a file, else its load's.
+let private unstoredReason (settingsUnstored: bool): exn option =
+    let ofSettings = storeError |> Option.orElse loadError
+    let ofExclusions = exclusionsStoreError |> Option.orElse exclusionsLoadError
+    if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings
+
+// What the settings dialog tells (a warning, in English) instead of the hint that the changes are
+// stored: the properties could not be read (Reload again), or written (e.g. a read-only file: tried
+// again at the next change). None if all is stored.
+let private storeStatus (): string option =
+    if not loaded then
+        Some "The properties file could not be read: changes are not saved"
+    // Before a Reload that failed: the changes made after it are not stored
+    elif storeError.IsSome then
+        Some "The changes could not be saved to the properties file"
+    // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
+    // Before a Reload that failed too: their changes are not stored.
+    elif not exclusionsLoaded then
+        Some "The exclusions file could not be read: changes are not saved"
+    elif exclusionsStoreError.IsSome then
+        Some "The changes could not be saved to the exclusions file"
+    elif loadError.IsSome then
+        // Reload: the settings are those before, still stored
+        Some "The properties file could not be read"
+    else
+        None
+
 // After storeProperties, before leaving the selected properties: true if no setting changed in them
 // is left not stored, else whether to go on and lose them (e.g. a read-only file, or properties not
 // loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
@@ -1795,13 +1824,7 @@ let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (action
     if not settingsUnstored && not (exclusionsUnstored ()) then
         true
     else
-        // Why the changes left are not stored: of the settings first if some are left, else of the
-        // excluded programs (an error of the properties file may be older, e.g. a Reload that failed)
-        let ofSettings = storeError |> Option.orElse loadError
-        let ofExclusions = exclusionsStoreError |> Option.orElse exclusionsLoadError
-        let why =
-            (if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings)
-            |> Option.map (fun e -> e.Message + "\n")
+        let why = unstoredReason settingsUnstored |> Option.map (fun e -> e.Message + "\n")
         confirm owner (convLang "The changes could not be saved")
                 ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
 
@@ -2006,25 +2029,9 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Reload", (fun () -> if not (tryReloadProperties ()) then dialog.RestorePending ()),
                                dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
-    // Instead of the hint that the changes are stored: the properties could not be read (Reload
-    // again), or written (e.g. a read-only file: tried again at the next change)
+    // Instead of the hint that the changes are stored (storeStatus)
     dialog.Status <- (fun () ->
-        if not loaded then
-            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
-        // Before a Reload that failed: the changes made after it are not stored
-        elif storeError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
-        // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
-        // Before a Reload that failed too: their changes are not stored.
-        elif not exclusionsLoaded then
-            Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
-        elif exclusionsStoreError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
-        elif loadError.IsSome then
-            // Reload: the settings are those before, still stored
-            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
-        else
-            None)
+        storeStatus () |> Option.map (fun text -> SettingsForm.NoteKind.Warning, convLang text))
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
@@ -2350,3 +2357,7 @@ module internal ForTests =
     let mouseHookLost () = mouseHookLost ()
     // The handlers' state reset as Pass Mode is turned on (its scroll ended by Scroll.SetPassMode)
     let passModeOn () = onPassModeOn ()
+    // The properties files (in Properties.USER_DIR)
+    let reloadProperties () = tryReloadProperties ()
+    let storeStatus () = storeStatus ()
+    let unstoredReason (settingsUnstored: bool) = unstoredReason settingsUnstored
