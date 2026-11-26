@@ -475,6 +475,26 @@ let ``another button released and pressed again while the sender is slow keeps i
     Assert.Equal<(Button * bool) list>([ (X1, true); (X1, false); (X1, true); (X1, false) ], x1)
 
 [<Fact>]
+let ``the LR waits ended by another button while the sender is slow keep each click`` () =
+    // Twice: Left waits, X1 ends the wait (Left's down resent alone), Left's up resent for
+    // it, X1 released; all queued while the sender is held. Each resent down passes with its
+    // up when they come: the second press's up queued does not drop the first one's down.
+    reset DataID.LR DataID.None
+    Ctx.ForTests.setNumber DataID.pollTimeout 3000
+    holdSender ()
+    for t in [ 100; 300 ] do
+        eq Suppress (down Left 10 10 t)
+        eq Pass (down X1 10 10 (t + 20))
+        eq Suppress (up Left 10 10 (t + 40))
+        eq Pass (up X1 10 10 (t + 60))
+    releaseSender ()
+    let inputs = sentInputs 4
+    Assert.Equal<(Button * bool) list>(
+        [ (Left, true); (Left, false); (Left, true); (Left, false) ],
+        inputs |> List.choose buttonOfInput)
+    Assert.Equal<Decision list>([ Pass; Pass; Pass; Pass ], inputs |> List.map receive)
+
+[<Fact>]
 let ``another button ending a released scroll ends the LR wait too`` () =
     // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the middle
     // button ends the scroll (suppressed), and the wait (its down resent at once)

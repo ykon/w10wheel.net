@@ -332,6 +332,9 @@ let private resendKind (info: HookInfo): (ResendKind * int) option =
 
 let private NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
 
+// More presses than a sender held back that long could have queued
+let private MAX_RELEASES_QUEUED = 16
+
 // The latest physical press of a button and the downs resent alone for it (LR trigger), as the
 // hook sees them: in the order the target application gets the inputs, whenever SendInput
 // returns. What reached the application, not what the triggers do with the up (Ctx.LastFlags).
@@ -347,34 +350,48 @@ type private Press =
       mutable downPassedId: int
       // The physical down of that press did not pass (W10Wheel suppressed it)
       mutable downSuppressed: bool
-      // The last press whose up has been resent (queued, see resendUp) for its down resent alone:
-      // that down is not dropped if a later press has started before it is sent (e.g. the sender
-      // busy with a click), it is released by that up
-      mutable releaseQueuedId: int }
+      // The presses whose up has been resent (queued, see resendUp) for their down resent alone,
+      // until that up reaches the hook: their down is not dropped if a later press has started
+      // before it is sent (e.g. the sender busy with a click), it is released by that up.
+      // Several, in their order: a press can follow before the sender has sent the earlier one's
+      // (e.g. slow, while each LR trigger's wait is ended by another button). The oldest are
+      // forgotten past MAX_RELEASES_QUEUED (an up that never comes: its down was not sent either).
+      releasesQueued: List<int> }
+
+let private queueRelease (p: Press) (id: int) =
+    p.releasesQueued.Remove(id) |> ignore
+    p.releasesQueued.Add(id)
+    while p.releasesQueued.Count > MAX_RELEASES_QUEUED do
+        p.releasesQueued.RemoveAt(0)
 
 // By button (0: left, 1: right, 2: middle, 3: X1, 4: X2; only left and right are resent alone).
 // Used on the hook thread only.
 let private presses =
     Array.init 5 (fun _ ->
-        { id = NO_PRESS; upPassed = false; downPassedId = NO_PRESS; downSuppressed = false; releaseQueuedId = NO_PRESS })
+        { id = NO_PRESS; upPassed = false; downPassedId = NO_PRESS; downSuppressed = false; releasesQueued = List<int>() })
 let mutable private lastPressId = 0
 
 // Called by the mouse hook for a button down or up before it is handled, also in
 // Pass Mode: true to drop it.
 // - A down resent alone for a press whose physical up has passed (or for an earlier press)
-//   would leave the button pressed. Not if its up has been resent (releaseQueuedId): it comes
+//   would leave the button pressed. Not if its up has been resent (releasesQueued): it comes
 //   after, and the press would be lost.
 // - The up resent for a down resent alone that did not reach the application (dropped above,
 //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
+// The up resent ends its press's wait for its down (releasesQueued), dropped or passed.
 let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
     let p = presses.[button]
     match resendKind info with
-    | Some(ResendKind.Down, id) when isDown && (id <> p.id || p.upPassed) && id <> p.releaseQueuedId ->
+    | Some(ResendKind.Down, id) when isDown && (id <> p.id || p.upPassed) && not (p.releasesQueued.Contains(id)) ->
         Debug.WriteLine("dropResent: a down after its physical up")
         true
-    | Some(ResendKind.Release, id) when not isDown && id <> p.downPassedId ->
-        Debug.WriteLine("dropResent: an up for a down not passed")
-        true
+    | Some(ResendKind.Release, id) when not isDown ->
+        p.releasesQueued.Remove(id) |> ignore
+        if id <> p.downPassedId then
+            Debug.WriteLine("dropResent: an up for a down not passed")
+            true
+        else
+            false
     | _ ->
         false
 
@@ -429,7 +446,7 @@ let dropLoneUp (button: int) (info: HookInfo): bool =
 // then): the session was locked or the system suspended (Ctx.inputLost), or Windows had removed the
 // mouse hook. The suppressed downs are forgotten, so that the up of a press made meanwhile (which
 // reached the application too) is not taken for an up without its down (dropLoneUp). A down resent
-// alone still queued for a press whose up has not been resent (releaseQueuedId) is dropped when it
+// alone still queued for a press whose up has not been resent (releasesQueued) is dropped when it
 // comes (as after a passed up, dropResent), or it would reach the application alone and the button
 // stay pressed (e.g. the LR trigger's wait timed out, then the up missed); one whose up is queued
 // passes with it (the click is whole). The press IDs are kept (resent events in flight are still
@@ -437,7 +454,7 @@ let dropLoneUp (button: int) (info: HookInfo): bool =
 let forgetPresses () =
     for p in presses do
         p.downSuppressed <- false
-        if p.releaseQueuedId <> p.id then
+        if not (p.releasesQueued.Contains(p.id)) then
             p.upPassed <- true
 
 let setForgetPresses () =
@@ -785,7 +802,7 @@ let resendUp (me: MouseEvent) =
         | RightUp(_) -> 1
         | _ -> raise (ArgumentException())
     let id = pressIdOf me
-    presses.[button].releaseQueuedId <- id
+    queueRelease presses.[button] id
     __resendUp me ResendKind.Release id
 
 // Resends a down and an up (at different points). The same button's down and up are sent
