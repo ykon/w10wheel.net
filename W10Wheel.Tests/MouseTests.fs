@@ -376,3 +376,20 @@ let ``Pass Mode turned on ends the LR wait, the key's up is suppressed alone`` (
     eq Suppress (keyUp VK_LMENU 600)
     eq Pass (keyUp VK_LMENU 650)
     Ctx.exitScrollMode ()
+
+[<Fact>]
+let ``a single or drag trigger whose scroll cannot start passes its down and up`` () =
+    // RawInput refused: the button works as if it were not the trigger, its click not lost
+    for trigger, b in [ (DataID.Middle, Middle); (DataID.RightDrag, Right) ] do
+        reset trigger DataID.None
+        rawInputFails <- true
+        try
+            eq Pass (down b 10 10 100)
+            notScrolling ()
+            eq Pass (up b 10 10 150)
+            Assert.True(noneSent 50)
+        finally
+            rawInputFails <- false
+        // RawInput registered again: the trigger
+        eq Suppress (down b 10 10 200)
+        scrolling ()

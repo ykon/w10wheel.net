@@ -343,12 +343,24 @@ let private checkKeySendMiddle (me: MouseEvent): nativeint option =
     else
         None
 
+// Scroll mode could not start (RawInput could not be registered, see Ctx.Scroll.Start, or W10Wheel
+// is exiting): the down of the trigger passes, as if its button were not a trigger, and so does its
+// up (not the started trigger: passNotStartedTrigger). Suppressed, the click would be lost (no
+// scroll, and no click resent at the up). As the Java version (9e2de36).
+let private passNotStartedScroll (me: MouseEvent): nativeint option =
+    if not (Ctx.isScrollMode()) then
+        debug "pass (scroll mode not started)" me
+        callNextHook()
+    else
+        None
+
 let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         debug "start scroll mode" me
         Ctx.startScrollMode me.Info
-        triggerStarted <- me
-        suppress()
+        passNotStartedScroll me |> Option.orElseWith (fun () ->
+            triggerStarted <- me
+            suppress())
     else
         None
 
@@ -376,12 +388,13 @@ let private dragStart (info: HookInfo) =
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
     Ctx.startScrollMode me.Info
-    triggerStarted <- me
+    passNotStartedScroll me |> Option.orElseWith (fun () ->
+        triggerStarted <- me
 
-    drag <- dragStart
-    dragged <- false
+        drag <- dragStart
+        dragged <- false
 
-    suppress()
+        suppress())
 
 let private passNotStartedTrigger (up: MouseEvent): nativeint option =
     if triggerStarted.SameButton up then
