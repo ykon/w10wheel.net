@@ -348,3 +348,18 @@ let ``the trigger changed while the LR wait is pending: the wait is canceled, th
     Ctx.ForTests.setTrigger DataID.Middle
     Assert.True(noneSent 400)
     eq Suppress (up Left 10 10 500)
+
+[<Fact>]
+let ``a down resent for a press forgotten is dropped, one of an unknown kind passes`` () =
+    reset DataID.LR DataID.None
+    down Left 10 10 100 |> ignore
+    let d = (sentInputs 1).Head
+    // The press forgotten (e.g. the session locked) before the resent down reaches the hook: the
+    // down would leave the button pressed
+    Ctx.inputLost ()
+    eq Suppress (receive d)
+
+    // The kind bits of none (3): not W10Wheel's, passed as the input of other software
+    let extra = d.mi.dwExtraInfo.ToUInt64() ||| (3UL <<< 56)
+    let mi = WinAPI.MOUSEINPUT(d.mi.dx, d.mi.dy, d.mi.mouseData, d.mi.dwFlags, d.mi.time, UIntPtr(extra))
+    eq Pass (receive (WinAPI.MINPUT(mi)))

@@ -76,20 +76,38 @@ let private resendClickTag =
 
 // The kind of a resent input and the ID of the physical press it is for, in the upper half of
 // dwExtraInfo (resendTag in the lower half): see dropResent. In a 32-bit process dwExtraInfo
-// has only the tag (all are KIND_PLAIN).
-let private KIND_PLAIN = 0UL   // passed as is (e.g. a down and up pair)
-let private KIND_DOWN = 1UL    // a down resent alone (its up comes later)
-let private KIND_RELEASE = 2UL // the up resent for a down resent alone
+// has only the tag (all are Plain).
+[<RequireQualifiedAccess>]
+type private ResendKind =
+    | Plain   // passed as is (e.g. a down and up pair)
+    | Down    // a down resent alone (its up comes later)
+    | Release // the up resent for a down resent alone
+
+let private kindBits (kind: ResendKind): uint64 =
+    match kind with
+    | ResendKind.Plain -> 0UL
+    | ResendKind.Down -> 1UL
+    | ResendKind.Release -> 2UL
 
 let private PRESS_ID_MASK = 0xFFFFFF
 
+// The kind and press in the upper half of dwExtraInfo (see resendExtra): None for kind bits of
+// none (not W10Wheel's: passed as the others)
+let private decodeKind (extra: uint64): (ResendKind * int) option =
+    let upper = extra >>> 32
+    let id = int (upper &&& uint64 PRESS_ID_MASK)
+    match upper >>> 24 with
+    | 0UL -> Some(ResendKind.Plain, id)
+    | 1UL -> Some(ResendKind.Down, id)
+    | 2UL -> Some(ResendKind.Release, id)
+    | _ -> None
+
 // The kind and press of an input resent alone (see resendExtra): None for the others, and in a
 // 32-bit process (no kind)
-let private inputResendKind (input: WinAPI.MINPUT): (uint64 * int) option =
+let private inputResendKind (input: WinAPI.MINPUT): (ResendKind * int) option =
     let extra = input.mi.dwExtraInfo.ToUInt64()
     if IntPtr.Size = 8 && (extra &&& 0xFFFFFFFFUL) = uint64 resendTag then
-        let upper = extra >>> 32
-        Some(upper >>> 24, int (upper &&& uint64 PRESS_ID_MASK))
+        decodeKind extra
     else
         None
 
@@ -103,7 +121,7 @@ let private sentDownId = Array.create 2 0
 
 let private recordSentDown (input: WinAPI.MINPUT) =
     match inputResendKind input with
-    | Some(kind, id) when kind = KIND_DOWN -> sentDownId.[inputButton input] <- id
+    | Some(ResendKind.Down, id) -> sentDownId.[inputButton input] <- id
     | _ -> ()
 
 // Wheel events are not sent in Pass Mode, nor if Pass Mode has been turned on (or the state
@@ -171,7 +189,7 @@ let private isSingleUp (msgs: WinAPI.MINPUT[]) =
 let private isSendableAtExit (msgs: WinAPI.MINPUT[]) =
     isSingleUp msgs &&
         match inputResendKind msgs.[0] with
-        | Some(kind, id) when kind = KIND_RELEASE -> id = sentDownId.[inputButton msgs.[0]]
+        | Some(ResendKind.Release, id) -> id = sentDownId.[inputButton msgs.[0]]
         | _ -> true
 
 let private sendBatch (generation: int) (msgs: WinAPI.MINPUT[]) = lock sendLock (fun () ->
@@ -278,9 +296,9 @@ let private senderThread = new Thread(fun () ->
 senderThread.IsBackground <- true
 senderThread.Start()
 
-let private resendExtra (kind: uint64) (pressId: int): uint64 =
+let private resendExtra (kind: ResendKind) (pressId: int): uint64 =
     if IntPtr.Size = 8 then
-        let upper = (kind <<< 24) ||| uint64 (pressId &&& PRESS_ID_MASK)
+        let upper = (kindBits kind <<< 24) ||| uint64 (pressId &&& PRESS_ID_MASK)
         (upper <<< 32) ||| uint64 resendTag
     else
         uint64 resendTag
@@ -306,10 +324,9 @@ let isResendClickEvent (me: MouseEvent) =
     me.Info.dwExtraInfo.ToUInt64() = uint64 resendClickTag
 
 // (kind, press ID) of a resent input
-let private resendKind (info: HookInfo): (uint64 * int) option =
+let private resendKind (info: HookInfo): (ResendKind * int) option =
     if isInjected info && isResendInfo info then
-        let upper = info.dwExtraInfo.ToUInt64() >>> 32
-        Some(upper >>> 24, int (upper &&& uint64 PRESS_ID_MASK))
+        decodeKind (info.dwExtraInfo.ToUInt64())
     else
         None
 
@@ -344,13 +361,13 @@ let mutable private lastPressId = 0
 //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
 let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
     match resendKind info with
-    | Some(kind, id) when kind = KIND_DOWN && isDown &&
-                          (id <> pressId.[button] || upPassed.[button]) &&
-                          id <> releaseQueuedId.[button] ->
+    | Some(ResendKind.Down, id) when isDown &&
+                                       (id <> pressId.[button] || upPassed.[button]) &&
+                                       id <> releaseQueuedId.[button] ->
         Debug.WriteLine("dropResent: a down after its physical up")
         true
-    | Some(kind, id) when kind = KIND_RELEASE && not isDown &&
-                          id <> downPassedId.[button] ->
+    | Some(ResendKind.Release, id) when not isDown &&
+                                       id <> downPassedId.[button] ->
         Debug.WriteLine("dropResent: an up for a down not passed")
         true
     | _ ->
@@ -373,7 +390,7 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
     if passed then
         if isDown then
             match resendKind info with
-            | Some(kind, id) when kind = KIND_DOWN -> downPassedId.[button] <- id
+            | Some(ResendKind.Down, id) -> downPassedId.[button] <- id
             | _ -> ()
         else
             downPassedId.[button] <- NO_PRESS
@@ -723,13 +740,13 @@ let resendClickDU (down:MouseEvent) (up:MouseEvent) =
 // pressId: the press of the physical down (pressIdOf, recorded when the wait started)
 let resendDown (generation: int) (pressId: int) (me: MouseEvent) =
     let send (info: HookInfo) flags =
-        enqueue generation [| createInput info.pt 0 flags 0u (resendExtra KIND_DOWN pressId) |]
+        enqueue generation [| createInput info.pt 0 flags 0u (resendExtra ResendKind.Down pressId) |]
     match me with
     | LeftDown(info) -> send info MOUSEEVENTF_LEFTDOWN
     | RightDown(info) -> send info MOUSEEVENTF_RIGHTDOWN
     | _ -> raise (ArgumentException())
 
-let private __resendUp (me: MouseEvent) (kind: uint64) (pressId: int) =
+let private __resendUp (me: MouseEvent) (kind: ResendKind) (pressId: int) =
     let send (info: HookInfo) flags =
         enqueue (Ctx.getPassModeGeneration()) [| createInput info.pt 0 flags 0u (resendExtra kind pressId) |]
     match me with
@@ -747,18 +764,18 @@ let resendUp (me: MouseEvent) =
         | _ -> raise (ArgumentException())
     let id = pressIdOf me
     releaseQueuedId.[button] <- id
-    __resendUp me KIND_RELEASE id
+    __resendUp me ResendKind.Release id
 
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
 // alone (the up of such a down is resent by checkResentDown before the wait is offered): it
 // passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
 let private resendOtherUp (me: MouseEvent) =
-    __resendUp me KIND_PLAIN NO_PRESS
+    __resendUp me ResendKind.Plain NO_PRESS
 
 // Resends a down and an up (at different points). The same button's down and up are sent
 // as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
 let resendDownUp (generation: int) (pressId: int) (down: MouseEvent) (up: MouseEvent) =
-    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u (resendExtra KIND_PLAIN NO_PRESS)
+    let input (info: HookInfo) flags = createInput info.pt 0 flags 0u (resendExtra ResendKind.Plain NO_PRESS)
     match down, up with
     | LeftDown(d), LeftUp(u) ->
         enqueue generation [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
