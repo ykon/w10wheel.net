@@ -245,6 +245,10 @@ let keyUp (info: KHookInfo) =
         IntPtr(1)
     elif Ctx.LastFlags.GetAndReset_PassedKey ku.VKCode then
         debug "pass (up of a passed down)" ku
+        // As above: the last event may be the down of an earlier press of the trigger key whose up
+        // was missed (this press passed with no record of it, keyDown), and the next press would be
+        // taken for its repeat, suppressed with no scroll
+        if Ctx.isTriggerKey ku then lastEvent <- ku
         __callNextHook()
     elif Ctx.isTriggerKey ku then singleUp ku else noneUp ku
 

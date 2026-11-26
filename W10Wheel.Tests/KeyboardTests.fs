@@ -426,3 +426,20 @@ let ``the trigger key whose scroll cannot start passes its down, repeats and up`
     // Its next down is a press of its own: the trigger
     eq Suppress (keyDown vk 600)
     scrolling ()
+
+[<Fact>]
+let ``the trigger key's next press after a passed press with no record is the trigger`` () =
+    let vk = kb ()
+    // In its scroll, ended by a mouse trigger; its up missed and the key pressed again with the down
+    // missed too (e.g. over a window of a higher integrity level): its repeat and its up pass
+    eq Suppress (keyDown vk 100)
+    down Middle 0 0 200 |> ignore
+    up Middle 0 0 250 |> ignore
+    notScrolling ()
+    setKeyDown vk true
+    eq Pass (keyDown vk 600)
+    eq Pass (keyUp vk 700)
+    setKeyDown vk false
+    // Its next press is the trigger, not taken for a repeat of the old one
+    eq Suppress (keyDown vk 800)
+    scrolling ()
