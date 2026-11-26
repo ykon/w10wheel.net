@@ -78,11 +78,6 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
         // The scroll is starting already (waiterThread)
-    // Another button (EventHandler.offerOtherButton): the waiting down is resent, its physical up
-    // comes later (the other button's event passes as it is)
-    | MiddleDown(_) | X1Down(_) | X2Down(_) | MiddleUp(_) | X1Up(_) | X2Up(_) ->
-        Debug.WriteLine(sprintf "setFlagsOffer - setResent (%s): %s" me.Name waitingEvent.Name)
-        Ctx.LastFlags.SetResent waitingEvent
     | Cancel -> Debug.WriteLine("setFlagsOffer: cancel")
     | _ -> raise (InvalidOperationException())
 
@@ -92,6 +87,14 @@ let offer me: bool =
         true 
     else
         false
+
+// Ends the wait in progress as a move does (on the hook thread): its down is resent now, its up at
+// its physical up (EventHandler.checkResentDown). For an event that passes as it is (me, at whose
+// point): another button's down or up, or the up of the other button of the pair whose down
+// passed (EventHandler.endWaitByOtherButton, checkPassedDown). False if no wait got it (none, or
+// it has timed out meanwhile: its down resent).
+let endByResend (me: MouseEvent): bool =
+    offer (Move(me.Info))
 
 // Cancels the wait (on the hook thread, e.g. when the trigger changes): the down that was
 // waiting, if the wait was canceled (the down is not resent)
@@ -161,10 +164,6 @@ let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
 let private dispatchEvent generation pressId down res =
     match res with
     | Move(_) -> fromMove generation pressId down
-    // Another button's down or up: the waiting down resent as for a move (the physical event passes
-    // as the hook returns, just before it)
-    | MiddleDown(_) | X1Down(_) | X2Down(_) | MiddleUp(_) | X1Up(_) | X2Up(_) ->
-        fromMove generation pressId down
     | LeftUp(_) | RightUp(_) -> fromUp generation pressId down res
     | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")

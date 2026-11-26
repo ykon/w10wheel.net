@@ -233,19 +233,24 @@ let ``a physical up ends what the triggers kept of its press`` () =
 let ``a new press forgets a resent down whose up was missed`` () =
     // LR: the wait of Left timed out (resent), its up missed, another button between; Left pressed
     // again over an excluded window (passed), then Right waits: Left's up passes as that of the
-    // passed press, not resent as the up of the old resent down
+    // passed press, not resent as the up of the old resent down, and ends the wait (Right's down
+    // resent, as the Rust version does)
     reset DataID.LR DataID.None
     exclude ()
     addExcludedPoint 100 100
     down Left 10 10 100 |> ignore
     let downs = sentInputs 1
     eq Pass (receive downs.Head)
+    // Longer from now: only Left's up can end Right's wait
+    Ctx.ForTests.setNumber DataID.pollTimeout 3000
     eq Pass (down Middle 10 10 400)
     eq Pass (up Middle 10 10 450)
     eq Pass (down Left 100 100 500)
     eq Suppress (down Right 20 20 600)
     eq Pass (up Left 20 20 650)
-    Assert.True((takeSent 0 0).IsEmpty)
+    let sent = sentInputs 1
+    Assert.Equal<(Button * bool) list>([ (Right, true) ], sent |> List.choose buttonOfInput)
+    Assert.True(noneSent 300)
 
 [<Fact>]
 let ``the drag trigger: a click is resent unless it was dragged`` () =
@@ -468,3 +473,41 @@ let ``another button released and pressed again while the sender is slow keeps i
     up X1 10 10 300 |> ignore
     let x1 = takeAppLog () |> List.filter (fun (b, _) -> b = X1)
     Assert.Equal<(Button * bool) list>([ (X1, true); (X1, false); (X1, true); (X1, false) ], x1)
+
+[<Fact>]
+let ``another button ending a released scroll ends the LR wait too`` () =
+    // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the middle
+    // button ends the scroll (suppressed), and the wait (its down resent at once)
+    reset DataID.LR DataID.VK_LMENU
+    Ctx.ForTests.setNumber DataID.pollTimeout 3000
+    eq Suppress (keyDown VK_LMENU 100)
+    eq Suppress (down Left 10 10 150)
+    eq Suppress (keyUp VK_LMENU 200)
+    Assert.True(isScrolling ())
+    eq Suppress (down Middle 10 10 300)
+    notScrolling ()
+    let downs = sentInputs 1
+    Assert.Equal<(Button * bool) list>([ (Left, true) ], downs |> List.choose buttonOfInput)
+    eq Pass (receive downs.Head)
+    eq Suppress (up Middle 10 10 350)
+    eq Suppress (up Left 10 10 400)
+    let ups = sentInputs 1
+    Assert.Equal<(Button * bool) list>([ (Left, false) ], ups |> List.choose buttonOfInput)
+
+[<Fact>]
+let ``the passed up of the other button of the pair ends the LR wait`` () =
+    // Right passed over an excluded window, Left waits out of it: Right's up passes and ends the
+    // wait (Left's down resent at once); Right pressed again is not taken for the pair
+    reset DataID.LR DataID.None
+    Ctx.ForTests.setNumber DataID.pollTimeout 3000
+    exclude ()
+    addExcludedPoint 100 100
+    eq Pass (down Right 100 100 50)
+    eq Suppress (down Left 10 10 100)
+    eq Pass (up Right 100 100 150)
+    let downs = sentInputs 1
+    Assert.Equal<(Button * bool) list>([ (Left, true) ], downs |> List.choose buttonOfInput)
+    eq Pass (receive downs.Head)
+    down Right 10 10 200 |> ignore
+    Thread.Sleep(50)
+    notScrolling ()

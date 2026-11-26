@@ -319,8 +319,15 @@ let private checkResentDown (up: MouseEvent): nativeint option =
     else
         None
 
+// The other button of the pair waiting (a down passed, e.g. over an excluded window, then the other
+// pressed out of it): its wait ends, the waiting down resent at once, as the Rust version does (it
+// would wait for the timeout, and the button pressed again within it make the pair). The up passes
+// as it is, not resent after that down (pressed again, passed over the excluded window, the button
+// would have its down before that up).
 let private checkPassedDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_PassedDown up then
+        if EventWaiter.isWaitingOtherThan up && EventWaiter.endByResend up then
+            debug "the LR wait ended (its down resent)" up
         debug "pass (checkPassedDown)" up
         callNextHook()
     else
@@ -614,19 +621,17 @@ let private dragUp (me: MouseEvent): nativeint =
 // button pressed again before the sender has sent its up would have its down before that up
 // (X1 down, down, up). Not an up whose down reached no application (Windows.isLoneUp): dropped
 // (Dispatcher), and the wait goes on, as for the other button of the pair (offerEventWaiter).
-let private offerOtherButton (me: MouseEvent): nativeint option =
+// Then the event is handled as when no wait is in progress: a down before the end of a released
+// scroll (it ends the wait too, as in the Rust version, and the scroll, suppressed).
+let private endWaitByOtherButton (me: MouseEvent): nativeint option =
     let isOther =
         match me with
         | MiddleEvent(_) | X1Event(_) | X2Event(_) -> true
         | _ -> false
-    if not isOther || not (EventWaiter.isWaitingOtherThan me) || (me.IsUp && Windows.isLoneUp me) then
-        None
-    elif EventWaiter.offer me then
-        debug "pass (the LR wait ended, its down resent)" me
-        callNextHook()
-    else
-        // The wait has timed out meanwhile (its down resent): as when none is in progress
-        None
+    if isOther && EventWaiter.isWaitingOtherThan me && not (me.IsUp && Windows.isLoneUp me)
+       && EventWaiter.endByResend me then
+        debug "the LR wait ended (its down resent)" me
+    None
 
 // As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
 // first: they neither end the locked scroll mode nor initialize the state (Escape)
@@ -634,9 +639,9 @@ let private noneDown (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneDown")
     let checkers = [
         skipResendEventSingle
+        endWaitByOtherButton
         //resetLastFlags
         checkExitScrollDown
-        offerOtherButton
         endPass
     ]
 
@@ -648,7 +653,7 @@ let private noneUp (me: MouseEvent): nativeint =
         skipResendEventSingle
         checkEscape
         checkSuppressedDown
-        offerOtherButton
+        endWaitByOtherButton
         endPass
     ]
 
