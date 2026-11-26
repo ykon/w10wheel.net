@@ -5,6 +5,8 @@
 .vs
 W10Wheel/bin/
 W10Wheel/obj/
+W10Wheel.Tests/bin/
+W10Wheel.Tests/obj/
 build/IconGen/bin/
 build/IconGen/obj/
 artifacts/
