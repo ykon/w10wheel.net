@@ -313,3 +313,38 @@ let ``the Left trigger passes the right button alone`` () =
     eq Suppress (down Right 10 10 220)
     scrolling ()
 
+
+[<Fact>]
+let ``the trigger changed while the LR pair holds its scroll: the pair's ups are suppressed`` () =
+    reset DataID.LR DataID.None
+    down Left 0 0 100 |> ignore
+    down Right 0 0 150 |> ignore
+    scrolling ()
+    Ctx.ForTests.setTrigger DataID.Middle
+    notScrolling ()
+    eq Suppress (up Left 0 0 200)
+    eq Suppress (up Right 0 0 250)
+    Assert.True(noneSent 50)
+    // The buttons as the new trigger takes them
+    eq Pass (down Left 0 0 300)
+    eq Pass (up Left 0 0 350)
+
+[<Fact>]
+let ``the trigger changed after the LR wait resent its down: its up is resent`` () =
+    reset DataID.LR DataID.None
+    down Left 10 10 100 |> ignore
+    let downs = sentInputs 1
+    eq Pass (receive downs.Head)
+    Ctx.ForTests.setTrigger DataID.Middle
+    eq Suppress (up Left 10 10 400)
+    let ups = sentInputs 1
+    Assert.Equal<(Button * bool) list>([ (Left, false) ], ups |> List.choose buttonOfInput)
+    eq Pass (receive ups.Head)
+
+[<Fact>]
+let ``the trigger changed while the LR wait is pending: the wait is canceled, the up suppressed`` () =
+    reset DataID.LR DataID.None
+    down Left 10 10 100 |> ignore
+    Ctx.ForTests.setTrigger DataID.Middle
+    Assert.True(noneSent 400)
+    eq Suppress (up Left 10 10 500)

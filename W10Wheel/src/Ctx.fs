@@ -680,29 +680,60 @@ type private KeyState =
     | Passed
     | LoneUp
 
+// What became of the down of a button's press, for its up (whose up has not come yet): one at a
+// time, the last set kept. Reset at every physical down and up of the button (EventHandler.procDown,
+// procUp): the press is new, or over.
+// - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the LR trigger's pair): its
+//   up is suppressed too.
+// - Resent: its down was resent alone (the LR trigger's wait timed out or was ended by a move or
+//   the other button's up; left and right only): its up is resent.
+// - Passed: its down passed (in the LR trigger's pressed scroll mode, or over an excluded window;
+//   left and right only): its up passes.
+[<RequireQualifiedAccess>]
+type private ButtonState =
+    | Idle
+    | Suppressed
+    | Resent
+    | Passed
+
 type LastFlags() =
-    // R = Resent
-    [<VolatileField>] static let mutable ldR = false
-    [<VolatileField>] static let mutable rdR = false
-
-    // P = Passed
-    [<VolatileField>] static let mutable ldP = false
-    [<VolatileField>] static let mutable rdP = false
-
-    // S = Suppressed
-    [<VolatileField>] static let mutable ldS = false
-    [<VolatileField>] static let mutable rdS = false
-    [<VolatileField>] static let mutable mdS = false
-    [<VolatileField>] static let mutable x1S = false
-    [<VolatileField>] static let mutable x2S = false
+    // What became of each button's down (ButtonState): left, right, middle, X1, X2. Also set on the
+    // EventWaiter thread (the LR trigger's wait).
+    static let buttons = Array.create 5 ButtonState.Idle
 
     // What is known of each key's press whose up has not come yet (KeyState), by virtual-key code
     static let keys = Array.create 256 KeyState.Idle
 
-    static let getAndReset (flag: bool byref) =
-        let res = flag
-        flag <- false
-        res
+    static let buttonIndex (me: MouseEvent): int =
+        match me with
+        | LeftEvent(_) -> 0
+        | RightEvent(_) -> 1
+        | MiddleEvent(_) -> 2
+        | X1Event(_) -> 3
+        | X2Event(_) -> 4
+        | _ -> raise (ArgumentException())
+
+    static let isLR (me: MouseEvent) =
+        match me with
+        | LeftEvent(_) | RightEvent(_) -> true
+        | _ -> false
+
+    static let getButton (i: int) = Volatile.Read(&buttons.[i])
+    static let setButton (i: int) (state: ButtonState) = Volatile.Write(&buttons.[i], state)
+
+    // The button is in state, which it leaves (Idle)
+    static let takeButton (i: int) (state: ButtonState) =
+        if getButton i = state then
+            setButton i ButtonState.Idle
+            true
+        else
+            false
+
+    // The button of a down (set) or an up (take): the left or right one only for Resent and Passed
+    static let indexOf (me: MouseEvent) (isDown: bool) (lrOnly: bool) =
+        let ok = if isDown then me.IsDown else me.IsUp
+        if not ok || (lrOnly && not (isLR me)) then raise (ArgumentException())
+        buttonIndex me
 
     static let isKey (vk: int) =
         vk >= 0 && vk < keys.Length
@@ -727,11 +758,9 @@ type LastFlags() =
         LastFlags.InitButtons()
         LastFlags.SuppressedKeysToLoneUp()
 
-    // The flags of the buttons (resent, passed, suppressed): see Init, and Ctx.mouseHookLost
+    // The states of the buttons (ButtonState): see Init, and Ctx.mouseHookLost
     static member InitButtons () =
-        ldR <- false; rdR <- false
-        ldP <- false; rdP <- false
-        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        for i in 0 .. buttons.Length - 1 do setButton i ButtonState.Idle
 
     // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed is
     // not suppressed again (see Init)
@@ -740,37 +769,19 @@ type LastFlags() =
             if keys.[vk] = KeyState.Suppressed then keys.[vk] <- KeyState.LoneUp
 
     static member SetResent (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldR <- true
-        | RightDown(_) -> rdR <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true true) ButtonState.Resent
 
     static member GetAndReset_ResentDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldR)
-        | RightUp(_) -> getAndReset(&rdR)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false true) ButtonState.Resent
 
     static member SetPassed (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldP <- true
-        | RightDown(_) -> rdP <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true true) ButtonState.Passed
 
     static member GetAndReset_PassedDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldP)
-        | RightUp(_) -> getAndReset(&rdP)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false true) ButtonState.Passed
 
     static member SetSuppressed (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldS <- true 
-        | RightDown(_) -> rdS <- true
-        | MiddleDown(_) -> mdS <- true
-        | X1Down(_) -> x1S <- true
-        | X2Down(_) -> x2S <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true false) ButtonState.Suppressed
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
@@ -810,24 +821,14 @@ type LastFlags() =
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
-        let res = [| ldS; rdS; mdS; x1S; x2S |]
-        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
-        res
+        Array.init 5 (fun i -> takeButton i ButtonState.Suppressed)
 
     // The downs resent alone whose up has not come yet (left, right); resets them
     static member TakeResentDowns (): bool[] =
-        let res = [| ldR; rdR |]
-        ldR <- false; rdR <- false
-        res
+        Array.init 2 (fun i -> takeButton i ButtonState.Resent)
 
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldS)
-        | RightUp(_) -> getAndReset(&rdS)
-        | MiddleUp(_) -> getAndReset(&mdS)
-        | X1Up(_) -> getAndReset(&x1S)
-        | X2Up(_) -> getAndReset(&x2S)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false false) ButtonState.Suppressed
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
@@ -837,21 +838,15 @@ type LastFlags() =
     // The down of the button of an event was suppressed and its up has not come yet
     static member IsSuppressedDown (me: MouseEvent): bool =
         match me with
-        | LeftEvent(_) -> ldS
-        | RightEvent(_) -> rdS
-        | MiddleEvent(_) -> mdS
-        | X1Event(_) -> x1S
-        | X2Event(_) -> x2S
+        | LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) ->
+            getButton (buttonIndex me) = ButtonState.Suppressed
         | _ -> false
 
-    // The flags of the press of the button of an event (resent, suppressed, passed)
+    // The state of the press of the button of an event (ButtonState)
     static member ResetFor (me: MouseEvent) =
         match me with
-        | LeftEvent(_) -> ldR <- false; ldS <- false; ldP <- false
-        | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
-        | MiddleEvent(_) -> mdS <- false
-        | X1Event(_) -> x1S <- false
-        | X2Event(_) -> x2S <- false
+        | LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) ->
+            setButton (buttonIndex me) ButtonState.Idle
         | _ -> ()
 
     (*
