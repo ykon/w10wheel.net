@@ -663,6 +663,23 @@ let getFirstMinThreshold () =
 let getSwitchingThreshold () =
     VHAdjuster.SwitchingThreshold
 
+// What is known of a key's press whose up has not come yet: one at a time, the last set kept.
+// - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the old trigger key when the
+//   trigger changed): its repeats and its up are suppressed too, whatever the trigger is now.
+// - Passed: its down passed W10Wheel (to the application): its repeats and its up pass too, even if
+//   it has become the trigger since.
+// - LoneUp: its down was suppressed when the state was initialized (LastFlags.Init): its up alone is
+//   suppressed (the application did not get the down). Its next down ends it (a repeat cannot be
+//   told from a new press, it is taken for one).
+// The trigger key's own press (its down suppressed for its scroll) is not here: KEventHandler keeps
+// it (lastEvent).
+[<RequireQualifiedAccess>]
+type private KeyState =
+    | Idle
+    | Suppressed
+    | Passed
+    | LoneUp
+
 type LastFlags() =
     // R = Resent
     [<VolatileField>] static let mutable ldR = false
@@ -679,13 +696,8 @@ type LastFlags() =
     [<VolatileField>] static let mutable x1S = false
     [<VolatileField>] static let mutable x2S = false
 
-    static let kdS = Array.create 256 false
-    // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
-    static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up
-    // has not come yet: their up alone is suppressed (the application did not get the down). Their
-    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
-    static let kdL = Array.create 256 false
+    // What is known of each key's press whose up has not come yet (KeyState), by virtual-key code
+    static let keys = Array.create 256 KeyState.Idle
 
     static let getAndReset (flag: bool byref) =
         let res = flag
@@ -693,15 +705,23 @@ type LastFlags() =
         res
 
     static let isKey (vk: int) =
-        vk >= 0 && vk < kdS.Length
+        vk >= 0 && vk < keys.Length
 
-    // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed would
+    // The key is in state, which it leaves (Idle)
+    static let takeKey (vk: int) (state: KeyState) =
+        if isKey vk && keys.[vk] = state then
+            keys.[vk] <- KeyState.Idle
+            true
+        else
+            false
+
+    // Not the keys passed (Passed), whose ups pass and reset them; reset, a key still pressed would
     // lose it (e.g. pressed over an excluded program: its repeats would start scroll mode if it
     // is the trigger, and its up would be suppressed). Whether a
     // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
     // suppressed is not pressed for it. A key whose up was missed passes its next down once.
-    // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
-    // suppressed again: only their up alone is (kdL), as the hook does for the buttons
+    // The keys suppressed (Suppressed) are not kept either, so that a key whose up was missed is
+    // not suppressed again: only their up alone is (LoneUp), as the hook does for the buttons
     // (Windows.dropLoneUp).
     static member Init () =
         LastFlags.InitButtons()
@@ -713,12 +733,11 @@ type LastFlags() =
         ldP <- false; rdP <- false
         ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
 
-    // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-    // missed is not suppressed again (see Init)
+    // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed is
+    // not suppressed again (see Init)
     static member SuppressedKeysToLoneUp () =
-        for vk in 0 .. kdS.Length - 1 do
-            if kdS.[vk] then kdL.[vk] <- true
-        Array.fill kdS 0 (kdS.Length) false
+        for vk in 0 .. keys.Length - 1 do
+            if keys.[vk] = KeyState.Suppressed then keys.[vk] <- KeyState.LoneUp
 
     static member SetResent (down: MouseEvent): unit =
         match down with
@@ -755,41 +774,39 @@ type LastFlags() =
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> if isKey down.VKCode then kdS.[down.VKCode] <- true
+        | KeyDown(_) -> if isKey down.VKCode then keys.[down.VKCode] <- KeyState.Suppressed
         | _ -> raise (ArgumentException())
 
     // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
     static member IsSuppressedKey (vk: int): bool =
-        isKey vk && kdS.[vk]
+        isKey vk && keys.[vk] = KeyState.Suppressed
 
     // The keyboard trigger changed while the old key was pressed (its down was suppressed)
     static member SetSuppressedKey (vk: int) =
-        if isKey vk then kdS.[vk] <- true
+        if isKey vk then keys.[vk] <- KeyState.Suppressed
 
     static member SetPassedKey (vk: int) =
-        if isKey vk then kdP.[vk] <- true
+        if isKey vk then keys.[vk] <- KeyState.Passed
 
     // The key's down passed: its repeats and its up pass too, even if it is the trigger now
     static member IsPassedKey (vk: int): bool =
-        isKey vk && kdP.[vk]
+        isKey vk && keys.[vk] = KeyState.Passed
 
     static member GetAndReset_PassedKey (vk: int): bool =
-        isKey vk && getAndReset(&kdP.[vk])
+        takeKey vk KeyState.Passed
 
-    // A down of a key (kdL): its up is not alone any more
+    // A down of a key (LoneUp): its up is not alone any more
     static member ResetLoneUpKey (vk: int) =
-        if isKey vk then kdL.[vk] <- false
+        takeKey vk KeyState.LoneUp |> ignore
 
-    // The up of a key whose down was suppressed before Init (kdL), with no down since; resets it
+    // The up of a key whose down was suppressed before Init (LoneUp), with no down since; resets it
     static member GetAndReset_LoneUpKey (vk: int): bool =
-        isKey vk && getAndReset(&kdL.[vk])
+        takeKey vk KeyState.LoneUp
 
     // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
     // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
     static member ResetKeys () =
-        Array.fill kdS 0 kdS.Length false
-        Array.fill kdP 0 kdP.Length false
-        Array.fill kdL 0 kdL.Length false
+        Array.fill keys 0 keys.Length KeyState.Idle
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
@@ -814,7 +831,7 @@ type LastFlags() =
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
+        | KeyUp(_) -> takeKey up.VKCode KeyState.Suppressed
         | _ -> raise (ArgumentException())
 
     // The down of the button of an event was suppressed and its up has not come yet
@@ -840,7 +857,7 @@ type LastFlags() =
     (*
     static member Reset (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdS.[down.VKCode] <- false
+        | KeyDown(_) -> keys.[down.VKCode] <- KeyState.Idle
         | _ -> ()
     *)
 

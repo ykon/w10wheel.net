@@ -399,3 +399,15 @@ let ``the Pause key repeats as the other keys`` () =
     setKeyDown VK_PAUSE false
     eq Suppress (keyDown VK_PAUSE 3200)
     scrolling ()
+
+[<Fact>]
+let ``a key passed, made the trigger while held: its repeats and its up pass`` () =
+    kb () |> ignore
+    eq Pass (keyDown 0x09 100)
+    Ctx.ForTests.setTargetVKCode DataID.VK_TAB
+    eq Pass (keyDown 0x09 130)
+    notScrolling ()
+    eq Pass (keyUp 0x09 500)
+    // Its next press is the trigger
+    eq Suppress (keyDown 0x09 600)
+    scrolling ()
