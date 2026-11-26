@@ -330,26 +330,33 @@ let private resendKind (info: HookInfo): (ResendKind * int) option =
     else
         None
 
-// The physical presses and the downs resent alone (LR trigger) by button (0: left, 1: right,
-// 2: middle, 3: X1, 4: X2; only left and right are resent alone),
-// as the hook sees them: in the order the target application gets the inputs, whenever
-// SendInput returns. Used on the hook thread only.
-// pressId: the ID of the last physical down (see handlingButton); the waits and resends for
-// it carry it (pressIdOf).
-// upPassed: the physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after
-// initState reset the flags).
-// downPassedId: the press whose down resent alone has reached the application, with no up
-// since (NO_PRESS if none).
 let private NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
-let private pressId = Array.create 5 NO_PRESS
-let private upPassed = Array.create 5 false
-let private downPassedId = Array.create 5 NO_PRESS
-// downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it)
-let private downSuppressed = Array.create 5 false
-// releaseQueuedId: the last press whose up has been resent (queued, see resendUp) for its down
-// resent alone: that down is not dropped if a later press has started before it is sent (e.g.
-// the sender busy with a click), it is released by that up
-let private releaseQueuedId = Array.create 5 NO_PRESS
+
+// The latest physical press of a button and the downs resent alone for it (LR trigger), as the
+// hook sees them: in the order the target application gets the inputs, whenever SendInput
+// returns. What reached the application, not what the triggers do with the up (Ctx.LastFlags).
+type private Press =
+    { // The ID of the last physical down (see handlingButton); the waits and resends for it carry
+      // it (pressIdOf)
+      mutable id: int
+      // The physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after initState
+      // reset the flags)
+      mutable upPassed: bool
+      // The press whose down resent alone has reached the application, with no up since
+      // (NO_PRESS if none)
+      mutable downPassedId: int
+      // The physical down of that press did not pass (W10Wheel suppressed it)
+      mutable downSuppressed: bool
+      // The last press whose up has been resent (queued, see resendUp) for its down resent alone:
+      // that down is not dropped if a later press has started before it is sent (e.g. the sender
+      // busy with a click), it is released by that up
+      mutable releaseQueuedId: int }
+
+// By button (0: left, 1: right, 2: middle, 3: X1, 4: X2; only left and right are resent alone).
+// Used on the hook thread only.
+let private presses =
+    Array.init 5 (fun _ ->
+        { id = NO_PRESS; upPassed = false; downPassedId = NO_PRESS; downSuppressed = false; releaseQueuedId = NO_PRESS })
 let mutable private lastPressId = 0
 
 // Called by the mouse hook for a button down or up before it is handled, also in
@@ -360,14 +367,12 @@ let mutable private lastPressId = 0
 // - The up resent for a down resent alone that did not reach the application (dropped above,
 //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
 let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
+    let p = presses.[button]
     match resendKind info with
-    | Some(ResendKind.Down, id) when isDown &&
-                                       (id <> pressId.[button] || upPassed.[button]) &&
-                                       id <> releaseQueuedId.[button] ->
+    | Some(ResendKind.Down, id) when isDown && (id <> p.id || p.upPassed) && id <> p.releaseQueuedId ->
         Debug.WriteLine("dropResent: a down after its physical up")
         true
-    | Some(ResendKind.Release, id) when not isDown &&
-                                       id <> downPassedId.[button] ->
+    | Some(ResendKind.Release, id) when not isDown && id <> p.downPassedId ->
         Debug.WriteLine("dropResent: an up for a down not passed")
         true
     | _ ->
@@ -377,31 +382,33 @@ let dropResent (button: int) (isDown: bool) (info: HookInfo): bool =
 // a physical down starts a new press
 let handlingButton (button: int) (isDown: bool) (info: HookInfo) =
     if isDown && not (isInjected info) then
+        let p = presses.[button]
         lastPressId <- lastPressId % (PRESS_ID_MASK - 1) + 1
-        pressId.[button] <- lastPressId
-        upPassed.[button] <- false
-        downSuppressed.[button] <- false
+        p.id <- lastPressId
+        p.upPassed <- false
+        p.downSuppressed <- false
 
 // Called by the mouse hook after handling a button down or up (passed: passed on)
 let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
+    let p = presses.[button]
     if isDown && not passed && not (isInjected info) then
-        downSuppressed.[button] <- true
+        p.downSuppressed <- true
 
     if passed then
         if isDown then
             match resendKind info with
-            | Some(ResendKind.Down, id) -> downPassedId.[button] <- id
+            | Some(ResendKind.Down, id) -> p.downPassedId <- id
             | _ -> ()
         else
-            downPassedId.[button] <- NO_PRESS
+            p.downPassedId <- NO_PRESS
             if not (isInjected info) then
-                upPassed.[button] <- true
+                p.upPassed <- true
 
     // The physical up of the press is handled (suppressed or passed): the press is over. A later
     // up whose down the hook did not see (e.g. pressed on another desktop) is not taken for an
     // up without its down (dropLoneUp).
     if not isDown && not (isInjected info) then
-        downSuppressed.[button] <- false
+        p.downSuppressed <- false
 
 // Called by the mouse hook when a button up is about to be passed on (by the handlers,
 // or in Pass Mode): true to suppress it instead. If the physical down of its press was
@@ -410,9 +417,10 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
 // (e.g. a right up opens a context menu). The press is ended then: a down resent late for it
 // is dropped (dropResent).
 let dropLoneUp (button: int) (info: HookInfo): bool =
-    if not (isInjected info) && downSuppressed.[button] && downPassedId.[button] <> pressId.[button] then
+    let p = presses.[button]
+    if not (isInjected info) && p.downSuppressed && p.downPassedId <> p.id then
         Debug.WriteLine("dropLoneUp: an up whose down did not reach the application")
-        upPassed.[button] <- true
+        p.upPassed <- true
         true
     else
         false
@@ -427,10 +435,10 @@ let dropLoneUp (button: int) (info: HookInfo): bool =
 // passes with it (the click is whole). The press IDs are kept (resent events in flight are still
 // told). On the hook thread (the thread of the message loop).
 let forgetPresses () =
-    for i in 0 .. downSuppressed.Length - 1 do
-        downSuppressed.[i] <- false
-        if releaseQueuedId.[i] <> pressId.[i] then
-            upPassed.[i] <- true
+    for p in presses do
+        p.downSuppressed <- false
+        if p.releaseQueuedId <> p.id then
+            p.upPassed <- true
 
 let setForgetPresses () =
     Ctx.setForgetPresses forgetPresses
@@ -445,8 +453,8 @@ let dropLoneUpOf (up: MouseEvent): bool =
 // The ID of the current press of the button of a left or right event (on the hook thread)
 let pressIdOf (me: MouseEvent): int =
     match me with
-    | LeftEvent(_) -> pressId.[0]
-    | RightEvent(_) -> pressId.[1]
+    | LeftEvent(_) -> presses.[0].id
+    | RightEvent(_) -> presses.[1].id
     | _ -> raise (ArgumentException())
 
 let private createInput (pt:WinAPI.POINT) (data:int) (flags:int) (time:uint32) (extra:uint64): WinAPI.MINPUT =
@@ -763,7 +771,7 @@ let resendUp (me: MouseEvent) =
         | RightUp(_) -> 1
         | _ -> raise (ArgumentException())
     let id = pressIdOf me
-    releaseQueuedId.[button] <- id
+    presses.[button].releaseQueuedId <- id
     __resendUp me ResendKind.Release id
 
 // The up of the other button than a waiting down (resendDownUp). Its down was not resent
