@@ -416,18 +416,18 @@ let ``another button's down ends the LR wait: the waiting down is resent, and th
         notScrolling ()
 
 [<Fact>]
-let ``another button's up ends the LR wait: sent after the waiting down`` () =
-    // Pressed before the wait (passed), released while it goes on: its up is resent after the
-    // waiting down, in their order
+let ``another button's up ends the LR wait, and passes`` () =
+    // Pressed before the wait (passed), released while it goes on: its up passes as it is, and the
+    // waiting down is resent
     for b in [ Middle; X1 ] do
         reset DataID.LR DataID.None
         Ctx.ForTests.setNumber DataID.pollTimeout 3000
         eq Pass (down b 10 10 50)
         eq Suppress (down Left 10 10 100)
-        eq Suppress (up b 10 10 150)
-        let inputs = sentInputs 2
-        Assert.Equal<(Button * bool) list>([ (Left, true); (b, false) ], inputs |> List.choose buttonOfInput)
-        for i in inputs do eq Pass (receive i)
+        eq Pass (up b 10 10 150)
+        let inputs = sentInputs 1
+        Assert.Equal<(Button * bool) list>([ (Left, true) ], inputs |> List.choose buttonOfInput)
+        eq Pass (receive inputs.Head)
         eq Suppress (up Left 10 10 200)
         let ups = sentInputs 1
         Assert.Equal<(Button * bool) list>([ (Left, false) ], ups |> List.choose buttonOfInput)
@@ -450,3 +450,21 @@ let ``the up of another button's suppressed down does not end the LR wait`` () =
     Assert.True((takeSent 0 0).IsEmpty)
     eq Suppress (down Right 0 0 1150)
     scrolling ()
+
+[<Fact>]
+let ``another button released and pressed again while the sender is slow keeps its order`` () =
+    // X1 held, Left waits; X1 released (it ends the wait) and pressed again before the sender has
+    // sent what the wait queued: the application gets X1's down, up, down and up in their order
+    reset DataID.LR DataID.None
+    Ctx.ForTests.setNumber DataID.pollTimeout 3000
+    eq Pass (down X1 10 10 50)
+    eq Suppress (down Left 10 10 100)
+    holdSender ()
+    up X1 10 10 150 |> ignore
+    down X1 10 10 160 |> ignore
+    releaseSender ()
+    // The sender sends what was queued
+    Thread.Sleep(200)
+    up X1 10 10 300 |> ignore
+    let x1 = takeAppLog () |> List.filter (fun (b, _) -> b = X1)
+    Assert.Equal<(Button * bool) list>([ (X1, true); (X1, false); (X1, true); (X1, false) ], x1)

@@ -41,20 +41,33 @@ let private excludedPoints = HashSet<int * int>()
 let mutable rawInputFails = false
 let private sent = ConcurrentQueue<WinAPI.MINPUT>()
 
+// The sender held (holdSender): SendInput waits, as when it is slow or busy
+let private senderGate = new ManualResetEventSlim(true)
+
+// What the application gets, in its order: the physical events passed (their message and
+// mouseData) and the inputs sent (they pass the hook after, injected)
+let private appLog = ConcurrentQueue<Choice<int * uint32, WinAPI.MINPUT>>()
+
 let EXCLUDED_PROGRAM = @"C:\Games\game.exe"
 let private OTHER_PROGRAM = @"C:\Apps\app.exe"
 let private EXCLUDED_WINDOW = nativeint 2
 let private OTHER_WINDOW = nativeint 1
 
 let private installHost () =
-    Host.sendInput <- (fun input -> sent.Enqueue input; true)
+    Host.sendInput <- (fun input ->
+        senderGate.Wait()
+        sent.Enqueue input
+        appLog.Enqueue(Choice2Of2 input)
+        true)
     Host.getAsyncKeyState <- (fun vk -> lock keysDown (fun () -> if keysDown.Contains vk then 0x8000s else 0s))
     Host.setSystemCursor <- (fun _ _ -> ())
     Host.restoreSystemCursors <- (fun () -> true)
     Host.registerRawInputDevices <- (fun rid ->
         // RIDEV_REMOVE (unregister) always succeeds
         not rawInputFails || rid.[0].dwFlags = WinAPI.RawInput.RIDEV_REMOVE)
-    Host.callNextMouseHook <- (fun _ _ _ _ -> PASSED)
+    Host.callNextMouseHook <- (fun _ _ wParam info ->
+        if info.flags &&& 1u = 0u then appLog.Enqueue(Choice1Of2(int wParam, info.mouseData))
+        PASSED)
     Host.callNextKeyboardHook <- (fun _ _ _ _ -> PASSED)
     Host.getCursorPos <- (fun () -> Some(cursor))
     Host.windowFromPoint <- (fun pt -> if excludedPoints.Contains((pt.x, pt.y)) then EXCLUDED_WINDOW else OTHER_WINDOW)
@@ -94,6 +107,10 @@ let takeSent (count: int) (timeoutMs: int): WinAPI.MINPUT list =
         res.Add input
     List.ofSeq res
 
+// The sender held, then let go: the inputs queued meanwhile are sent after the events handled
+let holdSender () = senderGate.Reset()
+let releaseSender () = senderGate.Set()
+
 // None sent within timeoutMs
 let noneSent (timeoutMs: int) = (takeSent Int32.MaxValue timeoutMs).IsEmpty
 
@@ -104,8 +121,10 @@ let isScrolling () = Ctx.isScrollMode ()
 // test queued.
 let reset (trigger: string) (targetVK: string) =
     initialized.Force()
+    releaseSender ()
     Ctx.inputLost ()
     takeSent Int32.MaxValue 50 |> ignore
+    appLog.Clear()
     lock keysDown (fun () -> keysDown.Clear())
     excludedPoints.Clear()
     cursor <- WinAPI.POINT(500, 400)
@@ -205,6 +224,23 @@ let receive (input: WinAPI.MINPUT) =
         let info = mouseInfo input.mi.dx input.mi.dy (xData b) 1u 0u (input.mi.dwExtraInfo.ToUInt64())
         mouse (if isDown then downMsg b else upMsg b) info
     | None -> failwith "not a button input"
+
+// The buttons' downs and ups the application has got since the last call, in its order
+let takeAppLog (): (Button * bool) list =
+    let ofMsg (msg: int) (mouseData: uint32) =
+        let x = if Mouse.isXButton1 mouseData then X1 else X2
+        if msg = WM_LBUTTONDOWN then Some(Left, true) elif msg = WM_LBUTTONUP then Some(Left, false)
+        elif msg = WM_RBUTTONDOWN then Some(Right, true) elif msg = WM_RBUTTONUP then Some(Right, false)
+        elif msg = WM_MBUTTONDOWN then Some(Middle, true) elif msg = WM_MBUTTONUP then Some(Middle, false)
+        elif msg = WM_XBUTTONDOWN then Some(x, true) elif msg = WM_XBUTTONUP then Some(x, false)
+        else None
+    let res = List<Button * bool>()
+    let mutable e = Unchecked.defaultof<Choice<int * uint32, WinAPI.MINPUT>>
+    while appLog.TryDequeue(&e) do
+        match e with
+        | Choice1Of2(msg, data) -> ofMsg msg data |> Option.iter res.Add
+        | Choice2Of2 input -> buttonOfInput input |> Option.iter res.Add
+    List.ofSeq res
 
 let keyDown (vk: int) (time: int) = decisionOf (Dispatcher.keyboardProc 0 (nativeint WM_KEYDOWN) (keyInfo vk (uint32 time)))
 let keyUp (vk: int) (time: int) = decisionOf (Dispatcher.keyboardProc 0 (nativeint WM_KEYUP) (keyInfo vk (uint32 time)))

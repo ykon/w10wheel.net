@@ -774,10 +774,6 @@ let private __resendUp (me: MouseEvent) (kind: ResendKind) (pressId: int) =
     match me with
     | LeftUp(info) -> send info 0 MOUSEEVENTF_LEFTUP
     | RightUp(info) -> send info 0 MOUSEEVENTF_RIGHTUP
-    // The up of another button than the pair's (resendOtherUp)
-    | MiddleUp(info) -> send info 0 MOUSEEVENTF_MIDDLEUP
-    | X1Up(info) -> send info WinAPI.XBUTTON1 MOUSEEVENTF_XUP
-    | X2Up(info) -> send info WinAPI.XBUTTON2 MOUSEEVENTF_XUP
     | _ -> raise (ArgumentException())
 
 // The up of a down resent alone, for the physical up (suppressed) of the current press: called
@@ -792,10 +788,9 @@ let resendUp (me: MouseEvent) =
     presses.[button].releaseQueuedId <- id
     __resendUp me ResendKind.Release id
 
-// The up of another button than a waiting down (resendDownUp): the other of the pair, or the
-// middle or an X button. Its down was not resent alone (the up of such a down is resent by
-// checkResentDown before the wait is offered): it passed W10Wheel (e.g. pressed in Pass Mode, or
-// before the wait), so its up is always passed.
+// The up of the other button than a waiting down (resendDownUp). Its down was not resent
+// alone (the up of such a down is resent by checkResentDown before the wait is offered): it
+// passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
 let private resendOtherUp (me: MouseEvent) =
     __resendUp me ResendKind.Plain NO_PRESS
 

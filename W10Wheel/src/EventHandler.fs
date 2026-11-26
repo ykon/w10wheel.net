@@ -609,9 +609,10 @@ let private dragUp (me: MouseEvent): nativeint =
 // While the LR trigger waits (a down of the pair), another button (middle, X1, X2) ends the wait, as
 // the Rust version does: the waiting down is resent at once (EventWaiter), not after the timeout
 // nor after the other button's whole click, and its up is resent at its physical up
-// (checkResentDown). The other button's down passes (as the hook returns: the application gets it
-// just before the resent down); its up is suppressed and resent after the waiting down, so that
-// they come in their order. Not an up whose down reached no application (Windows.isLoneUp): dropped
+// (checkResentDown). The other button's down and up pass as they are (as the hook returns: the
+// application gets them just before the resent down). Not resent after the waiting down: the
+// button pressed again before the sender has sent its up would have its down before that up
+// (X1 down, down, up). Not an up whose down reached no application (Windows.isLoneUp): dropped
 // (Dispatcher), and the wait goes on, as for the other button of the pair (offerEventWaiter).
 let private offerOtherButton (me: MouseEvent): nativeint option =
     let isOther =
@@ -621,12 +622,8 @@ let private offerOtherButton (me: MouseEvent): nativeint option =
     if not isOther || not (EventWaiter.isWaitingOtherThan me) || (me.IsUp && Windows.isLoneUp me) then
         None
     elif EventWaiter.offer me then
-        if me.IsDown then
-            debug "pass (the LR wait ended, its down resent)" me
-            callNextHook()
-        else
-            debug "suppress (the LR wait ended, resent after its down)" me
-            suppress()
+        debug "pass (the LR wait ended, its down resent)" me
+        callNextHook()
     else
         // The wait has timed out meanwhile (its down resent): as when none is in progress
         None
