@@ -6,7 +6,7 @@
  *)
 
 // What Ctx knows of the properties files (loaded, the errors of a load and of a store), as the
-// Rust version tests it (w10wheel.rs, properties.rs). In a folder of the tests (Harness.USER_DIR),
+// Rust version tests it (w10wheel.rs, properties.rs). In a folder of the tests (Properties.USER_DIR, set by Harness),
 // not the user's.
 
 open System
