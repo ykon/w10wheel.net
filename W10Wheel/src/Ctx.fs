@@ -663,192 +663,189 @@ let getFirstMinThreshold () =
 let getSwitchingThreshold () =
     VHAdjuster.SwitchingThreshold
 
+// What is known of a key's press whose up has not come yet: one at a time, the last set kept.
+// - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the old trigger key when the
+//   trigger changed): its repeats and its up are suppressed too, whatever the trigger is now.
+// - Passed: its down passed W10Wheel (to the application): its repeats and its up pass too, even if
+//   it has become the trigger since.
+// - LoneUp: its down was suppressed when the state was initialized (Ctx.resetState): its up alone
+//   is suppressed (the application did not get the down). Its next down ends it (a repeat cannot be
+//   told from a new press, it is taken for one).
+// The trigger key's own press (its down suppressed for its scroll) is not here: KEventHandler keeps
+// it (lastEvent).
+[<RequireQualifiedAccess>]
+type private KeyState =
+    | Idle
+    | Suppressed
+    | Passed
+    | LoneUp
+
+// What became of the down of a button's press, for its up (whose up has not come yet): one at a
+// time, the last set kept. Reset at every physical down and up of the button (EventHandler.procDown,
+// procUp): the press is new, or over.
+// - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the LR trigger's pair): its
+//   up is suppressed too.
+// - Resent: its down was resent alone (the LR trigger's wait timed out or was ended by a move or
+//   the other button's up; left and right only): its up is resent.
+// - Passed: its down passed (in the LR trigger's pressed scroll mode, or over an excluded window;
+//   left and right only): its up passes.
+[<RequireQualifiedAccess>]
+type private ButtonState =
+    | Idle
+    | Suppressed
+    | Resent
+    | Passed
+
 type LastFlags() =
-    // R = Resent
-    [<VolatileField>] static let mutable ldR = false
-    [<VolatileField>] static let mutable rdR = false
+    // What became of each button's down (ButtonState): left, right, middle, X1, X2. Also set on the
+    // EventWaiter thread (the LR trigger's wait).
+    static let buttons = Array.create 5 ButtonState.Idle
 
-    // P = Passed
-    [<VolatileField>] static let mutable ldP = false
-    [<VolatileField>] static let mutable rdP = false
+    // What is known of each key's press whose up has not come yet (KeyState), by virtual-key code
+    static let keys = Array.create 256 KeyState.Idle
 
-    // S = Suppressed
-    [<VolatileField>] static let mutable ldS = false
-    [<VolatileField>] static let mutable rdS = false
-    [<VolatileField>] static let mutable mdS = false
-    [<VolatileField>] static let mutable x1S = false
-    [<VolatileField>] static let mutable x2S = false
+    static let buttonIndex (me: MouseEvent): int =
+        match me with
+        | LeftEvent(_) -> 0
+        | RightEvent(_) -> 1
+        | MiddleEvent(_) -> 2
+        | X1Event(_) -> 3
+        | X2Event(_) -> 4
+        | _ -> raise (ArgumentException())
 
-    static let kdS = Array.create 256 false
-    // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
-    static let kdP = Array.create 256 false
-    // Keys whose down was suppressed (kdS) when the state was initialized (Init) and whose up
-    // has not come yet: their up alone is suppressed (the application did not get the down). Their
-    // next down resets them (a repeat cannot be told from a new press, it is taken for one).
-    static let kdL = Array.create 256 false
+    static let isLR (me: MouseEvent) =
+        match me with
+        | LeftEvent(_) | RightEvent(_) -> true
+        | _ -> false
 
-    static let getAndReset (flag: bool byref) =
-        let res = flag
-        flag <- false
-        res
+    static let getButton (i: int) = Volatile.Read(&buttons.[i])
+    static let setButton (i: int) (state: ButtonState) = Volatile.Write(&buttons.[i], state)
+
+    // The button is in state, which it leaves (Idle)
+    static let takeButton (i: int) (state: ButtonState) =
+        if getButton i = state then
+            setButton i ButtonState.Idle
+            true
+        else
+            false
+
+    // The button of a down (set) or an up (take): the left or right one only for Resent and Passed
+    static let indexOf (me: MouseEvent) (isDown: bool) (lrOnly: bool) =
+        let ok = if isDown then me.IsDown else me.IsUp
+        if not ok || (lrOnly && not (isLR me)) then raise (ArgumentException())
+        buttonIndex me
 
     static let isKey (vk: int) =
-        vk >= 0 && vk < kdS.Length
+        vk >= 0 && vk < keys.Length
 
-    // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed would
-    // lose it (e.g. pressed over an excluded program: its repeats would start scroll mode if it
-    // is the trigger, and its up would be suppressed). Whether a
-    // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
-    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
-    // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
-    // suppressed again: only their up alone is (kdL), as the hook does for the buttons
-    // (Windows.dropLoneUp).
-    static member Init () =
-        LastFlags.InitButtons()
-        LastFlags.SuppressedKeysToLoneUp()
+    // The key is in state, which it leaves (Idle)
+    static let takeKey (vk: int) (state: KeyState) =
+        if isKey vk && keys.[vk] = state then
+            keys.[vk] <- KeyState.Idle
+            true
+        else
+            false
 
-    // The flags of the buttons (resent, passed, suppressed): see Init, and Ctx.mouseHookLost
+    // The states of the buttons (ButtonState), at a reset (Ctx.resetState)
     static member InitButtons () =
-        ldR <- false; rdR <- false
-        ldP <- false; rdP <- false
-        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
+        for i in 0 .. buttons.Length - 1 do setButton i ButtonState.Idle
 
-    // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-    // missed is not suppressed again (see Init)
+    // At a reset (Ctx.resetState, KeysReset.LoneUp): the keys suppressed are suppressed for their up
+    // alone (LoneUp), so that a key whose up was missed is not suppressed again, as the hook does for
+    // the buttons (Windows.dropLoneUp). Not the keys passed (Passed), whose ups pass and reset them;
+    // reset, a key still pressed would lose it (e.g. pressed over an excluded program: its repeats
+    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a key
+    // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
+    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
     static member SuppressedKeysToLoneUp () =
-        for vk in 0 .. kdS.Length - 1 do
-            if kdS.[vk] then kdL.[vk] <- true
-        Array.fill kdS 0 (kdS.Length) false
+        for vk in 0 .. keys.Length - 1 do
+            if keys.[vk] = KeyState.Suppressed then keys.[vk] <- KeyState.LoneUp
 
     static member SetResent (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldR <- true
-        | RightDown(_) -> rdR <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true true) ButtonState.Resent
 
     static member GetAndReset_ResentDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldR)
-        | RightUp(_) -> getAndReset(&rdR)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false true) ButtonState.Resent
 
     static member SetPassed (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldP <- true
-        | RightDown(_) -> rdP <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true true) ButtonState.Passed
 
     static member GetAndReset_PassedDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldP)
-        | RightUp(_) -> getAndReset(&rdP)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false true) ButtonState.Passed
 
     static member SetSuppressed (down: MouseEvent): unit =
-        match down with
-        | LeftDown(_) -> ldS <- true 
-        | RightDown(_) -> rdS <- true
-        | MiddleDown(_) -> mdS <- true
-        | X1Down(_) -> x1S <- true
-        | X2Down(_) -> x2S <- true
-        | _ -> raise (ArgumentException())
+        setButton (indexOf down true false) ButtonState.Suppressed
 
     static member SetSuppressed (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> if isKey down.VKCode then kdS.[down.VKCode] <- true
+        | KeyDown(_) -> if isKey down.VKCode then keys.[down.VKCode] <- KeyState.Suppressed
         | _ -> raise (ArgumentException())
 
     // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
     static member IsSuppressedKey (vk: int): bool =
-        isKey vk && kdS.[vk]
+        isKey vk && keys.[vk] = KeyState.Suppressed
 
     // The keyboard trigger changed while the old key was pressed (its down was suppressed)
     static member SetSuppressedKey (vk: int) =
-        if isKey vk then kdS.[vk] <- true
+        if isKey vk then keys.[vk] <- KeyState.Suppressed
 
     static member SetPassedKey (vk: int) =
-        if isKey vk then kdP.[vk] <- true
+        if isKey vk then keys.[vk] <- KeyState.Passed
 
     // The key's down passed: its repeats and its up pass too, even if it is the trigger now
     static member IsPassedKey (vk: int): bool =
-        isKey vk && kdP.[vk]
+        isKey vk && keys.[vk] = KeyState.Passed
 
     static member GetAndReset_PassedKey (vk: int): bool =
-        isKey vk && getAndReset(&kdP.[vk])
+        takeKey vk KeyState.Passed
 
-    // A key that does not repeat (Pause): its down is always a new press, its flags are reset
-    // (it may send only a down, the flags of the previous press would remain). The flags of the
-    // other keys are kept until their up (a repeat cannot be told from a new press for sure).
-    static member NewKeyDown (vk: int) =
-        if Keyboard.isNoRepeatKey vk then
-            kdS.[vk] <- false
-            kdP.[vk] <- false
-
-    // A down of a key (kdL): its up is not alone any more
+    // A down of a key (LoneUp): its up is not alone any more
     static member ResetLoneUpKey (vk: int) =
-        if isKey vk then kdL.[vk] <- false
+        takeKey vk KeyState.LoneUp |> ignore
 
-    // The up of a key whose down was suppressed before Init (kdL), with no down since; resets it
+    // The up of a key whose down was suppressed before Init (LoneUp), with no down since; resets it
     static member GetAndReset_LoneUpKey (vk: int): bool =
-        isKey vk && getAndReset(&kdL.[vk])
+        takeKey vk KeyState.LoneUp
 
     // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
     // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
     static member ResetKeys () =
-        Array.fill kdS 0 kdS.Length false
-        Array.fill kdP 0 kdP.Length false
-        Array.fill kdL 0 kdL.Length false
+        Array.fill keys 0 keys.Length KeyState.Idle
 
     // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
     static member TakeSuppressedDowns (): bool[] =
-        let res = [| ldS; rdS; mdS; x1S; x2S |]
-        ldS <- false; rdS <- false; mdS <- false; x1S <- false; x2S <- false
-        res
+        Array.init 5 (fun i -> takeButton i ButtonState.Suppressed)
 
     // The downs resent alone whose up has not come yet (left, right); resets them
     static member TakeResentDowns (): bool[] =
-        let res = [| ldR; rdR |]
-        ldR <- false; rdR <- false
-        res
+        Array.init 2 (fun i -> takeButton i ButtonState.Resent)
 
     static member GetAndReset_SuppressedDown (up: MouseEvent) =
-        match up with
-        | LeftUp(_) -> getAndReset(&ldS)
-        | RightUp(_) -> getAndReset(&rdS)
-        | MiddleUp(_) -> getAndReset(&mdS)
-        | X1Up(_) -> getAndReset(&x1S)
-        | X2Up(_) -> getAndReset(&x2S)
-        | _ -> raise (ArgumentException())
+        takeButton (indexOf up false false) ButtonState.Suppressed
 
     static member GetAndReset_SuppressedDown (up: KeyboardEvent) =
         match up with
-        | KeyUp(_) -> isKey up.VKCode && getAndReset(&kdS.[up.VKCode])
+        | KeyUp(_) -> takeKey up.VKCode KeyState.Suppressed
         | _ -> raise (ArgumentException())
 
     // The down of the button of an event was suppressed and its up has not come yet
     static member IsSuppressedDown (me: MouseEvent): bool =
         match me with
-        | LeftEvent(_) -> ldS
-        | RightEvent(_) -> rdS
-        | MiddleEvent(_) -> mdS
-        | X1Event(_) -> x1S
-        | X2Event(_) -> x2S
+        | LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) ->
+            getButton (buttonIndex me) = ButtonState.Suppressed
         | _ -> false
 
-    // The flags of the press of the button of an event (resent, suppressed, passed)
+    // The state of the press of the button of an event (ButtonState)
     static member ResetFor (me: MouseEvent) =
         match me with
-        | LeftEvent(_) -> ldR <- false; ldS <- false; ldP <- false
-        | RightEvent(_) -> rdR <- false; rdS <- false; rdP <- false
-        | MiddleEvent(_) -> mdS <- false
-        | X1Event(_) -> x1S <- false
-        | X2Event(_) -> x2S <- false
+        | LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) ->
+            setButton (buttonIndex me) ButtonState.Idle
         | _ -> ()
 
     (*
     static member Reset (down: KeyboardEvent) =
         match down with
-        | KeyDown(_) -> kdS.[down.VKCode] <- false
+        | KeyDown(_) -> keys.[down.VKCode] <- KeyState.Idle
         | _ -> ()
     *)
 
@@ -1341,7 +1338,22 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
-let mutable private loaded = false
+// What is known of a file of the properties (the settings, or their excluded programs): whether it
+// has been read (loaded: its changes are stored), and why it could not be read, or written, the
+// last time. Not one of loaded or not: a Reload that fails leaves the properties loaded (still
+// stored) with its error, and the excluded programs not read at a Reload keep their store's error.
+type private FileState =
+    { mutable loaded: bool
+      mutable loadError: exn option
+      mutable storeError: exn option }
+
+    // Why its changes are not stored: the store's error, else the load's
+    member self.UnstoredReason = self.storeError |> Option.orElse self.loadError
+
+// The properties file: not loaded if it could not be read (e.g. locked), then its settings are not
+// stored. Its errors are told in the settings dialog, and cleared by a load that succeeds.
+let private propertiesFile = { loaded = false; loadError = None; storeError = None }
+
 let private currentSettings () =
     let p = Properties.Properties()
     setSettings p
@@ -1370,13 +1382,8 @@ let reinstallHooks () =
 onPassModeSet <- (fun b ->
     if b then setKeyboardHookOf false else reinstallHooks ())
 
-// Why the properties could not be loaded (loaded is false), or the settings stored (the last
-// time): told in the settings dialog. Cleared by a load that succeeds.
-let mutable private loadError: exn option = None
-let mutable private storeError: exn option = None
-
 // The default values are kept (defaultProp) once, before the first load: not after a load that
-// failed (loaded is false again), the settings are not the default values then
+// failed (not loaded again), the settings are not the default values then
 let mutable private defaultSaved = false
 
 // Read again after a restart as administrator (Program.checkDoubleLaunch): cleared first, or the
@@ -1468,13 +1475,10 @@ let private saveDefaults () =
 
 // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
 // from it, or last stored: written when they differ (storeExclusions). If the file could not be
-// read (exclusionsLoaded false, e.g. locked by another program): none (kept at a Reload, see
-// loadExclusions), and their changes are not stored (they would replace the file), which the
-// settings dialog tells.
-let mutable private exclusionsLoaded = false
+// read (not loaded, e.g. locked by another program): none (kept at a Reload, see loadExclusions),
+// and their changes are not stored (they would replace the file), which the settings dialog tells.
+let private exclusionsFile = { loaded = false; loadError = None; storeError = None }
 let mutable private storedExclusions: string[] = [||]
-let mutable private exclusionsLoadError: exn option = None
-let mutable private exclusionsStoreError: exn option = None
 // Set by Reset to defaults: the file is written (deleted) even if the list is as it was read, as the
 // properties file is: it may have been edited or made outside W10Wheel since. Reset when it has
 // been, or when other properties are loaded.
@@ -1495,20 +1499,20 @@ let private loadExclusions (name: string) (written: string[] option) =
             match written with
             | Some ps -> ps
             | None -> Properties.readExclusions (Properties.getExclusionsPath name)
-        exclusionsStoreError <- None
+        exclusionsFile.storeError <- None
         exclusionsRewrite <- false
         setExcludedPrograms paths
-        exclusionsLoaded <- true
-        exclusionsLoadError <- None
+        exclusionsFile.loaded <- true
+        exclusionsFile.loadError <- None
         // As they run (setExcludedPrograms drops the duplicates): not written again until changed
         storedExclusions <- getExcludedPrograms()
     with
         | e ->
             Debug.WriteLine("loadExclusions: " + e.Message)
-            exclusionsLoaded <- false
-            exclusionsLoadError <- Some e
+            exclusionsFile.loaded <- false
+            exclusionsFile.loadError <- Some e
             if exclusionsName <> Some name then
-                exclusionsStoreError <- None
+                exclusionsFile.storeError <- None
                 exclusionsRewrite <- false
                 setExcludedPrograms [||]
                 storedExclusions <- [||]
@@ -1522,26 +1526,26 @@ let private exclusionsUnstored () =
 // have changed. The whole file written, or deleted if there is none.
 let private storeExclusions (name: string) =
     let current = getExcludedPrograms()
-    if exclusionsLoaded && exclusionsUnstored () then
+    if exclusionsFile.loaded && exclusionsUnstored () then
         try
             Properties.writeExclusions (Properties.getExclusionsPath name) current
             storedExclusions <- current
             exclusionsRewrite <- false
-            exclusionsStoreError <- None
+            exclusionsFile.storeError <- None
         with
             | e ->
-                exclusionsStoreError <- Some e
+                exclusionsFile.storeError <- Some e
                 Debug.WriteLine("storeExclusions: " + (e.ToString()))
-    elif exclusionsLoaded then
+    elif exclusionsFile.loaded then
         // As stored (e.g. a change that could not be stored, undone): nothing is left not stored
-        exclusionsStoreError <- None
+        exclusionsFile.storeError <- None
 
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
 // storeProperties), the errors cleared. The excluded programs of the properties read too.
 let private applyLoaded (writtenExclusions: string[] option) =
-    loaded <- true
-    loadError <- None
-    storeError <- None
+    propertiesFile.loaded <- true
+    propertiesFile.loadError <- None
+    propertiesFile.storeError <- None
     Debug.WriteLine("Start load")
     applyProperties ()
     storedSettings <- currentSettings ()
@@ -1555,7 +1559,7 @@ let private applyLoaded (writtenExclusions: string[] option) =
 let loadProperties (update:bool): unit =
     saveDefaults ()
     try
-        loaded <- false
+        propertiesFile.loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
@@ -1564,8 +1568,8 @@ let loadProperties (update:bool): unit =
         applyLoaded None
     with
         | e ->
-            if not loaded then
-                loadError <- Some e
+            if not propertiesFile.loaded then
+                propertiesFile.loadError <- Some e
                 // The settings running: those changed from now on are not stored
                 storedSettings <- currentSettings ()
             Debug.WriteLine("load: " + (e.ToString()))
@@ -1632,7 +1636,7 @@ let storeProperties () =
     // Under storeLock (see there)
     lock storeLock (fun () ->
         try
-            if not loaded then
+            if not propertiesFile.loaded then
                 Debug.WriteLine("Not loaded properties")
             else
                 let name = getSelectedProperties()
@@ -1645,7 +1649,7 @@ let storeProperties () =
                     let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
                     // The excluded programs changed are not stored either (not for these properties):
                     // told as their error, also if only they have changed (none if they are as stored)
-                    exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
+                    exclusionsFile.storeError <- if exclusionsUnstored () then Some(notFound ()) else None
                     if not (changedSettings current).IsEmpty then
                         raise (notFound ())
                     Debug.WriteLine("Properties file not found, not changed")
@@ -1659,10 +1663,10 @@ let storeProperties () =
                     else
                         current.Update(path, changed)
                 storedSettings <- current
-                storeError <- None
+                propertiesFile.storeError <- None
         with
             | e ->
-                storeError <- Some e
+                propertiesFile.storeError <- Some e
                 Debug.WriteLine("store: " + (e.ToString())))
 
 // Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
@@ -1672,7 +1676,7 @@ let storeProperties () =
 let private tryReloadProperties () =
     match tryLoadProperties (getSelectedProperties()) with
     | Some e ->
-        loadError <- Some e
+        propertiesFile.loadError <- Some e
         refreshSettingsLater ()
         false
     | None -> true
@@ -1789,6 +1793,35 @@ let private confirm (owner: IWin32Window) (heading: string) (text: string) (acti
 let private shownPropertiesName name =
     if name = DEFAULT_DEF then convLang name else name
 
+// Why the changes left are not stored: of the settings first if some are left (settingsUnstored),
+// else of the excluded programs (an error of the properties file may be older, e.g. a Reload that
+// failed). The store's error of a file, else its load's.
+let private unstoredReason (settingsUnstored: bool): exn option =
+    let ofSettings = propertiesFile.UnstoredReason
+    let ofExclusions = exclusionsFile.UnstoredReason
+    if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings
+
+// What the settings dialog tells (a warning, in English) instead of the hint that the changes are
+// stored: the properties could not be read (Reload again), or written (e.g. a read-only file: tried
+// again at the next change). None if all is stored.
+let private storeStatus (): string option =
+    if not propertiesFile.loaded then
+        Some "The properties file could not be read: changes are not saved"
+    // Before a Reload that failed: the changes made after it are not stored
+    elif propertiesFile.storeError.IsSome then
+        Some "The changes could not be saved to the properties file"
+    // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
+    // Before a Reload that failed too: their changes are not stored.
+    elif not exclusionsFile.loaded then
+        Some "The exclusions file could not be read: changes are not saved"
+    elif exclusionsFile.storeError.IsSome then
+        Some "The changes could not be saved to the exclusions file"
+    elif propertiesFile.loadError.IsSome then
+        // Reload: the settings are those before, still stored
+        Some "The properties file could not be read"
+    else
+        None
+
 // After storeProperties, before leaving the selected properties: true if no setting changed in them
 // is left not stored, else whether to go on and lose them (e.g. a read-only file, or properties not
 // loaded), asked with why they could not be stored. lossText: what is lost, actionText: the button
@@ -1798,13 +1831,7 @@ let private confirmUnstoredLoss (owner: IWin32Window) (lossText: string) (action
     if not settingsUnstored && not (exclusionsUnstored ()) then
         true
     else
-        // Why the changes left are not stored: of the settings first if some are left, else of the
-        // excluded programs (an error of the properties file may be older, e.g. a Reload that failed)
-        let ofSettings = storeError |> Option.orElse loadError
-        let ofExclusions = exclusionsStoreError |> Option.orElse exclusionsLoadError
-        let why =
-            (if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings)
-            |> Option.map (fun e -> e.Message + "\n")
+        let why = unstoredReason settingsUnstored |> Option.map (fun e -> e.Message + "\n")
         confirm owner (convLang "The changes could not be saved")
                 ((Option.defaultValue "" why) + convLang lossText) (convLang actionText)
 
@@ -2009,25 +2036,9 @@ let private createSettingsDialog () =
     dialog.AddPropertiesButton("Reload", (fun () -> if not (tryReloadProperties ()) then dialog.RestorePending ()),
                                dropPending = true)
     dialog.AddBottomButton("Reset to defaults", (fun () -> resetSettings dialog.Owner))
-    // Instead of the hint that the changes are stored: the properties could not be read (Reload
-    // again), or written (e.g. a read-only file: tried again at the next change)
+    // Instead of the hint that the changes are stored (storeStatus)
     dialog.Status <- (fun () ->
-        if not loaded then
-            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read: changes are not saved")
-        // Before a Reload that failed: the changes made after it are not stored
-        elif storeError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the properties file")
-        // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
-        // Before a Reload that failed too: their changes are not stored.
-        elif not exclusionsLoaded then
-            Some(SettingsForm.NoteKind.Warning, convLang "The exclusions file could not be read: changes are not saved")
-        elif exclusionsStoreError.IsSome then
-            Some(SettingsForm.NoteKind.Warning, convLang "The changes could not be saved to the exclusions file")
-        elif loadError.IsSome then
-            // Reload: the settings are those before, still stored
-            Some(SettingsForm.NoteKind.Warning, convLang "The properties file could not be read")
-        else
-            None)
+        storeStatus () |> Option.map (fun text -> SettingsForm.NoteKind.Warning, convLang text))
 
     let general = dialog.AddPage "General"
     general.AddComboBox("Language", [DataID.English, "English"; DataID.Japanese, "Japanese"],
@@ -2217,22 +2228,89 @@ let setInitStateMEH f = initStateMEH <- f
 let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
-let initState () =
-    // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
-    // received before, and the wheel events queued are not sent. A down resent before and
-    // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass Mode
-    // does: a wait timing out while it is canceled below sees the new generation and does not
-    // resend its down (its flag would be reset by Init, and its up not resent).
-    newPassModeGeneration ()
-    // Cancel the LR trigger wait before Init: its timeout could set the flags again after it
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    initStateKEH()
-    LastFlags.Init()
-    exitScrollMode()
-
 let mutable private forgetPresses: unit -> unit = (fun () -> ())
 let setForgetPresses f = forgetPresses <- f
+
+// What a reset ends of the triggers' state (resetState): each event ends what it may have left
+// behind, the table below (RESET_...)
+// The scroll it ends: none, a mouse trigger's (or a pending LR trigger start), the keyboard
+// trigger's, or any
+[<RequireQualifiedAccess>]
+type private ScrollReset = Keep | Mouse | Keyboard | Any
+
+// What it does with the buttons' records: keeps them; resets those of the mouse handlers (the LR
+// trigger's wait canceled, LastFlags' buttons); or also forgets the presses of the hook
+// (Windows.forgetPresses: their ups may have been missed)
+[<RequireQualifiedAccess>]
+type private ButtonsReset = Keep | Reset | Forget
+
+// What it does with the keys' records: keeps them; resets the keyboard handler's, the keys
+// suppressed having their up suppressed alone (LastFlags.SuppressedKeysToLoneUp); or forgets them
+// all (their ups may have been missed, or will not be seen)
+[<RequireQualifiedAccess>]
+type private KeysReset = Keep | LoneUp | Clear
+
+type private Reset = { scroll: ScrollReset; buttons: ButtonsReset; keys: KeysReset }
+
+// initState (Esc, --sendInitState): the scroll ended, the triggers' state reset
+let private RESET_INIT_STATE =
+    { scroll = ScrollReset.Any; buttons = ButtonsReset.Reset; keys = KeysReset.LoneUp }
+// Pass Mode turned on: as initState, its scroll ended by Scroll.SetPassMode (under its lock)
+let private RESET_PASS_MODE_ON = { RESET_INIT_STATE with scroll = ScrollReset.Keep }
+// The mouse hook lost (see mouseHookLost): the mouse triggers' only
+let private RESET_MOUSE_HOOK_LOST =
+    { scroll = ScrollReset.Mouse; buttons = ButtonsReset.Forget; keys = KeysReset.Keep }
+// The keyboard hook lost or removed (see keyboardHookGone): the keyboard trigger's only
+let private RESET_KEYBOARD_HOOK_GONE =
+    { scroll = ScrollReset.Keyboard; buttons = ButtonsReset.Keep; keys = KeysReset.Clear }
+// The input lost (see inputLost): all
+let private RESET_INPUT_LOST =
+    { scroll = ScrollReset.Any; buttons = ButtonsReset.Forget; keys = KeysReset.Clear }
+
+let private resetState (r: Reset) =
+    if r.buttons <> ButtonsReset.Keep then
+        // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
+        // received before, and the wheel events queued are not sent. A down resent before and
+        // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass
+        // Mode does (again for it: as it is): a wait timing out while it is canceled below sees
+        // the new generation and does not resend its down (its state would be reset below, and
+        // its up not resent).
+        newPassModeGeneration ()
+        // Cancel the LR trigger wait before the buttons are reset: its timeout could set their
+        // state again after it
+        offerEW(Cancel) |> ignore
+        initStateMEH()
+
+    if r.keys <> KeysReset.Keep then
+        initStateKEH()
+
+    if r.buttons <> ButtonsReset.Keep then
+        LastFlags.InitButtons()
+
+    match r.keys with
+    | KeysReset.LoneUp -> LastFlags.SuppressedKeysToLoneUp()
+    | KeysReset.Clear -> LastFlags.ResetKeys()
+    | KeysReset.Keep -> ()
+
+    if r.buttons = ButtonsReset.Forget then
+        forgetPresses ()
+
+    match r.scroll with
+    | ScrollReset.Any -> exitScrollMode()
+    | ScrollReset.Mouse ->
+        if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then exitScrollMode()
+    | ScrollReset.Keyboard ->
+        if Scroll.IsMode && Scroll.ByKeyboard then exitScrollMode()
+    | ScrollReset.Keep -> ()
+
+let initState () =
+    resetState RESET_INIT_STATE
+
+// The keyboard hook has been removed, or replaced after Windows had removed the old one
+// (KEventHandler.changeTrigger, hookLost): the scroll mode of the trigger key (which would not end)
+// is ended, and the keys' records are forgotten
+let keyboardHookGone () =
+    resetState RESET_KEYBOARD_HOOK_GONE
 
 // The mouse hook has been replaced (reinstallHooks), and Windows had removed the old one (e.g. for
 // a timeout): buttons may have been released, and pressed again, with no hook to see it, and a
@@ -2244,13 +2322,7 @@ let setForgetPresses f = forgetPresses <- f
 mouseHookLost <- (fun () ->
     Debug.WriteLine("mouseHookLost")
     // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
-    newPassModeGeneration ()
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    LastFlags.InitButtons()
-    forgetPresses ()
-    if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then
-        exitScrollMode())
+    resetState RESET_MOUSE_HOOK_LOST)
 
 // The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the hooks
 // saw none of the input meanwhile (it went to the secure desktop, or was lost), so a trigger
@@ -2263,9 +2335,7 @@ mouseHookLost <- (fun () ->
 let inputLost () =
     Debug.WriteLine("inputLost")
     if not (WinHook.isClosed ()) then
-        initState ()
-        forgetPresses ()
-        LastFlags.ResetKeys()
+        resetState RESET_INPUT_LOST
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
@@ -2275,7 +2345,30 @@ onPassModeOn <- (fun () ->
     // physical up comes. In Pass Mode the physical up passes instead and releases it; if it
     // passes before the resent down (Windows input queue), the hook drops the down
     // (Windows.dropResent).
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    initStateKEH()
-    LastFlags.Init())
+    resetState RESET_PASS_MODE_ON)
+
+// For the tests (W10Wheel.Tests): the settings the handlers read, set as a load sets them, and the
+// events of the hooks as the program calls them (without the files, the dialogs and the hooks
+// themselves)
+module internal ForTests =
+    let setTrigger (name: string) = setTrigger name
+    let setTargetVKCode (name: string) = setTargetVKCode name
+    let setNumber (name: string) (n: int) = setNumberOfName name n
+    let setSendMiddleClick (b: bool) = Volatile.Write(sendMiddleClick, b)
+    let setDraggedLock (b: bool) = Scroll.DraggedLock <- b
+    // The keyboard hook removed (setKeyboardHookOf), replaced after Windows removed the old one, or
+    // installed where there was none
+    let keyboardHookRemoved () = changeKeyboardTrigger (getTargetVKCode()) false
+    let keyboardHookLost () = keyboardHookLost ()
+    let keyboardHookInstalled () = keyboardHookInstalled ()
+    let mouseHookLost () = mouseHookLost ()
+    // The handlers' state reset as Pass Mode is turned on (its scroll ended by Scroll.SetPassMode)
+    let passModeOn () = onPassModeOn ()
+    // The properties files (in Properties.USER_DIR)
+    let reloadProperties () = tryReloadProperties ()
+    let storeStatus () = storeStatus ()
+    let unstoredReason (settingsUnstored: bool) = unstoredReason settingsUnstored
+    // The default values kept as at startup, before any setting is changed (the first load would keep
+    // the settings as they are then)
+    let saveDefaults () = saveDefaults ()
+    let defaultSetting (key: string) = defaultProp.GetPropertyOption key

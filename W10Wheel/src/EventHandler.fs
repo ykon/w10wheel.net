@@ -276,11 +276,21 @@ let private resetRacedResentDown (down: MouseEvent) =
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     // The up of the other button than the waiting down, whose own down did not reach the
-    // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
-    // with the waiting down, it would be an up without a down. Suppress it, the wait goes on.
+    // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): an up without
+    // a down, dropped (Windows.dropLoneUpOf, as the hook would drop it passed). Suppressed here,
+    // before the next case, which would end the wait: the wait goes on.
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
+    // The up of the other button than the waiting down, whose down passed with no record of it
+    // (the other button of the Left or Right trigger, not the trigger's; or pressed in Pass Mode):
+    // the wait ends, the waiting down resent at once, and the up passes as it is (as
+    // checkPassedDown, endNotTrigger). Not resent after that down: pressed again at once (passed,
+    // not the trigger's), the button would have its down before that up (down, down, up).
+    elif me.IsUp && EventWaiter.isWaitingOtherThan me then
+        if EventWaiter.endByResend me then
+            debug "the LR wait ended (its down resent)" me
+        None
     // A down of the button whose down is waiting (the up was missed, or of another mouse): not
     // the second down of the trigger (the same button would start scroll mode). A new press, as
     // for checkSameLastEvent: the wait is canceled (its down is not resent: the hook would drop
@@ -319,8 +329,15 @@ let private checkResentDown (up: MouseEvent): nativeint option =
     else
         None
 
+// The other button of the pair waiting (a down passed, e.g. over an excluded window, then the other
+// pressed out of it): its wait ends, the waiting down resent at once, as the Rust version does (it
+// would wait for the timeout, and the button pressed again within it make the pair). The up passes
+// as it is, not resent after that down (pressed again, passed over the excluded window, the button
+// would have its down before that up).
 let private checkPassedDown (up: MouseEvent): nativeint option =
     if Ctx.LastFlags.GetAndReset_PassedDown up then
+        if EventWaiter.isWaitingOtherThan up && EventWaiter.endByResend up then
+            debug "the LR wait ended (its down resent)" up
         debug "pass (checkPassedDown)" up
         callNextHook()
     else
@@ -343,12 +360,24 @@ let private checkKeySendMiddle (me: MouseEvent): nativeint option =
     else
         None
 
+// Scroll mode could not start (RawInput could not be registered, see Ctx.Scroll.Start, or W10Wheel
+// is exiting): the down of the trigger passes, as if its button were not a trigger, and so does its
+// up (not the started trigger: passNotStartedTrigger). Suppressed, the click would be lost (no
+// scroll, and no click resent at the up). As the Java version (9e2de36).
+let private passNotStartedScroll (me: MouseEvent): nativeint option =
+    if not (Ctx.isScrollMode()) then
+        debug "pass (scroll mode not started)" me
+        callNextHook()
+    else
+        None
+
 let private checkTriggerScrollStart (me: MouseEvent): nativeint option =
     if Ctx.isTriggerEvent me then
         debug "start scroll mode" me
         Ctx.startScrollMode me.Info
-        triggerStarted <- me
-        suppress()
+        passNotStartedScroll me |> Option.orElseWith (fun () ->
+            triggerStarted <- me
+            suppress())
     else
         None
 
@@ -376,12 +405,13 @@ let private dragStart (info: HookInfo) =
 let private startScrollDrag (me: MouseEvent): nativeint option =
     debug "start scroll mode (Drag)" me
     Ctx.startScrollMode me.Info
-    triggerStarted <- me
+    passNotStartedScroll me |> Option.orElseWith (fun () ->
+        triggerStarted <- me
 
-    drag <- dragStart
-    dragged <- false
+        drag <- dragStart
+        dragged <- false
 
-    suppress()
+        suppress())
 
 let private passNotStartedTrigger (up: MouseEvent): nativeint option =
     if triggerStarted.SameButton up then
@@ -593,12 +623,33 @@ let private dragUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
+// While the LR trigger waits (a down of the pair), another button (middle, X1, X2) ends the wait, as
+// the Rust version does: the waiting down is resent at once (EventWaiter), not after the timeout
+// nor after the other button's whole click, and its up is resent at its physical up
+// (checkResentDown). The other button's down and up pass as they are (as the hook returns: the
+// application gets them just before the resent down). Not resent after the waiting down: the
+// button pressed again before the sender has sent its up would have its down before that up
+// (X1 down, down, up). Not an up whose down reached no application (Windows.isLoneUp): dropped
+// (Dispatcher), and the wait goes on, as for the other button of the pair (offerEventWaiter).
+// Then the event is handled as when no wait is in progress: a down before the end of a released
+// scroll (it ends the wait too, as in the Rust version, and the scroll, suppressed).
+let private endWaitByOtherButton (me: MouseEvent): nativeint option =
+    let isOther =
+        match me with
+        | MiddleEvent(_) | X1Event(_) | X2Event(_) -> true
+        | _ -> false
+    if isOther && EventWaiter.isWaitingOtherThan me && not (me.IsUp && Windows.isLoneUp me)
+       && EventWaiter.endByResend me then
+        debug "the LR wait ended (its down resent)" me
+    None
+
 // As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
 // first: they neither end the locked scroll mode nor initialize the state (Escape)
 let private noneDown (me: MouseEvent): nativeint =
     //Debug.WriteLine("noneDown")
     let checkers = [
         skipResendEventSingle
+        endWaitByOtherButton
         //resetLastFlags
         checkExitScrollDown
         endPass
@@ -612,6 +663,7 @@ let private noneUp (me: MouseEvent): nativeint =
         skipResendEventSingle
         checkEscape
         checkSuppressedDown
+        endWaitByOtherButton
         endPass
     ]
 

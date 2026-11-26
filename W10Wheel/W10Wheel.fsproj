@@ -26,6 +26,7 @@
     <Compile Include="src\DataID.fs" />
     <Compile Include="src\PreventMultiInstance.fs" />
     <Compile Include="src\WinAPI.fs" />
+    <Compile Include="src\Host.fs" />
     <Compile Include="src\WinError.fs" />
     <Compile Include="src\WinCursor.fs" />
     <Compile Include="src\Dialog.fs" />

@@ -19,8 +19,8 @@ let private suppress () = Some(IntPtr(1))
 let mutable private lastEvent: KeyboardEvent = NonEvent
 
 // The trigger key pressed (its down suppressed, as the scroll it started) is suppressed like the
-// other keys whose down was (LastFlags.Init): its up alone is suppressed, or it would pass
-// (e.g. the Alt key would activate the menu bar)
+// other keys whose down was (LastFlags.SuppressedKeysToLoneUp): its up alone is suppressed, or it
+// would pass (e.g. the Alt key would activate the menu bar)
 let private initState () =
     match lastEvent with
     | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
@@ -68,11 +68,33 @@ let private passNotTrigger (ke: KeyboardEvent): nativeint option =
     else
         None
 
+let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
+    Debug.WriteLine(msg)
+    callNextHook()
+
+let private endPass (ke: KeyboardEvent): nativeint option =
+    endCallNextHook ke ("endPass: " + ke.Name)
+
+// The down of a key passed: its repeats and up pass too (see keyDown)
+let private endPassDown (ke: KeyboardEvent): nativeint option =
+    Ctx.LastFlags.SetPassedKey ke.VKCode
+    endPass ke
+
+// Scroll mode could not start (RawInput could not be registered, see Ctx.Scroll.Start, or W10Wheel
+// is exiting): the down passes, as if the key were not the trigger (as the mouse triggers do,
+// EventHandler.passNotStartedScroll). Its repeats and its up pass too (a passed key: keyDown,
+// keyUp), and its next down is not taken for a repeat (lastEvent). Suppressed, the key would be
+// lost, and its up taken for an illegal state. As the Java version (2be43f7).
 let private checkTriggerScrollStart (ke: KeyboardEvent): nativeint option =
     if Ctx.isTriggerKey ke then
         debug "start scroll mode" ke
         Ctx.startScrollModeK ke.Info
-        suppress()
+        if not (Ctx.isScrollMode()) then
+            debug "pass (scroll mode not started)" ke
+            lastEvent <- NonEvent
+            endPassDown ke
+        else
+            suppress()
     else
         None
 
@@ -98,13 +120,6 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
         suppress()
     else
         None
-
-let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
-    Debug.WriteLine(msg)
-    callNextHook()
-
-let private endPass (ke: KeyboardEvent): nativeint option =
-    endCallNextHook ke ("endPass: " + ke.Name)
 
 let private endIllegalState (ke: KeyboardEvent): nativeint option =
     debug "illegal state" ke
@@ -166,11 +181,6 @@ let private singleUp (ke: KeyboardEvent) =
 
     getResult checkers ke
 
-// The down of a key passed: its repeats and up pass too (see keyDown)
-let private endPassDown (ke: KeyboardEvent): nativeint option =
-    Ctx.LastFlags.SetPassedKey ke.VKCode
-    endPass ke
-
 let private noneDown (ke: KeyboardEvent): nativeint =
     let checkers = [
         checkExitScrollDown
@@ -190,19 +200,10 @@ let private noneUp (ke: KeyboardEvent): nativeint =
 let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
+    // The Pause key is a key as the others: held, it repeats too (a USB keyboard), and its up
+    // comes (with its down at once, a PS/2 one)
     let kd = KeyDown(info)
-    Ctx.LastFlags.NewKeyDown kd.VKCode
     Ctx.LastFlags.ResetLoneUpKey kd.VKCode
-
-    // The trigger key that does not repeat (Pause) may send no up: a down after its down was
-    // released, quickly. As its up would, lock the scroll it started (this down then ends it),
-    // and do not take the down for a repeat.
-    if Keyboard.isNoRepeatKey kd.VKCode && Ctx.isTriggerKey kd && kd.Same lastEvent then
-        debug "no up before (no repeat key)" kd
-        if Ctx.isPressedKeyboardScrollMode() then
-            Ctx.setReleasedScrollMode()
-
-        lastEvent <- KeyUp(info)
 
     // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
     // the trigger changed): its repeats are suppressed too, whatever the trigger is now
@@ -220,11 +221,15 @@ let keyDown (info: KHookInfo) =
     // (SessionEvents) was handled: the hook's calls are handled before the posted messages, and
     // the reset forgot it. It passes as that press did, its up too: taken as a new press, it would
     // start scroll mode (or end one) and be suppressed, its up too, the key left pressed in the
-    // application. A suppressed down leaves the key up, so the trigger works as before. Not the
-    // key that does not repeat (Pause): its down is always a new press.
-    elif not (Keyboard.isNoRepeatKey kd.VKCode) && Windows.checkKeyState kd.VKCode then
+    // application. A suppressed down leaves the key up, so the trigger works as before.
+    elif Windows.checkKeyState kd.VKCode then
         debug "pass (repeat of a down with no record)" kd
         Ctx.LastFlags.SetPassedKey kd.VKCode
+        // The last event may be the down of an earlier press of the trigger key whose up was missed:
+        // not of this press. Kept, a reset (initState) or a change of the trigger while this press
+        // is held would take this press for that one, suppressed (its up too: the key left pressed
+        // in the application). As passExcludedWindow does.
+        if kd.Same lastEvent then lastEvent <- NonEvent
         __callNextHook()
     elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 
@@ -245,6 +250,10 @@ let keyUp (info: KHookInfo) =
         IntPtr(1)
     elif Ctx.LastFlags.GetAndReset_PassedKey ku.VKCode then
         debug "pass (up of a passed down)" ku
+        // As above: the last event may be the down of an earlier press of the trigger key whose up
+        // was missed (this press passed with no record of it, keyDown), and the next press would be
+        // taken for its repeat, suppressed with no scroll
+        if Ctx.isTriggerKey ku then lastEvent <- ku
         __callNextHook()
     elif Ctx.isTriggerKey ku then singleUp ku else noneUp ku
 
@@ -259,15 +268,17 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
         | _ -> false
 
     if not keyChanged then
-        Ctx.LastFlags.ResetKeys()
-    elif pressed then
-        Ctx.LastFlags.SetSuppressedKey oldVK
+        Debug.WriteLine("changeTrigger (keyboard): the hook removed")
+        Ctx.keyboardHookGone ()
+    else
+        if pressed then
+            Ctx.LastFlags.SetSuppressedKey oldVK
 
-    lastEvent <- NonEvent
+        lastEvent <- NonEvent
 
-    if Ctx.isKeyboardScrollMode() then
-        Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
-        Ctx.exitScrollMode()
+        if Ctx.isKeyboardScrollMode() then
+            Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
+            Ctx.exitScrollMode()
 
 // The keyboard hook has been replaced (on every load, after a resume or an unlock), and Windows had
 // removed the old one (e.g. for a timeout): keys may have been released, and pressed again, with no
@@ -283,21 +294,16 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
 // (Ctx.setKeyboardHookOf).
 // The trigger key, if it is down now (GetAsyncKeyState), is taken as passed: its down reached the
 // application with no hook to see it, so its repeats and its up pass, and its next press is the
-// trigger. 0 also when the state cannot be read: a key taken as up is a new press. Not the key that
-// does not repeat (Pause): its down is always a new press (LastFlags.NewKeyDown).
+// trigger. 0 also when the state cannot be read: a key taken as up is a new press.
 let private passHeldTriggerKey (caller: string) =
     let vk = Ctx.getTargetVKCode()
-    if vk <> 0 && not (Keyboard.isNoRepeatKey vk) && Windows.checkKeyState vk then
+    if vk <> 0 && Windows.checkKeyState vk then
         Debug.WriteLine(sprintf "%s: the trigger key down, taken as passed: %d" caller vk)
         Ctx.LastFlags.SetPassedKey vk
 
 let private hookLost () =
-    if Ctx.isKeyboardScrollMode() then
-        Debug.WriteLine("hookLost: exit keyboard scroll mode")
-        Ctx.exitScrollMode()
-
-    Ctx.LastFlags.ResetKeys()
-    lastEvent <- NonEvent
+    Debug.WriteLine("hookLost (keyboard)")
+    Ctx.keyboardHookGone ()
     passHeldTriggerKey "hookLost"
 
 // The keyboard hook has been installed where there was none (at the end of a pause, at startup, or

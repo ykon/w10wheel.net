@@ -159,7 +159,8 @@ let private procArgv (argv: string[]) =
             Environment.Exit(1))
 
 
-let private initSetFunctions () =
+// (Internal: the tests set them as the program does.)
+let internal initSetFunctions () =
     Dispatcher.setMouseDispatcher ()
     Dispatcher.setKeyboardDispatcher ()
     EventHandler.setChangeTrigger ()

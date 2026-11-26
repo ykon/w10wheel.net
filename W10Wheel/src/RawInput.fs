@@ -58,8 +58,7 @@ let private messageWindow = new MessageWindow()
 
 let private registerMouseRawInputDevice (dwFlags:uint32) (hwnd:nativeint) =
     let rid = [| WinAPI.RAWINPUTDEVICE(HID_USAGE_PAGE_GENERIC, HID_USAGE_GENERIC_MOUSE, dwFlags, hwnd) |]
-    let ridSize = uint32 <| Marshal.SizeOf(typeof<WinAPI.RAWINPUTDEVICE>)
-    WinAPI.RegisterRawInputDevices(rid, 1u, ridSize)
+    Host.registerRawInputDevices rid
 
 // Called by Ctx.Scroll under its lock, maybe on the EventWaiter thread (LR trigger): no dialog,
 // it would block the lock that the hook waits for (no mouse input, the dialog could not be

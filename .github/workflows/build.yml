@@ -1,6 +1,6 @@
 name: Build
 
-# - push / pull request: build and upload the two zips as workflow artifacts
+# - push / pull request: run the tests, build and upload the two zips as workflow artifacts
 #   (W10Wheel.NET-<version>.zip: self-contained; W10Wheel.NET-<version>-no-runtime.zip:
 #   framework-dependent, the .NET 11 Desktop Runtime required)
 # - tag v* (e.g. v2.8.0): additionally create a draft GitHub Release with both zips, its notes
@@ -26,6 +26,12 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
+
+      # The triggers and the properties files (W10Wheel.Tests): they replace the calls to Windows
+      # (no input sent, no cursor changed) and use a folder of their own in the temp folder
+      - name: Test
+        shell: pwsh
+        run: dotnet test W10Wheel.Tests/W10Wheel.Tests.fsproj
 
       - name: Build and package
         id: package
