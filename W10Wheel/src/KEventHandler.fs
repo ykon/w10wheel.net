@@ -225,6 +225,11 @@ let keyDown (info: KHookInfo) =
     elif Windows.checkKeyState kd.VKCode then
         debug "pass (repeat of a down with no record)" kd
         Ctx.LastFlags.SetPassedKey kd.VKCode
+        // The last event may be the down of an earlier press of the trigger key whose up was missed:
+        // not of this press. Kept, a reset (initState) or a change of the trigger while this press
+        // is held would take this press for that one, suppressed (its up too: the key left pressed
+        // in the application). As passExcludedWindow does.
+        if kd.Same lastEvent then lastEvent <- NonEvent
         __callNextHook()
     elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 

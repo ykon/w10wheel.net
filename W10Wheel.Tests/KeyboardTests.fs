@@ -443,3 +443,33 @@ let ``the trigger key's next press after a passed press with no record is the tr
     // Its next press is the trigger, not taken for a repeat of the old one
     eq Suppress (keyDown vk 800)
     scrolling ()
+
+// The trigger key in its scroll, ended by a mouse trigger, its up missed, and pressed again with
+// its down missed too: down in the system, its repeat passes with no record of the down
+let private passedWithNoRecord (vk: int) =
+    eq Suppress (keyDown vk 100)
+    down Middle 0 0 200 |> ignore
+    up Middle 0 0 250 |> ignore
+    notScrolling ()
+    setKeyDown vk true
+    eq Pass (keyDown vk 600)
+
+[<Fact>]
+let ``a reset while a press passed with no record is held: its up passes`` () =
+    let vk = kb ()
+    passedWithNoRecord vk
+    Ctx.initState ()
+    // Released before its next repeat: its up as its down
+    eq Pass (keyUp vk 700)
+    setKeyDown vk false
+    eq Suppress (keyDown vk 800)
+    scrolling ()
+
+[<Fact>]
+let ``the trigger changed while a press passed with no record is held: its repeats and up pass`` () =
+    let vk = kb ()
+    passedWithNoRecord vk
+    Ctx.ForTests.setTargetVKCode DataID.VK_TAB
+    eq Pass (keyDown vk 630)
+    eq Pass (keyUp vk 700)
+    setKeyDown vk false
