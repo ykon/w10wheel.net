@@ -495,6 +495,45 @@ let ``the LR waits ended by another button while the sender is slow keep each cl
     Assert.Equal<Decision list>([ Pass; Pass; Pass; Pass ], inputs |> List.map receive)
 
 [<Fact>]
+let ``a passed physical down drops earlier queued releases so a hold is not broken`` () =
+    let setup () =
+        reset DataID.LR DataID.None
+        Ctx.ForTests.setNumber DataID.pollTimeout 3000
+        exclude ()
+        addExcludedPoint 100 100
+        holdSender ()
+        eq Suppress (down Left 10 10 100)
+        eq Pass (down X1 10 10 120)
+        eq Suppress (up Left 10 10 140)
+        eq Pass (up X1 10 10 160)
+        releaseSender ()
+        let inputs = sentInputs 2
+        Assert.Equal<(Button * bool) list>([ (Left, true); (Left, false) ], inputs |> List.choose buttonOfInput)
+        inputs
+
+    // 1. Resent Down and Release arrive while a later physical press on an excluded window is
+    // still held: both are dropped so the hold/drag is not released early.
+    let inputs1 = setup ()
+    eq Pass (down Left 100 100 200)
+    Assert.Equal<Decision list>([ Suppress; Suppress ], inputs1 |> List.map receive)
+    eq Pass (up Left 100 100 300)
+
+    // 2. Resent Down passed before the later physical press, then Release arrives while that
+    // press is still held: Release is dropped so the hold stays intact until the physical Up.
+    let inputs2 = setup ()
+    eq Pass (receive inputs2.[0])
+    eq Pass (down Left 100 100 200)
+    eq Suppress (receive inputs2.[1])
+    eq Pass (up Left 100 100 300)
+
+    // 3. The later physical press already completed before the earlier resent Down and Release
+    // arrive: both are dropped rather than replayed out of order.
+    let inputs3 = setup ()
+    eq Pass (down Left 100 100 200)
+    eq Pass (up Left 100 100 220)
+    Assert.Equal<Decision list>([ Suppress; Suppress ], inputs3 |> List.map receive)
+
+[<Fact>]
 let ``another button ending a released scroll ends the LR wait too`` () =
     // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the middle
     // button ends the scroll (suppressed), and the wait (its down resent at once)

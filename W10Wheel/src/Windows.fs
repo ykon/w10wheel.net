@@ -345,8 +345,8 @@ type private Press =
       // The physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after initState
       // reset the flags)
       mutable upPassed: bool
-      // The press whose down resent alone has reached the application, with no up since
-      // (NO_PRESS if none)
+      // The press whose down (physical, or resent alone) has reached the application, with no up
+      // since (NO_PRESS if none)
       mutable downPassedId: int
       // The physical down of that press did not pass (W10Wheel suppressed it)
       mutable downSuppressed: bool
@@ -356,6 +356,8 @@ type private Press =
       // Several, in their order: a press can follow before the sender has sent the earlier one's
       // (e.g. slow, while each LR trigger's wait is ended by another button). The oldest are
       // forgotten past MAX_RELEASES_QUEUED (an up that never comes: its down was not sent either).
+      // Cleared if a later physical down passes directly to the application, so a stale resent
+      // click cannot break a held press or fire out of order after it.
       releasesQueued: List<int> }
 
 let private queueRelease (p: Press) (id: int) =
@@ -415,6 +417,9 @@ let handledButton (button: int) (isDown: bool) (info: HookInfo) (passed: bool) =
         if isDown then
             match resendKind info with
             | Some(ResendKind.Down, id) -> p.downPassedId <- id
+            | _ when not (isInjected info) ->
+                p.downPassedId <- p.id
+                p.releasesQueued.Clear()
             | _ -> ()
         else
             p.downPassedId <- NO_PRESS
