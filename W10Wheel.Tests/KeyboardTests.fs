@@ -411,3 +411,18 @@ let ``a key passed, made the trigger while held: its repeats and its up pass`` (
     // Its next press is the trigger
     eq Suppress (keyDown 0x09 600)
     scrolling ()
+
+[<Fact>]
+let ``the trigger key whose scroll cannot start passes its down, repeats and up`` () =
+    let vk = kb ()
+    rawInputFails <- true
+    try
+        eq Pass (keyDown vk 100)
+        notScrolling ()
+        eq Pass (keyDown vk 130)
+        eq Pass (keyUp vk 500)
+    finally
+        rawInputFails <- false
+    // Its next down is a press of its own: the trigger
+    eq Suppress (keyDown vk 600)
+    scrolling ()

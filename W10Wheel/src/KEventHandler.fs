@@ -68,11 +68,33 @@ let private passNotTrigger (ke: KeyboardEvent): nativeint option =
     else
         None
 
+let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
+    Debug.WriteLine(msg)
+    callNextHook()
+
+let private endPass (ke: KeyboardEvent): nativeint option =
+    endCallNextHook ke ("endPass: " + ke.Name)
+
+// The down of a key passed: its repeats and up pass too (see keyDown)
+let private endPassDown (ke: KeyboardEvent): nativeint option =
+    Ctx.LastFlags.SetPassedKey ke.VKCode
+    endPass ke
+
+// Scroll mode could not start (RawInput could not be registered, see Ctx.Scroll.Start, or W10Wheel
+// is exiting): the down passes, as if the key were not the trigger (as the mouse triggers do,
+// EventHandler.passNotStartedScroll). Its repeats and its up pass too (a passed key: keyDown,
+// keyUp), and its next down is not taken for a repeat (lastEvent). Suppressed, the key would be
+// lost, and its up taken for an illegal state. As the Java version (2be43f7).
 let private checkTriggerScrollStart (ke: KeyboardEvent): nativeint option =
     if Ctx.isTriggerKey ke then
         debug "start scroll mode" ke
         Ctx.startScrollModeK ke.Info
-        suppress()
+        if not (Ctx.isScrollMode()) then
+            debug "pass (scroll mode not started)" ke
+            lastEvent <- NonEvent
+            endPassDown ke
+        else
+            suppress()
     else
         None
 
@@ -98,13 +120,6 @@ let private checkExitScrollUp (ke: KeyboardEvent): nativeint option =
         suppress()
     else
         None
-
-let private endCallNextHook (ke:KeyboardEvent) (msg:string): nativeint option =
-    Debug.WriteLine(msg)
-    callNextHook()
-
-let private endPass (ke: KeyboardEvent): nativeint option =
-    endCallNextHook ke ("endPass: " + ke.Name)
 
 let private endIllegalState (ke: KeyboardEvent): nativeint option =
     debug "illegal state" ke
@@ -165,11 +180,6 @@ let private singleUp (ke: KeyboardEvent) =
     ]
 
     getResult checkers ke
-
-// The down of a key passed: its repeats and up pass too (see keyDown)
-let private endPassDown (ke: KeyboardEvent): nativeint option =
-    Ctx.LastFlags.SetPassedKey ke.VKCode
-    endPass ke
 
 let private noneDown (ke: KeyboardEvent): nativeint =
     let checkers = [
