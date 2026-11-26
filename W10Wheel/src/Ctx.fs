@@ -1338,7 +1338,22 @@ let private setNumberOfProperty (name:string) (low:int) (up:int) =
 let private getSelectedPropertiesPath () =
     Properties.getPath (getSelectedProperties())
 
-let mutable private loaded = false
+// What is known of a file of the properties (the settings, or their excluded programs): whether it
+// has been read (loaded: its changes are stored), and why it could not be read, or written, the
+// last time. Not one of loaded or not: a Reload that fails leaves the properties loaded (still
+// stored) with its error, and the excluded programs not read at a Reload keep their store's error.
+type private FileState =
+    { mutable loaded: bool
+      mutable loadError: exn option
+      mutable storeError: exn option }
+
+    // Why its changes are not stored: the store's error, else the load's
+    member self.UnstoredReason = self.storeError |> Option.orElse self.loadError
+
+// The properties file: not loaded if it could not be read (e.g. locked), then its settings are not
+// stored. Its errors are told in the settings dialog, and cleared by a load that succeeds.
+let private propertiesFile = { loaded = false; loadError = None; storeError = None }
+
 let private currentSettings () =
     let p = Properties.Properties()
     setSettings p
@@ -1367,13 +1382,8 @@ let reinstallHooks () =
 onPassModeSet <- (fun b ->
     if b then setKeyboardHookOf false else reinstallHooks ())
 
-// Why the properties could not be loaded (loaded is false), or the settings stored (the last
-// time): told in the settings dialog. Cleared by a load that succeeds.
-let mutable private loadError: exn option = None
-let mutable private storeError: exn option = None
-
 // The default values are kept (defaultProp) once, before the first load: not after a load that
-// failed (loaded is false again), the settings are not the default values then
+// failed (not loaded again), the settings are not the default values then
 let mutable private defaultSaved = false
 
 // Read again after a restart as administrator (Program.checkDoubleLaunch): cleared first, or the
@@ -1465,13 +1475,10 @@ let private saveDefaults () =
 
 // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
 // from it, or last stored: written when they differ (storeExclusions). If the file could not be
-// read (exclusionsLoaded false, e.g. locked by another program): none (kept at a Reload, see
-// loadExclusions), and their changes are not stored (they would replace the file), which the
-// settings dialog tells.
-let mutable private exclusionsLoaded = false
+// read (not loaded, e.g. locked by another program): none (kept at a Reload, see loadExclusions),
+// and their changes are not stored (they would replace the file), which the settings dialog tells.
+let private exclusionsFile = { loaded = false; loadError = None; storeError = None }
 let mutable private storedExclusions: string[] = [||]
-let mutable private exclusionsLoadError: exn option = None
-let mutable private exclusionsStoreError: exn option = None
 // Set by Reset to defaults: the file is written (deleted) even if the list is as it was read, as the
 // properties file is: it may have been edited or made outside W10Wheel since. Reset when it has
 // been, or when other properties are loaded.
@@ -1492,20 +1499,20 @@ let private loadExclusions (name: string) (written: string[] option) =
             match written with
             | Some ps -> ps
             | None -> Properties.readExclusions (Properties.getExclusionsPath name)
-        exclusionsStoreError <- None
+        exclusionsFile.storeError <- None
         exclusionsRewrite <- false
         setExcludedPrograms paths
-        exclusionsLoaded <- true
-        exclusionsLoadError <- None
+        exclusionsFile.loaded <- true
+        exclusionsFile.loadError <- None
         // As they run (setExcludedPrograms drops the duplicates): not written again until changed
         storedExclusions <- getExcludedPrograms()
     with
         | e ->
             Debug.WriteLine("loadExclusions: " + e.Message)
-            exclusionsLoaded <- false
-            exclusionsLoadError <- Some e
+            exclusionsFile.loaded <- false
+            exclusionsFile.loadError <- Some e
             if exclusionsName <> Some name then
-                exclusionsStoreError <- None
+                exclusionsFile.storeError <- None
                 exclusionsRewrite <- false
                 setExcludedPrograms [||]
                 storedExclusions <- [||]
@@ -1519,26 +1526,26 @@ let private exclusionsUnstored () =
 // have changed. The whole file written, or deleted if there is none.
 let private storeExclusions (name: string) =
     let current = getExcludedPrograms()
-    if exclusionsLoaded && exclusionsUnstored () then
+    if exclusionsFile.loaded && exclusionsUnstored () then
         try
             Properties.writeExclusions (Properties.getExclusionsPath name) current
             storedExclusions <- current
             exclusionsRewrite <- false
-            exclusionsStoreError <- None
+            exclusionsFile.storeError <- None
         with
             | e ->
-                exclusionsStoreError <- Some e
+                exclusionsFile.storeError <- Some e
                 Debug.WriteLine("storeExclusions: " + (e.ToString()))
-    elif exclusionsLoaded then
+    elif exclusionsFile.loaded then
         // As stored (e.g. a change that could not be stored, undone): nothing is left not stored
-        exclusionsStoreError <- None
+        exclusionsFile.storeError <- None
 
 // The settings of prop applied, and loaded: stored from now on (those changed since, see
 // storeProperties), the errors cleared. The excluded programs of the properties read too.
 let private applyLoaded (writtenExclusions: string[] option) =
-    loaded <- true
-    loadError <- None
-    storeError <- None
+    propertiesFile.loaded <- true
+    propertiesFile.loadError <- None
+    propertiesFile.storeError <- None
     Debug.WriteLine("Start load")
     applyProperties ()
     storedSettings <- currentSettings ()
@@ -1552,7 +1559,7 @@ let private applyLoaded (writtenExclusions: string[] option) =
 let loadProperties (update:bool): unit =
     saveDefaults ()
     try
-        loaded <- false
+        propertiesFile.loaded <- false
         try
             prop.Load(getSelectedPropertiesPath(), update)
         with
@@ -1561,8 +1568,8 @@ let loadProperties (update:bool): unit =
         applyLoaded None
     with
         | e ->
-            if not loaded then
-                loadError <- Some e
+            if not propertiesFile.loaded then
+                propertiesFile.loadError <- Some e
                 // The settings running: those changed from now on are not stored
                 storedSettings <- currentSettings ()
             Debug.WriteLine("load: " + (e.ToString()))
@@ -1629,7 +1636,7 @@ let storeProperties () =
     // Under storeLock (see there)
     lock storeLock (fun () ->
         try
-            if not loaded then
+            if not propertiesFile.loaded then
                 Debug.WriteLine("Not loaded properties")
             else
                 let name = getSelectedProperties()
@@ -1642,7 +1649,7 @@ let storeProperties () =
                     let notFound () = FileNotFoundException(sprintf "%s: %s" (convLang "Properties does not exist") name, path)
                     // The excluded programs changed are not stored either (not for these properties):
                     // told as their error, also if only they have changed (none if they are as stored)
-                    exclusionsStoreError <- if exclusionsUnstored () then Some(notFound ()) else None
+                    exclusionsFile.storeError <- if exclusionsUnstored () then Some(notFound ()) else None
                     if not (changedSettings current).IsEmpty then
                         raise (notFound ())
                     Debug.WriteLine("Properties file not found, not changed")
@@ -1656,10 +1663,10 @@ let storeProperties () =
                     else
                         current.Update(path, changed)
                 storedSettings <- current
-                storeError <- None
+                propertiesFile.storeError <- None
         with
             | e ->
-                storeError <- Some e
+                propertiesFile.storeError <- Some e
                 Debug.WriteLine("store: " + (e.ToString())))
 
 // Reload, --sendReloadProp: the file of the selected properties read again (true if it has been).
@@ -1669,7 +1676,7 @@ let storeProperties () =
 let private tryReloadProperties () =
     match tryLoadProperties (getSelectedProperties()) with
     | Some e ->
-        loadError <- Some e
+        propertiesFile.loadError <- Some e
         refreshSettingsLater ()
         false
     | None -> true
@@ -1790,26 +1797,26 @@ let private shownPropertiesName name =
 // else of the excluded programs (an error of the properties file may be older, e.g. a Reload that
 // failed). The store's error of a file, else its load's.
 let private unstoredReason (settingsUnstored: bool): exn option =
-    let ofSettings = storeError |> Option.orElse loadError
-    let ofExclusions = exclusionsStoreError |> Option.orElse exclusionsLoadError
+    let ofSettings = propertiesFile.UnstoredReason
+    let ofExclusions = exclusionsFile.UnstoredReason
     if settingsUnstored then ofSettings |> Option.orElse ofExclusions else ofExclusions |> Option.orElse ofSettings
 
 // What the settings dialog tells (a warning, in English) instead of the hint that the changes are
 // stored: the properties could not be read (Reload again), or written (e.g. a read-only file: tried
 // again at the next change). None if all is stored.
 let private storeStatus (): string option =
-    if not loaded then
+    if not propertiesFile.loaded then
         Some "The properties file could not be read: changes are not saved"
     // Before a Reload that failed: the changes made after it are not stored
-    elif storeError.IsSome then
+    elif propertiesFile.storeError.IsSome then
         Some "The changes could not be saved to the properties file"
     // The file of the excluded programs: also seen from the other pages (e.g. Reset to defaults).
     // Before a Reload that failed too: their changes are not stored.
-    elif not exclusionsLoaded then
+    elif not exclusionsFile.loaded then
         Some "The exclusions file could not be read: changes are not saved"
-    elif exclusionsStoreError.IsSome then
+    elif exclusionsFile.storeError.IsSome then
         Some "The changes could not be saved to the exclusions file"
-    elif loadError.IsSome then
+    elif propertiesFile.loadError.IsSome then
         // Reload: the settings are those before, still stored
         Some "The properties file could not be read"
     else
