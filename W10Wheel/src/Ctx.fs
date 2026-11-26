@@ -776,14 +776,6 @@ type LastFlags() =
     static member GetAndReset_PassedKey (vk: int): bool =
         isKey vk && getAndReset(&kdP.[vk])
 
-    // A key that does not repeat (Pause): its down is always a new press, its flags are reset
-    // (it may send only a down, the flags of the previous press would remain). The flags of the
-    // other keys are kept until their up (a repeat cannot be told from a new press for sure).
-    static member NewKeyDown (vk: int) =
-        if Keyboard.isNoRepeatKey vk then
-            kdS.[vk] <- false
-            kdP.[vk] <- false
-
     // A down of a key (kdL): its up is not alone any more
     static member ResetLoneUpKey (vk: int) =
         if isKey vk then kdL.[vk] <- false

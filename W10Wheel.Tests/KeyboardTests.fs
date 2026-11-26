@@ -365,3 +365,37 @@ let ``the Pause key sending its down and up at once: a released scroll, ended by
     setCursor 20 20
     eq Suppress (keyDown VK_PAUSE 600)
     scrolling ()
+
+[<Fact>]
+let ``the Pause key repeats as the other keys`` () =
+    reset DataID.Middle DataID.VK_PAUSE
+    exclude ()
+    addExcludedPoint 100 100
+
+    // Held (a USB keyboard repeats it): its repeats are suppressed and the scroll goes on (not
+    // ended and started again at each repeat, the cursor flickering); its up ends it
+    eq Suppress (keyDown VK_PAUSE 100)
+    for time in [ 600; 633; 666; 700 ] do
+        eq Suppress (keyDown VK_PAUSE time)
+        scrolling ()
+    eq Suppress (keyUp VK_PAUSE 1000)
+    notScrolling ()
+
+    // Passed over an excluded window: its repeats pass after moving out, no scroll starts
+    setCursor 100 100
+    eq Pass (keyDown VK_PAUSE 2000)
+    setCursor 20 20
+    eq Pass (keyDown VK_PAUSE 2500)
+    notScrolling ()
+    eq Pass (keyUp VK_PAUSE 2600)
+
+    // Held when the keyboard hook is installed: its repeats and its up pass
+    setKeyDown VK_PAUSE true
+    Ctx.ForTests.keyboardHookRemoved ()
+    Ctx.ForTests.keyboardHookInstalled ()
+    eq Pass (keyDown VK_PAUSE 3000)
+    notScrolling ()
+    eq Pass (keyUp VK_PAUSE 3100)
+    setKeyDown VK_PAUSE false
+    eq Suppress (keyDown VK_PAUSE 3200)
+    scrolling ()

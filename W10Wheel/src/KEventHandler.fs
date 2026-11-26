@@ -190,19 +190,10 @@ let private noneUp (ke: KeyboardEvent): nativeint =
 let keyDown (info: KHookInfo) =
     //Debug.WriteLine(sprintf "keyDown: %d" info.vkCode)
 
+    // The Pause key is a key as the others: held, it repeats too (a USB keyboard), and its up
+    // comes (with its down at once, a PS/2 one)
     let kd = KeyDown(info)
-    Ctx.LastFlags.NewKeyDown kd.VKCode
     Ctx.LastFlags.ResetLoneUpKey kd.VKCode
-
-    // The trigger key that does not repeat (Pause) may send no up: a down after its down was
-    // released, quickly. As its up would, lock the scroll it started (this down then ends it),
-    // and do not take the down for a repeat.
-    if Keyboard.isNoRepeatKey kd.VKCode && Ctx.isTriggerKey kd && kd.Same lastEvent then
-        debug "no up before (no repeat key)" kd
-        if Ctx.isPressedKeyboardScrollMode() then
-            Ctx.setReleasedScrollMode()
-
-        lastEvent <- KeyUp(info)
 
     // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
     // the trigger changed): its repeats are suppressed too, whatever the trigger is now
@@ -220,9 +211,8 @@ let keyDown (info: KHookInfo) =
     // (SessionEvents) was handled: the hook's calls are handled before the posted messages, and
     // the reset forgot it. It passes as that press did, its up too: taken as a new press, it would
     // start scroll mode (or end one) and be suppressed, its up too, the key left pressed in the
-    // application. A suppressed down leaves the key up, so the trigger works as before. Not the
-    // key that does not repeat (Pause): its down is always a new press.
-    elif not (Keyboard.isNoRepeatKey kd.VKCode) && Windows.checkKeyState kd.VKCode then
+    // application. A suppressed down leaves the key up, so the trigger works as before.
+    elif Windows.checkKeyState kd.VKCode then
         debug "pass (repeat of a down with no record)" kd
         Ctx.LastFlags.SetPassedKey kd.VKCode
         __callNextHook()
@@ -283,11 +273,10 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
 // (Ctx.setKeyboardHookOf).
 // The trigger key, if it is down now (GetAsyncKeyState), is taken as passed: its down reached the
 // application with no hook to see it, so its repeats and its up pass, and its next press is the
-// trigger. 0 also when the state cannot be read: a key taken as up is a new press. Not the key that
-// does not repeat (Pause): its down is always a new press (LastFlags.NewKeyDown).
+// trigger. 0 also when the state cannot be read: a key taken as up is a new press.
 let private passHeldTriggerKey (caller: string) =
     let vk = Ctx.getTargetVKCode()
-    if vk <> 0 && not (Keyboard.isNoRepeatKey vk) && Windows.checkKeyState vk then
+    if vk <> 0 && Windows.checkKeyState vk then
         Debug.WriteLine(sprintf "%s: the trigger key down, taken as passed: %d" caller vk)
         Ctx.LastFlags.SetPassedKey vk
 
