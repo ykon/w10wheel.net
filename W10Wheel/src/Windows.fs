@@ -788,12 +788,6 @@ let resendUp (me: MouseEvent) =
     presses.[button].releaseQueuedId <- id
     __resendUp me ResendKind.Release id
 
-// The up of the other button than a waiting down (resendDownUp). Its down was not resent
-// alone (the up of such a down is resent by checkResentDown before the wait is offered): it
-// passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
-let private resendOtherUp (me: MouseEvent) =
-    __resendUp me ResendKind.Plain NO_PRESS
-
 // Resends a down and an up (at different points). The same button's down and up are sent
 // as one batch, like resendClick: 10 ms apart, the up with retries and waited for at exit.
 let resendDownUp (generation: int) (pressId: int) (down: MouseEvent) (up: MouseEvent) =
@@ -803,10 +797,9 @@ let resendDownUp (generation: int) (pressId: int) (down: MouseEvent) (up: MouseE
         enqueue generation [| input d MOUSEEVENTF_LEFTDOWN; input u MOUSEEVENTF_LEFTUP |]
     | RightDown(d), RightUp(u) ->
         enqueue generation [| input d MOUSEEVENTF_RIGHTDOWN; input u MOUSEEVENTF_RIGHTUP |]
-    | _ ->
-        // Different buttons: not a pair (the other button's up comes later)
-        resendDown generation pressId down
-        resendOtherUp up
+    // Not of different buttons: the other button's up passes as it is (EventHandler.
+    // offerEventWaiter)
+    | _ -> raise (ArgumentException())
 
 open WinAPI.VKey
 

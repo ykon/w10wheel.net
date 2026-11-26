@@ -68,11 +68,9 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetResent waitingEvent
         //Thread.Sleep(0)
     | LeftUp(_) | RightUp(_) ->
-        // Only for the up of the other button: the waiting down is resent and its physical up
-        // comes later. The up of the same button is resent with the down (the click is done).
-        if not (waitingEvent.SameButton me) then
-            Debug.WriteLine(sprintf "setFlagsOffer - setResent (Up): %s" waitingEvent.Name)
-            Ctx.LastFlags.SetResent waitingEvent
+        // The up of the same button (the other's ends the wait as a move: EventHandler.
+        // offerEventWaiter): resent with the down, the click is done
+        Debug.WriteLine(sprintf "setFlagsOffer - click (Up): %s" waitingEvent.Name)
     | LeftDown(_) | RightDown(_) ->
         Debug.WriteLine(sprintf "setFlagsOffer - setSuppressed: %s" waitingEvent.Name)
         Ctx.LastFlags.SetSuppressed waitingEvent
@@ -91,8 +89,8 @@ let offer me: bool =
 // Ends the wait in progress as a move does (on the hook thread): its down is resent now, its up at
 // its physical up (EventHandler.checkResentDown). For an event that passes as it is (me, at whose
 // point): another button's down or up, or the up of the other button of the pair whose down
-// passed (EventHandler.endWaitByOtherButton, checkPassedDown). False if no wait got it (none, or
-// it has timed out meanwhile: its down resent).
+// passed (EventHandler.endWaitByOtherButton, checkPassedDown, offerEventWaiter). False if no wait
+// got it (none, or it has timed out meanwhile: its down resent).
 let endByResend (me: MouseEvent): bool =
     offer (Move(me.Info))
 
@@ -140,18 +138,17 @@ let private fromUp (generation: int) (pressId: int) (down:MouseEvent) (up:MouseE
         Windows.resendDownUp generation pressId down up
 
     match down, up with
+    // The same button's up (the other's is not offered: EventHandler.offerEventWaiter)
     | LeftDown(_), LeftUp(_)  ->
         if Mouse.samePoint down up then
             resendC(LeftClick(down.Info))
         else
             resendUD()
-    | LeftDown(_), RightUp(_) -> resendUD()
     | RightDown(_), RightUp(_) ->
         if Mouse.samePoint down up then
             resendC(RightClick(down.Info))
         else
             resendUD()
-    | RightDown(_), LeftUp(_) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
 let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =

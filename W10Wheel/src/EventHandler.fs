@@ -281,6 +281,15 @@ let private offerEventWaiter (me: MouseEvent): nativeint option =
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
+    // The up of the other button than the waiting down, whose down passed with no record of it
+    // (the other button of the Left or Right trigger, not the trigger's; or pressed in Pass Mode):
+    // the wait ends, the waiting down resent at once, and the up passes as it is (as
+    // checkPassedDown, endNotTrigger). Not resent after that down: pressed again at once (passed,
+    // not the trigger's), the button would have its down before that up (down, down, up).
+    elif me.IsUp && EventWaiter.isWaitingOtherThan me then
+        if EventWaiter.endByResend me then
+            debug "the LR wait ended (its down resent)" me
+        None
     // A down of the button whose down is waiting (the up was missed, or of another mouse): not
     // the second down of the trigger (the same button would start scroll mode). A new press, as
     // for checkSameLastEvent: the wait is canceled (its down is not resent: the hook would drop

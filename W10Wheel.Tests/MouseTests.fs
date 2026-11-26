@@ -511,3 +511,27 @@ let ``the passed up of the other button of the pair ends the LR wait`` () =
     down Right 10 10 200 |> ignore
     Thread.Sleep(50)
     notScrolling ()
+
+[<Fact>]
+let ``the other button of the Left or Right trigger released and pressed again keeps its order`` () =
+    // Left: Right held (passed, not the trigger's button: no record of it), Left waits; Right
+    // released (it ends the wait) and pressed again before the sender has sent what the wait
+    // queued: the application gets Right's down, up, down and up in their order. Right: the same,
+    // the buttons the other way.
+    for trigger, first, other in [ (DataID.Left, Left, Right); (DataID.Right, Right, Left) ] do
+        reset trigger DataID.None
+        Ctx.ForTests.setNumber DataID.pollTimeout 3000
+        eq Pass (down other 10 10 50)
+        eq Suppress (down first 10 10 100)
+        holdSender ()
+        up other 10 10 150 |> ignore
+        down other 10 10 160 |> ignore
+        releaseSender ()
+        // The sender sends what was queued
+        Thread.Sleep(200)
+        up other 10 10 300 |> ignore
+        let all = takeAppLog ()
+        let log = all |> List.filter (fun (b, _) -> b = other)
+        Assert.Equal<(Button * bool) list>([ (other, true); (other, false); (other, true); (other, false) ], log)
+        // The waiting down resent (not lost)
+        Assert.Contains((first, true), all)
