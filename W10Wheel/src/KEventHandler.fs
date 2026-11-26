@@ -214,6 +214,18 @@ let keyDown (info: KHookInfo) =
     elif Ctx.LastFlags.IsPassedKey kd.VKCode then
         debug "pass (repeat of a passed down)" kd
         __callNextHook()
+    // Already down in the system: in the hook, GetAsyncKeyState still tells the state from before
+    // this event, so this is a repeat of a press whose down reached the application with no record
+    // of it here. E.g. passed just before the reset posted at an unlock or a resume
+    // (SessionEvents) was handled: the hook's calls are handled before the posted messages, and
+    // the reset forgot it. It passes as that press did, its up too: taken as a new press, it would
+    // start scroll mode (or end one) and be suppressed, its up too, the key left pressed in the
+    // application. A suppressed down leaves the key up, so the trigger works as before. Not the
+    // key that does not repeat (Pause): its down is always a new press.
+    elif not (Keyboard.isNoRepeatKey kd.VKCode) && Windows.checkKeyState kd.VKCode then
+        debug "pass (repeat of a down with no record)" kd
+        Ctx.LastFlags.SetPassedKey kd.VKCode
+        __callNextHook()
     elif Ctx.isTriggerKey kd then singleDown kd else noneDown kd
 
 let keyUp (info: KHookInfo) =
