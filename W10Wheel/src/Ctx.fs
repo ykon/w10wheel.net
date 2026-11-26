@@ -668,8 +668,8 @@ let getSwitchingThreshold () =
 //   trigger changed): its repeats and its up are suppressed too, whatever the trigger is now.
 // - Passed: its down passed W10Wheel (to the application): its repeats and its up pass too, even if
 //   it has become the trigger since.
-// - LoneUp: its down was suppressed when the state was initialized (LastFlags.Init): its up alone is
-//   suppressed (the application did not get the down). Its next down ends it (a repeat cannot be
+// - LoneUp: its down was suppressed when the state was initialized (Ctx.resetState): its up alone
+//   is suppressed (the application did not get the down). Its next down ends it (a repeat cannot be
 //   told from a new press, it is taken for one).
 // The trigger key's own press (its down suppressed for its scroll) is not here: KEventHandler keeps
 // it (lastEvent).
@@ -746,24 +746,17 @@ type LastFlags() =
         else
             false
 
-    // Not the keys passed (Passed), whose ups pass and reset them; reset, a key still pressed would
-    // lose it (e.g. pressed over an excluded program: its repeats would start scroll mode if it
-    // is the trigger, and its up would be suppressed). Whether a
-    // key is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
-    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
-    // The keys suppressed (Suppressed) are not kept either, so that a key whose up was missed is
-    // not suppressed again: only their up alone is (LoneUp), as the hook does for the buttons
-    // (Windows.dropLoneUp).
-    static member Init () =
-        LastFlags.InitButtons()
-        LastFlags.SuppressedKeysToLoneUp()
-
-    // The states of the buttons (ButtonState): see Init, and Ctx.mouseHookLost
+    // The states of the buttons (ButtonState), at a reset (Ctx.resetState)
     static member InitButtons () =
         for i in 0 .. buttons.Length - 1 do setButton i ButtonState.Idle
 
-    // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed is
-    // not suppressed again (see Init)
+    // At a reset (Ctx.resetState, KeysReset.LoneUp): the keys suppressed are suppressed for their up
+    // alone (LoneUp), so that a key whose up was missed is not suppressed again, as the hook does for
+    // the buttons (Windows.dropLoneUp). Not the keys passed (Passed), whose ups pass and reset them;
+    // reset, a key still pressed would lose it (e.g. pressed over an excluded program: its repeats
+    // would start scroll mode if it is the trigger, and its up would be suppressed). Whether a key
+    // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
+    // suppressed is not pressed for it. A key whose up was missed passes its next down once.
     static member SuppressedKeysToLoneUp () =
         for vk in 0 .. keys.Length - 1 do
             if keys.[vk] = KeyState.Suppressed then keys.[vk] <- KeyState.LoneUp
@@ -2221,22 +2214,89 @@ let setInitStateMEH f = initStateMEH <- f
 let setInitStateKEH f = initStateKEH <- f
 let setOfferEW f = offerEW <- f
 
-let initState () =
-    // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
-    // received before, and the wheel events queued are not sent. A down resent before and
-    // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass Mode
-    // does: a wait timing out while it is canceled below sees the new generation and does not
-    // resend its down (its flag would be reset by Init, and its up not resent).
-    newPassModeGeneration ()
-    // Cancel the LR trigger wait before Init: its timeout could set the flags again after it
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    initStateKEH()
-    LastFlags.Init()
-    exitScrollMode()
-
 let mutable private forgetPresses: unit -> unit = (fun () -> ())
 let setForgetPresses f = forgetPresses <- f
+
+// What a reset ends of the triggers' state (resetState): each event ends what it may have left
+// behind, the table below (RESET_...)
+// The scroll it ends: none, a mouse trigger's (or a pending LR trigger start), the keyboard
+// trigger's, or any
+[<RequireQualifiedAccess>]
+type private ScrollReset = Keep | Mouse | Keyboard | Any
+
+// What it does with the buttons' records: keeps them; resets those of the mouse handlers (the LR
+// trigger's wait canceled, LastFlags' buttons); or also forgets the presses of the hook
+// (Windows.forgetPresses: their ups may have been missed)
+[<RequireQualifiedAccess>]
+type private ButtonsReset = Keep | Reset | Forget
+
+// What it does with the keys' records: keeps them; resets the keyboard handler's, the keys
+// suppressed having their up suppressed alone (LastFlags.SuppressedKeysToLoneUp); or forgets them
+// all (their ups may have been missed, or will not be seen)
+[<RequireQualifiedAccess>]
+type private KeysReset = Keep | LoneUp | Clear
+
+type private Reset = { scroll: ScrollReset; buttons: ButtonsReset; keys: KeysReset }
+
+// initState (Esc, --sendInitState): the scroll ended, the triggers' state reset
+let private RESET_INIT_STATE =
+    { scroll = ScrollReset.Any; buttons = ButtonsReset.Reset; keys = KeysReset.LoneUp }
+// Pass Mode turned on: as initState, its scroll ended by Scroll.SetPassMode (under its lock)
+let private RESET_PASS_MODE_ON = { RESET_INIT_STATE with scroll = ScrollReset.Keep }
+// The mouse hook lost (see mouseHookLost): the mouse triggers' only
+let private RESET_MOUSE_HOOK_LOST =
+    { scroll = ScrollReset.Mouse; buttons = ButtonsReset.Forget; keys = KeysReset.Keep }
+// The keyboard hook lost or removed (see keyboardHookGone): the keyboard trigger's only
+let private RESET_KEYBOARD_HOOK_GONE =
+    { scroll = ScrollReset.Keyboard; buttons = ButtonsReset.Keep; keys = KeysReset.Clear }
+// The input lost (see inputLost): all
+let private RESET_INPUT_LOST =
+    { scroll = ScrollReset.Any; buttons = ButtonsReset.Forget; keys = KeysReset.Clear }
+
+let private resetState (r: Reset) =
+    if r.buttons <> ButtonsReset.Keep then
+        // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
+        // received before, and the wheel events queued are not sent. A down resent before and
+        // sent after its physical up is dropped by the hook (Windows.dropResent). First, as Pass
+        // Mode does (again for it: as it is): a wait timing out while it is canceled below sees
+        // the new generation and does not resend its down (its state would be reset below, and
+        // its up not resent).
+        newPassModeGeneration ()
+        // Cancel the LR trigger wait before the buttons are reset: its timeout could set their
+        // state again after it
+        offerEW(Cancel) |> ignore
+        initStateMEH()
+
+    if r.keys <> KeysReset.Keep then
+        initStateKEH()
+
+    if r.buttons <> ButtonsReset.Keep then
+        LastFlags.InitButtons()
+
+    match r.keys with
+    | KeysReset.LoneUp -> LastFlags.SuppressedKeysToLoneUp()
+    | KeysReset.Clear -> LastFlags.ResetKeys()
+    | KeysReset.Keep -> ()
+
+    if r.buttons = ButtonsReset.Forget then
+        forgetPresses ()
+
+    match r.scroll with
+    | ScrollReset.Any -> exitScrollMode()
+    | ScrollReset.Mouse ->
+        if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then exitScrollMode()
+    | ScrollReset.Keyboard ->
+        if Scroll.IsMode && Scroll.ByKeyboard then exitScrollMode()
+    | ScrollReset.Keep -> ()
+
+let initState () =
+    resetState RESET_INIT_STATE
+
+// The keyboard hook has been removed, or replaced after Windows had removed the old one
+// (KEventHandler.changeTrigger, hookLost): the scroll mode of the trigger key (which would not end)
+// is ended, and the keys' records are forgotten
+let keyboardHookGone () =
+    resetState RESET_KEYBOARD_HOOK_GONE
 
 // The mouse hook has been replaced (reinstallHooks), and Windows had removed the old one (e.g. for
 // a timeout): buttons may have been released, and pressed again, with no hook to see it, and a
@@ -2248,13 +2308,7 @@ let setForgetPresses f = forgetPresses <- f
 mouseHookLost <- (fun () ->
     Debug.WriteLine("mouseHookLost")
     // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
-    newPassModeGeneration ()
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    LastFlags.InitButtons()
-    forgetPresses ()
-    if (Scroll.IsMode && not Scroll.ByKeyboard) || Scroll.IsStarting then
-        exitScrollMode())
+    resetState RESET_MOUSE_HOOK_LOST)
 
 // The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the hooks
 // saw none of the input meanwhile (it went to the secure desktop, or was lost), so a trigger
@@ -2267,9 +2321,7 @@ mouseHookLost <- (fun () ->
 let inputLost () =
     Debug.WriteLine("inputLost")
     if not (WinHook.isClosed ()) then
-        initState ()
-        forgetPresses ()
-        LastFlags.ResetKeys()
+        resetState RESET_INPUT_LOST
 
 // Pass Mode bypasses the event handlers, so nothing they wait for completes while it is on:
 // e.g. the LR trigger wait would resend a down after the timeout although the up has already
@@ -2279,10 +2331,7 @@ onPassModeOn <- (fun () ->
     // physical up comes. In Pass Mode the physical up passes instead and releases it; if it
     // passes before the resent down (Windows input queue), the hook drops the down
     // (Windows.dropResent).
-    offerEW(Cancel) |> ignore
-    initStateMEH()
-    initStateKEH()
-    LastFlags.Init())
+    resetState RESET_PASS_MODE_ON)
 
 // For the tests (W10Wheel.Tests): the settings the handlers read, set as a load sets them, and the
 // events of the hooks as the program calls them (without the files, the dialogs and the hooks
@@ -2299,3 +2348,5 @@ module internal ForTests =
     let keyboardHookLost () = keyboardHookLost ()
     let keyboardHookInstalled () = keyboardHookInstalled ()
     let mouseHookLost () = mouseHookLost ()
+    // The handlers' state reset as Pass Mode is turned on (its scroll ended by Scroll.SetPassMode)
+    let passModeOn () = onPassModeOn ()

@@ -19,8 +19,8 @@ let private suppress () = Some(IntPtr(1))
 let mutable private lastEvent: KeyboardEvent = NonEvent
 
 // The trigger key pressed (its down suppressed, as the scroll it started) is suppressed like the
-// other keys whose down was (LastFlags.Init): its up alone is suppressed, or it would pass
-// (e.g. the Alt key would activate the menu bar)
+// other keys whose down was (LastFlags.SuppressedKeysToLoneUp): its up alone is suppressed, or it
+// would pass (e.g. the Alt key would activate the menu bar)
 let private initState () =
     match lastEvent with
     | KeyDown(_) -> Ctx.LastFlags.SetSuppressedKey lastEvent.VKCode
@@ -249,15 +249,17 @@ let private changeTrigger (oldVK: int) (keyChanged: bool) =
         | _ -> false
 
     if not keyChanged then
-        Ctx.LastFlags.ResetKeys()
-    elif pressed then
-        Ctx.LastFlags.SetSuppressedKey oldVK
+        Debug.WriteLine("changeTrigger (keyboard): the hook removed")
+        Ctx.keyboardHookGone ()
+    else
+        if pressed then
+            Ctx.LastFlags.SetSuppressedKey oldVK
 
-    lastEvent <- NonEvent
+        lastEvent <- NonEvent
 
-    if Ctx.isKeyboardScrollMode() then
-        Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
-        Ctx.exitScrollMode()
+        if Ctx.isKeyboardScrollMode() then
+            Debug.WriteLine("changeTrigger (keyboard): exit scroll mode")
+            Ctx.exitScrollMode()
 
 // The keyboard hook has been replaced (on every load, after a resume or an unlock), and Windows had
 // removed the old one (e.g. for a timeout): keys may have been released, and pressed again, with no
@@ -281,12 +283,8 @@ let private passHeldTriggerKey (caller: string) =
         Ctx.LastFlags.SetPassedKey vk
 
 let private hookLost () =
-    if Ctx.isKeyboardScrollMode() then
-        Debug.WriteLine("hookLost: exit keyboard scroll mode")
-        Ctx.exitScrollMode()
-
-    Ctx.LastFlags.ResetKeys()
-    lastEvent <- NonEvent
+    Debug.WriteLine("hookLost (keyboard)")
+    Ctx.keyboardHookGone ()
     passHeldTriggerKey "hookLost"
 
 // The keyboard hook has been installed where there was none (at the end of a pause, at startup, or

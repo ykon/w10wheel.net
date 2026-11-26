@@ -363,3 +363,16 @@ let ``a down resent for a press forgotten is dropped, one of an unknown kind pas
     let extra = d.mi.dwExtraInfo.ToUInt64() ||| (3UL <<< 56)
     let mi = WinAPI.MOUSEINPUT(d.mi.dx, d.mi.dy, d.mi.mouseData, d.mi.dwFlags, d.mi.time, UIntPtr(extra))
     eq Pass (receive (WinAPI.MINPUT(mi)))
+
+[<Fact>]
+let ``Pass Mode turned on ends the LR wait, the key's up is suppressed alone`` () =
+    reset DataID.LR DataID.VK_LMENU
+    down Left 10 10 100 |> ignore
+    eq Suppress (keyDown VK_LMENU 110)
+    Ctx.ForTests.passModeOn ()
+    // The wait's down is not resent
+    Assert.True(noneSent 400)
+    // The up of the key suppressed in its scroll is suppressed alone, as its down was
+    eq Suppress (keyUp VK_LMENU 600)
+    eq Pass (keyUp VK_LMENU 650)
+    Ctx.exitScrollMode ()
