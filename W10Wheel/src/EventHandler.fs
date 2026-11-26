@@ -276,8 +276,9 @@ let private resetRacedResentDown (down: MouseEvent) =
 
 let private offerEventWaiter (me: MouseEvent): nativeint option =
     // The up of the other button than the waiting down, whose own down did not reach the
-    // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
-    // with the waiting down, it would be an up without a down. Suppress it, the wait goes on.
+    // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): an up without
+    // a down, dropped (Windows.dropLoneUpOf, as the hook would drop it passed). Suppressed here,
+    // before the next case, which would end the wait: the wait goes on.
     if me.IsUp && EventWaiter.isWaitingOtherThan me && Windows.dropLoneUpOf me then
         debug "suppress (up without its down, other button)" me
         suppress()
