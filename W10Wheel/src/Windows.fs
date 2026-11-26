@@ -42,7 +42,7 @@ let private closing = ref false
 let private unsent: WinAPI.MINPUT[] ref = ref null
 
 let private sendOne (input: WinAPI.MINPUT): bool =
-    WinAPI.SendInput(1u, [| input |], MINPUT_SIZE) = 1u
+    Host.sendInput input
 
 let private hasFlags (flags: int) (input: WinAPI.MINPUT): bool =
     (input.mi.dwFlags &&& uint32 flags) <> 0u
@@ -772,7 +772,7 @@ let resendDownUp (generation: int) (pressId: int) (down: MouseEvent) (up: MouseE
 open WinAPI.VKey
 
 let private checkAsyncKeyState (vKey:int) =
-    (WinAPI.GetAsyncKeyState(vKey) &&& 0x8000s) <> 0s  // most significant bit: key is down
+    (Host.getAsyncKeyState vKey &&& 0x8000s) <> 0s  // most significant bit: key is down
 
 let checkShiftState () = checkAsyncKeyState(VK_SHIFT)
 let checkCtrlState () = checkAsyncKeyState(VK_CONTROL)
@@ -834,29 +834,10 @@ let initScroll () =
 let setInitScroll () =
     Ctx.setInitScroll initScroll
 
-let private processIdOfWindow (hWnd: nativeint): uint32 =
-    let mutable processId = 0u
-    WinAPI.GetWindowThreadProcessId(hWnd, &processId) |> ignore
-    processId
-
-let private getFullPathOfProcess (processId: uint32): string option =
-    let hProcess = WinAPI.OpenProcess(0x1000u, false, processId)  // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName
-    if hProcess = IntPtr.Zero then
-        None
-    else
-        let buffer = System.Text.StringBuilder(1024);
-        let mutable bufferSize = buffer.Capacity;
-        let success = WinAPI.QueryFullProcessImageName(hProcess, 0, buffer, &bufferSize)
-        WinAPI.CloseHandle(hProcess) |> ignore
-        if success then Some(buffer.ToString()) else None
-
 let private isExcludedProcess (processId: uint32): bool =
-    match getFullPathOfProcess processId with
+    match Host.fullPathOfProcess processId with
     | Some path -> Ctx.isExcludedProgram path
     | None -> false
-
-[<Literal>]
-let private GA_ROOT = 2u
 
 // Whether the window at pt (of the hook: physical coordinates, as WindowFromPoint takes them,
 // W10Wheel being per-monitor DPI aware) is of an excluded program (Ctx.isExcludedProgram), the one
@@ -870,16 +851,16 @@ let isExcludedWindowAt (pt: WinAPI.POINT): bool =
     if not (Ctx.hasExcludedPrograms()) then
         false
     else
-        let hWnd = WinAPI.WindowFromPoint(pt)
+        let hWnd = Host.windowFromPoint pt
         if hWnd = IntPtr.Zero then
             false
         else
-            let pid = processIdOfWindow hWnd
+            let pid = Host.processIdOfWindow hWnd
             if pid <> 0u && isExcludedProcess pid then
                 true
             else
-                let root = WinAPI.GetAncestor(hWnd, GA_ROOT)
-                let rootPid = if root = IntPtr.Zero || root = hWnd then pid else processIdOfWindow root
+                let root = Host.rootWindow hWnd
+                let rootPid = if root = IntPtr.Zero || root = hWnd then pid else Host.processIdOfWindow root
                 rootPid <> pid && rootPid <> 0u && isExcludedProcess rootPid
 
 // For the keyboard trigger: the window under the cursor, where it scrolls
@@ -887,5 +868,6 @@ let isExcludedWindowAtCursor (): bool =
     if not (Ctx.hasExcludedPrograms()) then
         false
     else
-        let mutable pt = WinAPI.POINT()
-        WinAPI.GetCursorPos(&pt) && isExcludedWindowAt pt
+        match Host.getCursorPos () with
+        | Some(pt) -> isExcludedWindowAt pt
+        | None -> false

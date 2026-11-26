@@ -2279,3 +2279,19 @@ onPassModeOn <- (fun () ->
     initStateMEH()
     initStateKEH()
     LastFlags.Init())
+
+// For the tests (W10Wheel.Tests): the settings the handlers read, set as a load sets them, and the
+// events of the hooks as the program calls them (without the files, the dialogs and the hooks
+// themselves)
+module internal ForTests =
+    let setTrigger (name: string) = setTrigger name
+    let setTargetVKCode (name: string) = setTargetVKCode name
+    let setNumber (name: string) (n: int) = setNumberOfName name n
+    let setSendMiddleClick (b: bool) = Volatile.Write(sendMiddleClick, b)
+    let setDraggedLock (b: bool) = Scroll.DraggedLock <- b
+    // The keyboard hook removed (setKeyboardHookOf), replaced after Windows removed the old one, or
+    // installed where there was none
+    let keyboardHookRemoved () = changeKeyboardTrigger (getTargetVKCode()) false
+    let keyboardHookLost () = keyboardHookLost ()
+    let keyboardHookInstalled () = keyboardHookInstalled ()
+    let mouseHookLost () = mouseHookLost ()

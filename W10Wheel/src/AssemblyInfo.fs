@@ -26,6 +26,9 @@ open System.Runtime.InteropServices
 // その型の ComVisible 属性を true に設定します。
 [<assembly: ComVisible(false)>]
 
+// The tests call the hook procedures and the settings the handlers read (internal)
+[<assembly: InternalsVisibleTo("W10Wheel.Tests")>]
+
 // このプロジェクトが COM に公開される場合、次の GUID がタイプ ライブラリの ID になります
 [<assembly: Guid("f7db64d0-fad4-4547-aa0a-09e24bb010ef")>]
 

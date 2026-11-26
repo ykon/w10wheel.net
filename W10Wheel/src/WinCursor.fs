@@ -22,19 +22,14 @@ let private load (id: int) =
 let CURSOR_V = load OCR_SIZENS
 let CURSOR_H = load OCR_SIZEWE
 
-let private copy (hCur:nativeint): nativeint =
-    WinAPI.CopyIcon(hCur)
-
 // Whether the system cursors have been changed since they were restored: restoring reloads them
 // all (SPI_SETCURSORS), so only when they have been changed (e.g. not for a click of the drag
 // trigger), and whatever the setting is now (it may have been changed while scrolling)
 let private changed = ref false
 
-// SetSystemCursor destroys the copy only if it succeeds: destroyed here otherwise
+// To a copy of hCur (Host.setSystemCursor)
 let private setSystemCursor (hCur: nativeint) (id: int) =
-    let h = copy hCur
-    if h <> IntPtr.Zero && not (WinAPI.SetSystemCursor(h, uint32 id)) then
-        WinAPI.DestroyCursor(h) |> ignore
+    Host.setSystemCursor hCur (uint32 id)
 
 let change (hCur: nativeint) =
     Volatile.Write(changed, true)
@@ -50,7 +45,7 @@ let changeH () =
 
 let restore () =
     if Volatile.Read(&changed.contents) then
-        let res = WinAPI.SystemParametersInfo(uint32 WinAPI.SPI_SETCURSORS, 0u, IntPtr.Zero, 0u)
+        let res = Host.restoreSystemCursors ()
         if res then Volatile.Write(changed, false)
         res
     else

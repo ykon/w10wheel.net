@@ -95,7 +95,8 @@ let private procMouse nCode (wParam: nativeint) (info: HookInfo): nativeint =
 
 // An exception escaping a low-level hook procedure terminates the process on .NET,
 // so pass the event on to the next hook instead.
-let private mouseProc nCode wParam info: nativeint =
+// (Internal: the tests call it as the hook does.)
+let internal mouseProc nCode wParam info: nativeint =
     try
         procMouse nCode wParam info
     with e ->
@@ -141,7 +142,8 @@ let private procKeyboard nCode wParam (info:KHookInfo): nativeint =
     finally
         KEventHandler.setCallNextHook outer
 
-let private keyboardProc nCode wParam (info:KHookInfo): nativeint =
+// (Internal: the tests call it as the hook does.)
+let internal keyboardProc nCode wParam (info:KHookInfo): nativeint =
     try
         procKeyboard nCode wParam info
     with e ->

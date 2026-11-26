@@ -42,11 +42,11 @@ let private __setKeyboardHook () =
 
 let callNextMouseHook nCode wParam info =
     let hhk = Volatile.Read(&mouseHhk.contents)
-    WinAPI.CallNextHookExM(hhk, nCode, wParam, info)
+    Host.callNextMouseHook hhk nCode wParam info
 
 let callNextKeyboardHook nCode wParam info =
     let hhk = Volatile.Read(&keyboardHhk.contents)
-    WinAPI.CallNextHookExK(hhk, nCode, wParam, info)
+    Host.callNextKeyboardHook hhk nCode wParam info
 
 // The error message of a failure, read right after it (another call could change the last error)
 let private getHookError (hhk: nativeint): string option =
