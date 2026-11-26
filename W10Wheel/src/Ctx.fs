@@ -2368,3 +2368,7 @@ module internal ForTests =
     let reloadProperties () = tryReloadProperties ()
     let storeStatus () = storeStatus ()
     let unstoredReason (settingsUnstored: bool) = unstoredReason settingsUnstored
+    // The default values kept as at startup, before any setting is changed (the first load would keep
+    // the settings as they are then)
+    let saveDefaults () = saveDefaults ()
+    let defaultSetting (key: string) = defaultProp.GetPropertyOption key

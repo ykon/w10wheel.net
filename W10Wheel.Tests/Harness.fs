@@ -68,6 +68,8 @@ let USER_DIR = Path.Combine(Path.GetTempPath(), "W10Wheel.Tests")
 let private initialized = lazy (
     Directory.CreateDirectory(USER_DIR) |> ignore
     Properties.USER_DIR <- USER_DIR
+    // Before any test changes a setting: the defaults (Reset to defaults) are those of a start
+    Ctx.ForTests.saveDefaults ()
     installHost ()
     Program.initSetFunctions ())
 

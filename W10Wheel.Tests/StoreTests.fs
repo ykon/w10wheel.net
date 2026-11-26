@@ -136,3 +136,11 @@ let ``the reason of the changes not stored, of both files`` () =
     finally
         readOnly (propertiesPath ()) false
         readOnly (exclusionsPath ()) false
+
+[<Fact>]
+let ``the defaults are those of a start, not the settings of a test`` () =
+    // Reset to defaults sets them back (resetSettings): kept before the tests changed any setting
+    loadEmpty ()
+    Assert.Equal(Some "RightDragTrigger", Ctx.ForTests.defaultSetting DataID.firstTrigger)
+    Assert.Equal(Some DataID.VK_NONCONVERT, Ctx.ForTests.defaultSetting DataID.targetVKCode)
+    Assert.Equal(Some "200", Ctx.ForTests.defaultSetting DataID.pollTimeout)
