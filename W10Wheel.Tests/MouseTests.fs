@@ -393,3 +393,60 @@ let ``a single or drag trigger whose scroll cannot start passes its down and up`
         // RawInput registered again: the trigger
         eq Suppress (down b 10 10 200)
         scrolling ()
+
+[<Fact>]
+let ``another button's down ends the LR wait: the waiting down is resent, and the up for it`` () =
+    // As the Rust version: the waiting down is resent at once (not after the timeout, nor after the
+    // other button's whole click), and its up is resent for it
+    for b in [ Middle; X1; X2 ] do
+        reset DataID.LR DataID.None
+        // Longer than the waits below: the timeout does not resend the down
+        Ctx.ForTests.setNumber DataID.pollTimeout 3000
+        eq Suppress (down Left 10 10 100)
+        eq Pass (down b 10 10 120)
+        let downs = sentInputs 1
+        Assert.Equal<(Button * bool) list>([ (Left, true) ], downs |> List.choose buttonOfInput)
+        eq Pass (receive downs.Head)
+        eq Pass (up b 10 10 150)
+        eq Suppress (up Left 10 10 200)
+        let ups = sentInputs 1
+        Assert.Equal<(Button * bool) list>([ (Left, false) ], ups |> List.choose buttonOfInput)
+        eq Pass (receive ups.Head)
+        Assert.True(noneSent 300)
+        notScrolling ()
+
+[<Fact>]
+let ``another button's up ends the LR wait: sent after the waiting down`` () =
+    // Pressed before the wait (passed), released while it goes on: its up is resent after the
+    // waiting down, in their order
+    for b in [ Middle; X1 ] do
+        reset DataID.LR DataID.None
+        Ctx.ForTests.setNumber DataID.pollTimeout 3000
+        eq Pass (down b 10 10 50)
+        eq Suppress (down Left 10 10 100)
+        eq Suppress (up b 10 10 150)
+        let inputs = sentInputs 2
+        Assert.Equal<(Button * bool) list>([ (Left, true); (b, false) ], inputs |> List.choose buttonOfInput)
+        for i in inputs do eq Pass (receive i)
+        eq Suppress (up Left 10 10 200)
+        let ups = sentInputs 1
+        Assert.Equal<(Button * bool) list>([ (Left, false) ], ups |> List.choose buttonOfInput)
+        notScrolling ()
+
+[<Fact>]
+let ``the up of another button's suppressed down does not end the LR wait`` () =
+    // The middle button ends a released scroll (its down suppressed), then Left waits: the middle's
+    // up is suppressed, and the wait goes on (Right makes the pair)
+    reset DataID.LR DataID.None
+    down Left 0 0 100 |> ignore
+    down Right 0 0 150 |> ignore
+    scrolling ()
+    up Left 0 0 200 |> ignore
+    up Right 0 0 250 |> ignore
+    eq Suppress (down Middle 0 0 1000)
+    notScrolling ()
+    eq Suppress (down Left 0 0 1050)
+    eq Suppress (up Middle 0 0 1100)
+    Assert.True((takeSent 0 0).IsEmpty)
+    eq Suppress (down Right 0 0 1150)
+    scrolling ()

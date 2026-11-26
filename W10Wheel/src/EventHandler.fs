@@ -606,6 +606,31 @@ let private dragUp (me: MouseEvent): nativeint =
 
     getResult checkers me
 
+// While the LR trigger waits (a down of the pair), another button (middle, X1, X2) ends the wait, as
+// the Rust version does: the waiting down is resent at once (EventWaiter), not after the timeout
+// nor after the other button's whole click, and its up is resent at its physical up
+// (checkResentDown). The other button's down passes (as the hook returns: the application gets it
+// just before the resent down); its up is suppressed and resent after the waiting down, so that
+// they come in their order. Not an up whose down reached no application (Windows.isLoneUp): dropped
+// (Dispatcher), and the wait goes on, as for the other button of the pair (offerEventWaiter).
+let private offerOtherButton (me: MouseEvent): nativeint option =
+    let isOther =
+        match me with
+        | MiddleEvent(_) | X1Event(_) | X2Event(_) -> true
+        | _ -> false
+    if not isOther || not (EventWaiter.isWaitingOtherThan me) || (me.IsUp && Windows.isLoneUp me) then
+        None
+    elif EventWaiter.offer me then
+        if me.IsDown then
+            debug "pass (the LR wait ended, its down resent)" me
+            callNextHook()
+        else
+            debug "suppress (the LR wait ended, resent after its down)" me
+            suppress()
+    else
+        // The wait has timed out meanwhile (its down resent): as when none is in progress
+        None
+
 // As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
 // first: they neither end the locked scroll mode nor initialize the state (Escape)
 let private noneDown (me: MouseEvent): nativeint =
@@ -614,6 +639,7 @@ let private noneDown (me: MouseEvent): nativeint =
         skipResendEventSingle
         //resetLastFlags
         checkExitScrollDown
+        offerOtherButton
         endPass
     ]
 
@@ -625,6 +651,7 @@ let private noneUp (me: MouseEvent): nativeint =
         skipResendEventSingle
         checkEscape
         checkSuppressedDown
+        offerOtherButton
         endPass
     ]
 

@@ -450,6 +450,20 @@ let dropLoneUpOf (up: MouseEvent): bool =
     | RightUp(info) -> dropLoneUp 1 info
     | _ -> false
 
+// Whether an up would be dropped as an up without its down (as dropLoneUp tells, without ending its
+// press): before it is offered to the LR trigger's wait (on the hook thread)
+let isLoneUp (up: MouseEvent): bool =
+    let button =
+        match up with
+        | LeftUp(_) -> 0
+        | RightUp(_) -> 1
+        | MiddleUp(_) -> 2
+        | X1Up(_) -> 3
+        | X2Up(_) -> 4
+        | _ -> raise (ArgumentException())
+    let p = presses.[button]
+    not (isInjected up.Info) && p.downSuppressed && p.downPassedId <> p.id
+
 // The ID of the current press of the button of a left or right event (on the hook thread)
 let pressIdOf (me: MouseEvent): int =
     match me with
@@ -755,11 +769,15 @@ let resendDown (generation: int) (pressId: int) (me: MouseEvent) =
     | _ -> raise (ArgumentException())
 
 let private __resendUp (me: MouseEvent) (kind: ResendKind) (pressId: int) =
-    let send (info: HookInfo) flags =
-        enqueue (Ctx.getPassModeGeneration()) [| createInput info.pt 0 flags 0u (resendExtra kind pressId) |]
+    let send (info: HookInfo) mouseData flags =
+        enqueue (Ctx.getPassModeGeneration()) [| createInput info.pt mouseData flags 0u (resendExtra kind pressId) |]
     match me with
-    | LeftUp(info) -> send info MOUSEEVENTF_LEFTUP
-    | RightUp(info) -> send info MOUSEEVENTF_RIGHTUP
+    | LeftUp(info) -> send info 0 MOUSEEVENTF_LEFTUP
+    | RightUp(info) -> send info 0 MOUSEEVENTF_RIGHTUP
+    // The up of another button than the pair's (resendOtherUp)
+    | MiddleUp(info) -> send info 0 MOUSEEVENTF_MIDDLEUP
+    | X1Up(info) -> send info WinAPI.XBUTTON1 MOUSEEVENTF_XUP
+    | X2Up(info) -> send info WinAPI.XBUTTON2 MOUSEEVENTF_XUP
     | _ -> raise (ArgumentException())
 
 // The up of a down resent alone, for the physical up (suppressed) of the current press: called
@@ -774,9 +792,10 @@ let resendUp (me: MouseEvent) =
     presses.[button].releaseQueuedId <- id
     __resendUp me ResendKind.Release id
 
-// The up of the other button than a waiting down (resendDownUp). Its down was not resent
-// alone (the up of such a down is resent by checkResentDown before the wait is offered): it
-// passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
+// The up of another button than a waiting down (resendDownUp): the other of the pair, or the
+// middle or an X button. Its down was not resent alone (the up of such a down is resent by
+// checkResentDown before the wait is offered): it passed W10Wheel (e.g. pressed in Pass Mode, or
+// before the wait), so its up is always passed.
 let private resendOtherUp (me: MouseEvent) =
     __resendUp me ResendKind.Plain NO_PRESS
 

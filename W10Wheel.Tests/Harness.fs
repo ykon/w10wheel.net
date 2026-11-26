@@ -191,13 +191,18 @@ let private inputEvents = [
     (WinAPI.Event.MOUSEEVENTF_MIDDLEDOWN, (Middle, true)); (WinAPI.Event.MOUSEEVENTF_MIDDLEUP, (Middle, false)) ]
 
 let buttonOfInput (input: WinAPI.MINPUT): (Button * bool) option =
-    inputEvents |> List.tryPick (fun (flag, e) -> if int input.mi.dwFlags &&& flag <> 0 then Some e else None)
+    let flags = int input.mi.dwFlags
+    let x () = if int input.mi.mouseData = WinAPI.XBUTTON1 then X1 else X2
+    if flags &&& WinAPI.Event.MOUSEEVENTF_XDOWN <> 0 then Some(x (), true)
+    elif flags &&& WinAPI.Event.MOUSEEVENTF_XUP <> 0 then Some(x (), false)
+    else inputEvents |> List.tryPick (fun (flag, e) -> if flags &&& flag <> 0 then Some e else None)
 
 // The sent input coming back to the hook: its decision (the hook may drop it)
 let receive (input: WinAPI.MINPUT) =
     match buttonOfInput input with
     | Some(b, isDown) ->
-        let info = mouseInfo input.mi.dx input.mi.dy 0u 1u 0u (input.mi.dwExtraInfo.ToUInt64()) // LLMHF_INJECTED
+        // The X button in the high word of mouseData, as the hook gets it; LLMHF_INJECTED
+        let info = mouseInfo input.mi.dx input.mi.dy (xData b) 1u 0u (input.mi.dwExtraInfo.ToUInt64())
         mouse (if isDown then downMsg b else upMsg b) info
     | None -> failwith "not a button input"
 

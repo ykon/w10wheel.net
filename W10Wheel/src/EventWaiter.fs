@@ -78,6 +78,11 @@ let private setFlagsOffer me =
         Ctx.LastFlags.SetSuppressed waitingEvent
         Ctx.LastFlags.SetSuppressed me
         // The scroll is starting already (waiterThread)
+    // Another button (EventHandler.offerOtherButton): the waiting down is resent, its physical up
+    // comes later
+    | MiddleDown(_) | X1Down(_) | X2Down(_) | MiddleUp(_) | X1Up(_) | X2Up(_) ->
+        Debug.WriteLine(sprintf "setFlagsOffer - setResent (%s): %s" me.Name waitingEvent.Name)
+        Ctx.LastFlags.SetResent waitingEvent
     | Cancel -> Debug.WriteLine("setFlagsOffer: cancel")
     | _ -> raise (InvalidOperationException())
 
@@ -144,6 +149,8 @@ let private fromUp (generation: int) (pressId: int) (down:MouseEvent) (up:MouseE
         else
             resendUD()
     | RightDown(_), LeftUp(_) -> resendUD()
+    // Another button than the pair's: its up after the waiting down (Windows.resendDownUp)
+    | (LeftDown(_) | RightDown(_)), (MiddleUp(_) | X1Up(_) | X2Up(_)) -> resendUD()
     | _ -> raise (InvalidOperationException())
 
 let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
@@ -156,7 +163,10 @@ let private fromDown (generation: int) (d1:MouseEvent) (d2:MouseEvent) =
 let private dispatchEvent generation pressId down res =
     match res with
     | Move(_) -> fromMove generation pressId down
-    | LeftUp(_) | RightUp(_) -> fromUp generation pressId down res
+    // Another button's down: the waiting down resent as for a move (the physical down passes as the
+    // hook returns, just before it)
+    | MiddleDown(_) | X1Down(_) | X2Down(_) -> fromMove generation pressId down
+    | LeftUp(_) | RightUp(_) | MiddleUp(_) | X1Up(_) | X2Up(_) -> fromUp generation pressId down res
     | LeftDown(_) | RightDown(_) -> fromDown generation down res
     | Cancel -> Debug.WriteLine("dispatchEvent: cancel")
     | _ -> raise (InvalidOperationException())
