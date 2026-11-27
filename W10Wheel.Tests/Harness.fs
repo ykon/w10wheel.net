@@ -75,12 +75,26 @@ let private installHost () =
     Host.processIdOfWindow <- (fun hWnd -> uint32 hWnd)
     Host.fullPathOfProcess <- (fun pid -> Some(if nativeint pid = EXCLUDED_WINDOW then EXCLUDED_PROGRAM else OTHER_PROGRAM))
 
-// The folder of the properties files: one of the tests, not the user's profile
-let USER_DIR = Path.Combine(Path.GetTempPath(), "W10Wheel.Tests")
+let private deleteFolder (dir: string) =
+    try
+        if Directory.Exists(dir) then
+            for f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories) do
+                try
+                    File.SetAttributes(f, FileAttributes.Normal)
+                    File.Delete(f)
+                with _ -> ()
+            Directory.Delete(dir, true)
+    with _ -> ()
+
+// The folder of the properties files: one of this run of the tests (in the temp folder), not
+// the user's profile, nor another run's (the tests empty it, StoreTests). Deleted at the end.
+let private userDir = lazy (
+    let dir = Directory.CreateTempSubdirectory("W10Wheel.Tests-").FullName
+    AppDomain.CurrentDomain.ProcessExit.Add(fun _ -> deleteFolder dir)
+    dir)
 
 let private initialized = lazy (
-    Directory.CreateDirectory(USER_DIR) |> ignore
-    Properties.USER_DIR <- USER_DIR
+    Properties.USER_DIR <- userDir.Value
     // Before any test changes a setting: the defaults (Reset to defaults) are those of a start
     Ctx.ForTests.saveDefaults ()
     installHost ()
